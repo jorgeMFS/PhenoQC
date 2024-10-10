@@ -1,0 +1,6 @@
+[
+    {"SampleID": "S001", "Age": 34, "Gender": "Male", "Phenotype": "Hypertension", "Measurement": 120},
+    {"SampleID": "S002", "Age": 28, "Gender": "Female", "Phenotype": "Diabetes", "Measurement": 85},
+    {"SampleID": "S003", "Age": 45, "Gender": "Other", "Phenotype": "Asthma", "Measurement": 95},
+    {"SampleID": "S004", "Age": 30, "Gender": "Male", "Phenotype": "Hypertension", "Measurement": 130}
+  ]

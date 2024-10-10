@@ -1,0 +1,8 @@
+# requirements.txt
+pandas
+jsonschema
+requests
+plotly
+reportlab
+streamlit
+pyyaml

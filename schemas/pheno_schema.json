@@ -1,0 +1,26 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Phenotypic Data Schema",
+    "type": "object",
+    "properties": {
+        "SampleID": {
+            "type": "string"
+        },
+        "Age": {
+            "type": "number",
+            "minimum": 0
+        },
+        "Gender": {
+            "type": "string",
+            "enum": ["Male", "Female", "Other"]
+        },
+        "Phenotype": {
+            "type": "string"
+        },
+        "Measurement": {
+            "type": "number"
+        }
+    },
+    "required": ["SampleID", "Age", "Gender", "Phenotype"],
+    "additionalProperties": false
+}
