@@ -1,5 +1,5 @@
 import streamlit as st
-from .batch_processing import batch_process
+from batch_processing import batch_process
 import os
 
 def main():

@@ -3,7 +3,7 @@ import logging
 def setup_logging(log_file='phenoqc.log'):
     """
     Sets up the logging configuration.
-    
+
     Args:
         log_file (str): Path to the log file.
     """
@@ -17,7 +17,7 @@ def setup_logging(log_file='phenoqc.log'):
 def log_activity(message, level='info'):
     """
     Logs an activity message.
-    
+
     Args:
         message (str): Message to log.
         level (str): Logging level ('info', 'warning', 'error').

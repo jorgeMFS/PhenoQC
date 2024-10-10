@@ -43,7 +43,7 @@ phenoqc --input examples/sample_data.csv --output ./reports/ --schema schemas/ph
 Batch process multiple files:
 
 ```bash
-phenoqc --input data1.csv data2.json data3.tsv --output ./reports/ --schema schemas/pheno_schema.json --mapping examples/sample_mapping.json --impute median
+phenoqc --input examples/sample_data.csv examples/sample_data.json examples/sample_data.tsv --output ./reports/ --schema schemas/pheno_schema.json --mapping examples/sample_mapping.json --impute median
 ```
 
 ### Graphical User Interface (GUI)

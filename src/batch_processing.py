@@ -2,15 +2,27 @@ import concurrent.futures
 import os
 import json
 import pandas as pd 
-from .input import load_data
-from .validation import validate_schema, check_required_fields, check_data_types, perform_consistency_checks
-from .mapping import fetch_hpo_terms, map_to_hpo, load_custom_mappings
-from .missing_data import detect_missing_data, impute_missing_data
-from .reporting import generate_qc_report, create_visual_summary
-from .logging_module import log_activity
-from .configuration import load_config  # Ensure configuration module is imported
+from input import load_data
+from validation import validate_schema, check_required_fields, check_data_types, perform_consistency_checks
+from mapping import fetch_hpo_terms, map_to_hpo, load_custom_mappings
+from missing_data import detect_missing_data, impute_missing_data
+from reporting import generate_qc_report, create_visual_summary
+from logging_module import log_activity
+from configuration import load_config  # Ensure configuration module is imported
 
-def process_file(file_path, file_type, schema, hpo_terms, custom_mappings=None, impute_strategy='mean', output_dir='reports'):
+def get_file_type(file_path):
+    _, ext = os.path.splitext(file_path.lower())
+    if ext == '.csv':
+        return 'csv'
+    elif ext == '.tsv':
+        return 'tsv'
+    elif ext == '.json':
+        return 'json'
+    else:
+        raise ValueError(f"Unsupported file extension: {ext}")
+
+def process_file(file_path, schema, hpo_terms, custom_mappings=None, impute_strategy='mean', output_dir='reports'):
+    file_type = get_file_type(file_path)
     log_activity(f"Processing file: {file_path}")
     print(f"Processing file: {file_path}")
     print(f"File type: {file_type}")
@@ -81,13 +93,12 @@ def process_file(file_path, file_type, schema, hpo_terms, custom_mappings=None, 
         log_activity(f"Error processing file {file_path}: {str(e)}", level='error')
         return {'file': file_path, 'status': 'Error', 'error': str(e)}
 
-def batch_process(files, file_type, schema_path, hpo_terms_path, custom_mappings_path=None, impute_strategy='mean'):
+def batch_process(files, schema_path, hpo_terms_path, custom_mappings_path=None, impute_strategy='mean'):
     """
-    Processes multiple phenotypic data files.
+    Processes multiple phenotypic data files, each potentially of different types.
     
     Args:
         files (list): List of file paths to process.
-        file_type (str): Type of the data files ('csv', 'tsv', 'json').
         schema_path (str): Path to the JSON schema file.
         hpo_terms_path (str): Path to the HPO terms JSON file.
         custom_mappings_path (str, optional): Path to the custom mapping JSON file.
@@ -111,17 +122,16 @@ def batch_process(files, file_type, schema_path, hpo_terms_path, custom_mappings
     os.makedirs(output_dir, exist_ok=True)
     
     results = []
-    for file_path in files:
-        result = process_file(
-            file_path, 
-            file_type, 
-            schema, 
-            hpo_terms, 
-            custom_mappings, 
-            impute_strategy, 
-            output_dir
-        )
-        results.append(result)
-        print(f"File: {result['file']}, Status: {result['status']}, Error: {result['error']}")
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = [executor.submit(process_file, file_path, schema, hpo_terms, custom_mappings, impute_strategy, output_dir) for file_path in files]
+        for future in concurrent.futures.as_completed(futures):
+            results.append(future.result())
+            result = future.result()
+            if result['status'] == 'Processed':
+                print(f"✅ {os.path.basename(result['file'])} processed successfully.")
+            elif result['status'] == 'Invalid':
+                print(f"⚠️ {os.path.basename(result['file'])} failed validation: {result['error']}")
+            else:
+                print(f"❌ {os.path.basename(result['file'])} encountered an error: {result['error']}")
     
     return results

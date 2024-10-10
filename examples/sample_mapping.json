@@ -1,5 +1,5 @@
-{
-    "Hypertension": "HP:0000822",
-    "Diabetes": "HP:0001627",
-    "Asthma": "HP:0002090"
-}
+[
+    {"name": "Hypertension", "id": "HP:0000822"},
+    {"name": "Diabetes", "id": "HP:0001627"},
+    {"name": "Asthma", "id": "HP:0002090"}
+]

@@ -18,12 +18,12 @@ def fetch_hpo_terms(local_file_path='hpo_terms.json'):
 def map_to_hpo(term, hpo_terms, custom_mappings=None):
     """
     Maps a phenotypic term to an HPO ID.
-    
+
     Args:
         term (str): Phenotypic term to map.
-        hpo_terms (list): List of HPO terms.
+        hpo_terms (dict or list): HPO terms as a dict or list of dicts.
         custom_mappings (dict, optional): Custom mappings for terms.
-    
+
     Returns:
         str or None: Mapped HPO ID or None if not found.
     """
@@ -31,11 +31,16 @@ def map_to_hpo(term, hpo_terms, custom_mappings=None):
     if custom_mappings and term in custom_mappings:
         return custom_mappings[term]
     
-    # Search in HPO terms
     term_lower = term.lower()
-    for hpo in hpo_terms:
-        if term_lower == hpo['name'].lower() or term_lower in [syn.lower() for syn in hpo.get('synonyms', [])]:
-            return hpo['id']
+    
+    if isinstance(hpo_terms, dict):
+        # If hpo_terms is a dict, map directly
+        return hpo_terms.get(term, None)
+    elif isinstance(hpo_terms, list):
+        # If hpo_terms is a list of dicts
+        for hpo in hpo_terms:
+            if term_lower == hpo['name'].lower() or term_lower in [syn.lower() for syn in hpo.get('synonyms', [])]:
+                return hpo['id']
     return None  # Unmapped term
 
 def load_custom_mappings(mapping_file):
