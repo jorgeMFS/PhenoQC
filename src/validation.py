@@ -1,4 +1,5 @@
 from jsonschema import validate, ValidationError
+import pandas as pd
 
 def validate_schema(data, schema):
     """
@@ -15,7 +16,7 @@ def validate_schema(data, schema):
         validate(instance=data, schema=schema)
         return True, None
     except ValidationError as ve:
-        return False, ve.message
+        return False, str(ve)
 
 def check_required_fields(df, required_fields):
     """
@@ -45,8 +46,19 @@ def check_data_types(df, expected_types):
     mismatches = {}
     for column, expected_type in expected_types.items():
         if column in df.columns:
-            if not pd.api.types.is_dtype_equal(df[column].dtype, expected_type):
-                mismatches[column] = str(expected_type)
+            if expected_type == "number":
+                if not pd.api.types.is_numeric_dtype(df[column]):
+                    mismatches[column] = f"Expected numeric, got {df[column].dtype}"
+            elif expected_type == "string":
+                if not pd.api.types.is_string_dtype(df[column]):
+                    mismatches[column] = f"Expected string, got {df[column].dtype}"
+            elif isinstance(expected_type, list) and "null" in expected_type:
+                # Handle columns that allow null values
+                non_null_type = [t for t in expected_type if t != "null"][0]
+                if not pd.api.types.is_numeric_dtype(df[column]) and non_null_type == "number":
+                    mismatches[column] = f"Expected numeric or null, got {df[column].dtype}"
+                elif not pd.api.types.is_string_dtype(df[column]) and non_null_type == "string":
+                    mismatches[column] = f"Expected string or null, got {df[column].dtype}"
     return mismatches
 
 def perform_consistency_checks(df):

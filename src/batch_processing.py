@@ -11,38 +11,24 @@ from .logging_module import log_activity
 from .configuration import load_config  # Ensure configuration module is imported
 
 def process_file(file_path, file_type, schema, hpo_terms, custom_mappings=None, impute_strategy='mean', output_dir='reports'):
-    """
-    Processes a single phenotypic data file.
-    
-    Args:
-        file_path (str): Path to the data file.
-        file_type (str): Type of the data file ('csv', 'tsv', 'json').
-        schema (dict): JSON schema for validation.
-        hpo_terms (list): List of HPO terms for mapping.
-        custom_mappings (dict, optional): Custom term mappings.
-        impute_strategy (str): Strategy for imputing missing data.
-        output_dir (str): Directory to save reports.
-    
-    Returns:
-        dict: Results of the processing.
-    """
     log_activity(f"Processing file: {file_path}")
+    print(f"Processing file: {file_path}")
+    print(f"File type: {file_type}")
+    print(f"Impute strategy: {impute_strategy}")
+
     try:
         data = load_data(file_path, file_type)
         log_activity("Data loaded successfully.")
         
-        # Validate schema
-        is_valid, error = validate_schema(data, schema)
-        if not is_valid:
-            log_activity(f"Schema validation failed for {file_path}: {error}", level='error')
-            return {'file': file_path, 'status': 'Invalid', 'error': error}
-        log_activity("Schema validation passed.")
+        df = pd.DataFrame(data) if isinstance(data, list) else data
         
-        # Convert to DataFrame if data is a list (from JSON)
-        if isinstance(data, list):
-            df = pd.DataFrame(data)
-        else:
-            df = data
+        # Validate schema for each row
+        for index, row in df.iterrows():
+            is_valid, error = validate_schema(row.to_dict(), schema)
+            if not is_valid:
+                log_activity(f"Schema validation failed for row {index} in {file_path}: {error}", level='error')
+                return {'file': file_path, 'status': 'Invalid', 'error': f"Row {index}: {error}"}
+        log_activity("Schema validation passed for all rows.")
         
         # Check required fields and data types
         required_fields = schema.get("required", [])
@@ -61,8 +47,6 @@ def process_file(file_path, file_type, schema, hpo_terms, custom_mappings=None, 
         inconsistencies = perform_consistency_checks(df)
         if inconsistencies:
             log_activity(f"Consistency issues in {file_path}: {inconsistencies}", level='warning')
-            # Depending on requirements, decide to proceed or not
-            # Here, we proceed
         
         # Ontology mapping
         if 'Phenotype' in df.columns:
@@ -99,7 +83,7 @@ def process_file(file_path, file_type, schema, hpo_terms, custom_mappings=None, 
 
 def batch_process(files, file_type, schema_path, hpo_terms_path, custom_mappings_path=None, impute_strategy='mean'):
     """
-    Processes multiple phenotypic data files in parallel.
+    Processes multiple phenotypic data files.
     
     Args:
         files (list): List of file paths to process.
@@ -127,21 +111,17 @@ def batch_process(files, file_type, schema_path, hpo_terms_path, custom_mappings
     os.makedirs(output_dir, exist_ok=True)
     
     results = []
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = [
-            executor.submit(
-                process_file, 
-                file_path, 
-                file_type, 
-                schema, 
-                hpo_terms, 
-                custom_mappings, 
-                impute_strategy, 
-                output_dir
-            ) for file_path in files
-        ]
-        for future in concurrent.futures.as_completed(futures):
-            result = future.result()
-            results.append(result)
+    for file_path in files:
+        result = process_file(
+            file_path, 
+            file_type, 
+            schema, 
+            hpo_terms, 
+            custom_mappings, 
+            impute_strategy, 
+            output_dir
+        )
+        results.append(result)
+        print(f"File: {result['file']}, Status: {result['status']}, Error: {result['error']}")
     
     return results

@@ -21,13 +21,14 @@ def impute_missing_data(df, strategy='mean'):
     
     Returns:
         pd.DataFrame: DataFrame with imputed data.
-    
     Raises:
         ValueError: If the imputation strategy is unsupported.
     """
+    numeric_df = df.select_dtypes(include=['number'])
+    
     if strategy == 'mean':
-        return df.fillna(df.mean())
+        return df.fillna(numeric_df.mean())
     elif strategy == 'median':
-        return df.fillna(df.median())
+        return df.fillna(numeric_df.median())
     else:
-        raise ValueError(f"Unsupported imputation strategy: {strategy}")
+        raise ValueError("Invalid imputation strategy. Choose 'mean' or 'median'.")

@@ -1,9 +1,10 @@
 import unittest
+import json
+import tempfile
 from src.mapping import fetch_hpo_terms, map_to_hpo, load_custom_mappings
 
 class TestMappingModule(unittest.TestCase):
     def setUp(self):
-        # Assuming 'examples/sample_mapping.json' exists
         self.hpo_terms = [
             {"id": "HP:0000822", "name": "Hypertension", "synonyms": ["High blood pressure"]},
             {"id": "HP:0001627", "name": "Diabetes", "synonyms": ["Sugar diabetes"]},
@@ -11,7 +12,7 @@ class TestMappingModule(unittest.TestCase):
             {"id": "HP:0001511", "name": "Obesity", "synonyms": ["Fatty syndrome"]},
             {"id": "HP:0004322", "name": "Anemia", "synonyms": ["Lack of red blood cells"]}
         ]
-        self.sample_mapping_file = 'examples/sample_mapping.json'
+        self.sample_mapping_file = tempfile.mktemp(suffix='.json')
         with open(self.sample_mapping_file, 'w') as f:
             json.dump({
                 "Hypertension": "HP:0000822",
@@ -21,11 +22,12 @@ class TestMappingModule(unittest.TestCase):
 
     def tearDown(self):
         import os
-        os.remove(self.sample_mapping_file)
+        if os.path.exists(self.sample_mapping_file):
+            os.remove(self.sample_mapping_file)
 
     def test_fetch_hpo_terms(self):
         # Create a temporary HPO terms file
-        temp_hpo_file = 'temp_hpo_terms.json'
+        temp_hpo_file = tempfile.mktemp(suffix='.json')
         with open(temp_hpo_file, 'w') as f:
             json.dump(self.hpo_terms, f)
         

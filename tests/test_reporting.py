@@ -1,6 +1,7 @@
 import unittest
 import os
 import pandas as pd
+import tempfile
 from src.reporting import generate_qc_report, create_visual_summary
 
 class TestReportingModule(unittest.TestCase):
@@ -13,8 +14,8 @@ class TestReportingModule(unittest.TestCase):
             "Measurement": "Valid"
         }
         self.missing_data = pd.Series({"Age": 1, "Measurement": 1})
-        self.output_report = "test_report.pdf"
-        self.output_image = "test_missing_data.png"
+        self.output_report = tempfile.mktemp(suffix='.pdf')
+        self.output_image = tempfile.mktemp(suffix='.png')
 
     def tearDown(self):
         if os.path.exists(self.output_report):
@@ -25,7 +26,6 @@ class TestReportingModule(unittest.TestCase):
     def test_generate_qc_report(self):
         generate_qc_report(self.validation_results, self.missing_data, self.output_report)
         self.assertTrue(os.path.exists(self.output_report))
-        # Optionally, you can add more sophisticated checks, like reading the PDF content.
 
     def test_create_visual_summary(self):
         create_visual_summary(self.missing_data, self.output_image)

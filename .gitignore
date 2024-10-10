@@ -1,0 +1,6 @@
+*.log
+phenoqc_env/
+reports/
+src/PhenoQC.egg-info/
+src/__pycache__/
+tests/__pycache__/

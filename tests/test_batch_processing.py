@@ -1,13 +1,16 @@
 import unittest
 import os
 import json
+import tempfile
 from src.batch_processing import batch_process
 
 class TestBatchProcessingModule(unittest.TestCase):
     def setUp(self):
-        # Create sample data files
-        self.schema_file = 'schemas/pheno_schema.json'
-        os.makedirs('schemas', exist_ok=True)
+        # Create temporary directories for schema and examples
+        self.schema_dir = tempfile.mkdtemp()
+        self.examples_dir = tempfile.mkdtemp()
+
+        self.schema_file = os.path.join(self.schema_dir, 'pheno_schema.json')
         with open(self.schema_file, 'w') as f:
             json.dump({
                 "$schema": "http://json-schema.org/draft-07/schema#",
@@ -18,22 +21,21 @@ class TestBatchProcessingModule(unittest.TestCase):
                     "Age": {"type": "number", "minimum": 0},
                     "Gender": {"type": "string", "enum": ["Male", "Female", "Other"]},
                     "Phenotype": {"type": "string"},
-                    "Measurement": {"type": "number"}
+                    "Measurement": {"type": ["number", "null"]}
                 },
                 "required": ["SampleID", "Age", "Gender", "Phenotype"],
                 "additionalProperties": False
             }, f)
         
-        self.mapping_file = 'examples/sample_mapping.json'
+        self.mapping_file = os.path.join(self.examples_dir, 'sample_mapping.json')
         with open(self.mapping_file, 'w') as f:
-            json.dump({
-                "Hypertension": "HP:0000822",
-                "Diabetes": "HP:0001627",
-                "Asthma": "HP:0002090"
-            }, f)
+            json.dump([
+                {"name": "Hypertension", "id": "HP:0000822"},
+                {"name": "Diabetes", "id": "HP:0001627"},
+                {"name": "Asthma", "id": "HP:0002090"}
+            ], f)
 
-        self.sample_data_file = 'examples/sample_data.csv'
-        os.makedirs('examples', exist_ok=True)
+        self.sample_data_file = os.path.join(self.examples_dir, 'sample_data.csv')
         with open(self.sample_data_file, 'w') as f:
             f.write("SampleID,Age,Gender,Phenotype,Measurement\n")
             f.write("S001,34,Male,Hypertension,120\n")
@@ -42,14 +44,11 @@ class TestBatchProcessingModule(unittest.TestCase):
             f.write("S004,30,Male,Hypertension,\n")  # Missing Measurement
 
     def tearDown(self):
-        # Remove created files and directories
-        os.remove(self.schema_file)
-        os.remove(self.mapping_file)
-        os.remove(self.sample_data_file)
-        if os.path.exists('reports'):
-            for file in os.listdir('reports'):
-                os.remove(os.path.join('reports', file))
-            os.rmdir('reports')
+        # Remove temporary directories and their contents
+        for dir_path in [self.schema_dir, self.examples_dir]:
+            for file in os.listdir(dir_path):
+                os.remove(os.path.join(dir_path, file))
+            os.rmdir(dir_path)
 
     def test_batch_process(self):
         results = batch_process(
