@@ -13,6 +13,7 @@ setup(
         'reportlab',
         'streamlit',
         'pyyaml',
+        'watchdog',
         'kaleido>=0.1.0'
     ],
     entry_points={

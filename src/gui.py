@@ -15,7 +15,7 @@ def main():
     
     if st.button("Run Quality Control"):
         if not schema_file or not mapping_file or not uploaded_files:
-            st.error("Please upload the schema, mapping files and at least one data file.")
+            st.error("Please upload the schema, mapping files, and at least one data file.")
             return
         
         # Save uploaded files to a temporary directory
@@ -46,24 +46,13 @@ def main():
             output_dir = os.path.join(tmpdirname, "reports")
             os.makedirs(output_dir, exist_ok=True)
             
-            # Determine file type
-            file_types = set()
-            for f in uploaded_files:
-                if f.name.endswith('.csv'):
-                    file_types.add('csv')
-                elif f.name.endswith('.tsv'):
-                    file_types.add('tsv')
-                elif f.name.endswith('.json'):
-                    file_types.add('json')
-            if len(file_types) > 1:
-                st.error("Please upload files of the same type.")
-                return
-            file_type = file_types.pop()
+            # Remove file type consistency check
+            # Previously, the GUI enforced all files to be of the same type
+            # Now, allow multiple file types and let batch_process handle them
             
-            # Run batch processing
+            # Run batch processing without specifying a single file_type
             results = batch_process(
                 files=input_paths,
-                file_type=file_type,
                 schema_path=schema_path,
                 hpo_terms_path=mapping_path,
                 custom_mappings_path=custom_mapping_path,
@@ -78,7 +67,12 @@ def main():
                     report_path = os.path.join(output_dir, os.path.splitext(file)[0] + "_report.pdf")
                     if os.path.exists(report_path):
                         with open(report_path, 'rb') as f:
-                            st.download_button(label=f"Download Report for {file}", data=f, file_name=os.path.basename(report_path), mime='application/pdf')
+                            st.download_button(
+                                label=f"Download Report for {file}",
+                                data=f,
+                                file_name=os.path.basename(report_path),
+                                mime='application/pdf'
+                            )
                 elif result['status'] == 'Invalid':
                     st.warning(f"{file} failed validation: {result['error']}")
                 else:
