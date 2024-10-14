@@ -37,13 +37,13 @@ pip install -e .
 Process a single file:
 
 ```bash
-phenoqc --input examples/sample_data.csv --output ./reports/ --schema schemas/pheno_schema.json --mapping examples/sample_mapping.json --impute mean
+phenoqc --input examples/samples/sample_data.csv --output ./reports/ --schema examples/schemas/pheno_schema.json --mapping examples/mapping/sample_mapping.json --impute mean
 ```
 
 Batch process multiple files:
 
 ```bash
-phenoqc --input examples/sample_data.csv examples/sample_data.json examples/sample_data.tsv --output ./reports/ --schema schemas/pheno_schema.json --mapping examples/sample_mapping.json --impute median
+phenoqc --input examples/samples/sample_data.csv examples/samples/sample_data.json examples/samples/sample_data.tsv --output ./reports/ --schema examples/schemas/pheno_schema.json --mapping examples/mapping/sample_mapping.json --impute median
 ```
 
 ### Graphical User Interface (GUI)
