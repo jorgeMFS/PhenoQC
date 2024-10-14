@@ -1,6 +1,55 @@
+# Logs
 *.log
+
+# Virtual environments
 phenoqc_env/
+
+# Reports and output
 reports/
+zipp_test.zip
+
+# Python egg and build directories
 src/PhenoQC.egg-info/
 src/__pycache__/
 tests/__pycache__/
+build/
+dist/
+*.egg-info/
+
+# Persistent Python bytecode
+__pycache__/
+*.py[cod]
+
+# Coverage reports
+.coverage
+coverage.xml
+htmlcov/
+
+# IDEs and editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+
+# Environment variables
+.env
+.env.*
+
+# Streamlit cache
+.streamlit/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Other miscellaneous
+*.bak
+*.backup

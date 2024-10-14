@@ -79,7 +79,7 @@ def process_file(file_path, schema, hpo_terms, custom_mappings=None, impute_stra
         # Generate report
         report_file = os.path.join(output_dir, os.path.splitext(os.path.basename(file_path))[0] + "_report.pdf")
         generate_qc_report(df, missing, report_file)
-        create_visual_summary(missing, os.path.join(output_dir, "missing_data.png"))
+        create_visual_summary(missing, os.path.join(output_dir, os.path.splitext(os.path.basename(file_path))[0] + "_missing_data.png"))
         log_activity(f"Report generated at {report_file}")
         
         # Save the cleaned DataFrame if needed
@@ -93,7 +93,7 @@ def process_file(file_path, schema, hpo_terms, custom_mappings=None, impute_stra
         log_activity(f"Error processing file {file_path}: {str(e)}", level='error')
         return {'file': file_path, 'status': 'Error', 'error': str(e)}
 
-def batch_process(files, schema_path, hpo_terms_path, custom_mappings_path=None, impute_strategy='mean'):
+def batch_process(files, schema_path, hpo_terms_path, custom_mappings_path=None, impute_strategy='mean', output_dir='reports'):
     """
     Processes multiple phenotypic data files, each potentially of different types.
     
@@ -103,6 +103,7 @@ def batch_process(files, schema_path, hpo_terms_path, custom_mappings_path=None,
         hpo_terms_path (str): Path to the HPO terms JSON file.
         custom_mappings_path (str, optional): Path to the custom mapping JSON file.
         impute_strategy (str): Strategy for imputing missing data.
+        output_dir (str): Directory to save reports and processed data.
     
     Returns:
         list: List of results for each file.
@@ -118,15 +119,14 @@ def batch_process(files, schema_path, hpo_terms_path, custom_mappings_path=None,
     custom_mappings = load_custom_mappings(custom_mappings_path) if custom_mappings_path else None
     
     # Ensure output directory exists
-    output_dir = 'reports'
     os.makedirs(output_dir, exist_ok=True)
     
     results = []
     with concurrent.futures.ThreadPoolExecutor() as executor:
         futures = [executor.submit(process_file, file_path, schema, hpo_terms, custom_mappings, impute_strategy, output_dir) for file_path in files]
         for future in concurrent.futures.as_completed(futures):
-            results.append(future.result())
             result = future.result()
+            results.append(result)
             if result['status'] == 'Processed':
                 print(f"✅ {os.path.basename(result['file'])} processed successfully.")
             elif result['status'] == 'Invalid':
