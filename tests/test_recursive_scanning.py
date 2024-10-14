@@ -2,6 +2,7 @@ import os
 import tempfile
 import shutil
 import subprocess
+import json  # Ensure the json module is imported
 
 def create_sample_files(base_dir):
     """
@@ -29,7 +30,7 @@ def create_sample_files(base_dir):
             {"SampleID": "S003", "Age": 45, "Gender": "Other", "Phenotype": "Asthma", "Measurement": 95},
             {"SampleID": "S004", "Age": 30, "Gender": "Male", "Phenotype": "Hypertension", "Measurement": None}
         ]
-        f.write(str(json_content).replace("'", '"'))  # Simple JSON serialization
+        json.dump(json_content, f, indent=4)  # Proper JSON serialization
 
 def run_phenoqc(input_dir, output_dir, schema_path, mapping_path, impute_strategy):
     """
