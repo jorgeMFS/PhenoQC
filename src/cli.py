@@ -19,6 +19,7 @@ def parse_arguments():
     parser.add_argument('--custom_mappings', help='Path to custom mapping JSON file', default=None)
     parser.add_argument('--impute', choices=['mean', 'median'], default='mean', help='Imputation strategy for missing data')
     parser.add_argument('--recursive', action='store_true', help='Enable recursive directory scanning for nested files')
+    parser.add_argument('--unique_identifiers', nargs='+', required=True, help='List of column names that uniquely identify a record')
     return parser.parse_args()
 
 def collect_files(input_paths, recursive=False):
@@ -77,8 +78,10 @@ def main():
         files=files_to_process,
         schema_path=args.schema,
         hpo_terms_path=args.mapping,
+        unique_identifiers=args.unique_identifiers,  # Pass unique_identifiers
         custom_mappings_path=args.custom_mappings,
-        impute_strategy=args.impute
+        impute_strategy=args.impute,
+        output_dir=args.output
     )
 
     # Summary of results
@@ -86,11 +89,11 @@ def main():
         status = result['status']
         file = result['file']
         if status == 'Processed':
-            print(f"✅ {file} processed successfully.")
+            print(f"✅ {os.path.basename(file)} processed successfully.")
         elif status == 'Invalid':
-            print(f"⚠️ {file} failed validation: {result['error']}")
+            print(f"⚠️ {os.path.basename(file)} failed validation: {result['error']}")
         else:
-            print(f"❌ {file} encountered an error: {result['error']}")
+            print(f"❌ {os.path.basename(file)} encountered an error: {result['error']}")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

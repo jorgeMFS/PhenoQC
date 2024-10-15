@@ -3,7 +3,7 @@ import os
 import json
 import pandas as pd 
 from input import load_data
-from validation import validate_schema, check_required_fields, check_data_types, perform_consistency_checks
+from validation import DataValidator  # Updated import
 from mapping import fetch_hpo_terms, map_to_hpo, load_custom_mappings
 from missing_data import detect_missing_data, impute_missing_data
 from reporting import generate_qc_report, create_visual_summary
@@ -20,8 +20,8 @@ def get_file_type(file_path):
         return 'json'
     else:
         raise ValueError(f"Unsupported file extension: {ext}")
-
-def process_file(file_path, schema, hpo_terms, custom_mappings=None, impute_strategy='mean', output_dir='reports'):
+        
+def process_file(file_path, schema, hpo_terms, unique_identifiers, custom_mappings=None, impute_strategy='mean', output_dir='reports'):
     file_type = get_file_type(file_path)
     log_activity(f"Processing file: {file_path}")
     print(f"Processing file: {file_path}")
@@ -33,67 +33,71 @@ def process_file(file_path, schema, hpo_terms, custom_mappings=None, impute_stra
         log_activity("Data loaded successfully.")
         
         df = pd.DataFrame(data) if isinstance(data, list) else data
-        
-        # Validate schema for each row
-        for index, row in df.iterrows():
-            is_valid, error = validate_schema(row.to_dict(), schema)
-            if not is_valid:
-                log_activity(f"Schema validation failed for row {index} in {file_path}: {error}", level='error')
-                return {'file': file_path, 'status': 'Invalid', 'error': f"Row {index}: {error}"}
-        log_activity("Schema validation passed for all rows.")
-        
-        # Check required fields and data types
-        required_fields = schema.get("required", [])
-        missing_fields = check_required_fields(df, required_fields)
-        if missing_fields:
-            log_activity(f"Missing required fields in {file_path}: {missing_fields}", level='error')
-            return {'file': file_path, 'status': 'Invalid', 'error': f"Missing fields: {missing_fields}"}
-        
-        expected_types = {prop: schema['properties'][prop]['type'] for prop in schema['properties']}
-        mismatches = check_data_types(df, expected_types)
-        if mismatches:
-            log_activity(f"Data type mismatches in {file_path}: {mismatches}", level='error')
-            return {'file': file_path, 'status': 'Invalid', 'error': f"Type mismatches: {mismatches}"}
-        
-        # Perform consistency checks
-        inconsistencies = perform_consistency_checks(df)
-        if inconsistencies:
-            log_activity(f"Consistency issues in {file_path}: {inconsistencies}", level='warning')
-        
+
+        # Initialize DataValidator
+        validator = DataValidator(df, schema, unique_identifiers)
+
+        # Run all validations
+        validation_results = validator.run_all_validations()
+
+        # Check Format Validation
+        if not validation_results["Format Validation"]:
+            error_msg = "Format validation failed. Schema compliance issues detected."
+            log_activity(f"{file_path}: {error_msg}", level='error')
+            return {'file': file_path, 'status': 'Invalid', 'error': error_msg}
+
+        # Check for Duplicate Records
+        duplicates = validation_results["Duplicate Records"]
+        if not duplicates.empty:
+            log_activity(f"{file_path}: Duplicate records found.", level='warning')
+            # Optionally, handle duplicates as needed (e.g., remove, flag)
+
+        # Check for Conflicting Records
+        conflicts = validation_results["Conflicting Records"]
+        if not conflicts.empty:
+            log_activity(f"{file_path}: Conflicting records detected.", level='warning')
+            # Optionally, handle conflicts as needed
+
+        # Check for Integrity Issues
+        integrity_issues = validation_results["Integrity Issues"]
+        if not integrity_issues.empty:
+            log_activity(f"{file_path}: Integrity issues found.", level='warning')
+            # Optionally, handle integrity issues as needed
+
         # Ontology mapping
         if 'Phenotype' in df.columns:
             df['HPO_ID'] = df['Phenotype'].apply(lambda x: map_to_hpo(x, hpo_terms, custom_mappings))
             unmapped = df[df['HPO_ID'].isnull()]
             if not unmapped.empty:
                 log_activity(f"Unmapped phenotypes in {file_path}: {unmapped['Phenotype'].unique()}", level='warning')
-        
+
         # Missing data handling
         missing = detect_missing_data(df)
         if not missing.empty:
             if impute_strategy:
                 df = impute_missing_data(df, strategy=impute_strategy)
-                log_activity(f"Missing data imputed using {impute_strategy} strategy.")
+                log_activity(f"{file_path}: Missing data imputed using {impute_strategy} strategy.")
             else:
-                log_activity(f"Missing data detected in {file_path}: {missing.to_dict()}", level='warning')
-        
+                log_activity(f"{file_path}: Missing data detected: {missing.to_dict()}", level='warning')
+
         # Generate report
         report_file = os.path.join(output_dir, os.path.splitext(os.path.basename(file_path))[0] + "_report.pdf")
-        generate_qc_report(df, missing, report_file)
+        generate_qc_report(validation_results, missing, report_file)  # Ensure parameters match
         create_visual_summary(missing, os.path.join(output_dir, os.path.splitext(os.path.basename(file_path))[0] + "_missing_data.png"))
-        log_activity(f"Report generated at {report_file}")
-        
+        log_activity(f"{file_path}: Report generated at {report_file}")
+
         # Save the cleaned DataFrame if needed
         output_data_file = os.path.join(output_dir, os.path.basename(file_path))
         df.to_csv(output_data_file, index=False)
-        log_activity(f"Processed data saved at {output_data_file}")
-        
+        log_activity(f"{file_path}: Processed data saved at {output_data_file}")
+
         return {'file': file_path, 'status': 'Processed', 'error': None}
     
     except Exception as e:
         log_activity(f"Error processing file {file_path}: {str(e)}", level='error')
         return {'file': file_path, 'status': 'Error', 'error': str(e)}
-
-def batch_process(files, schema_path, hpo_terms_path, custom_mappings_path=None, impute_strategy='mean', output_dir='reports'):
+        
+def batch_process(files, schema_path, hpo_terms_path, unique_identifiers, custom_mappings_path=None, impute_strategy='mean', output_dir='reports'):
     """
     Processes multiple phenotypic data files, each potentially of different types.
     
@@ -101,6 +105,7 @@ def batch_process(files, schema_path, hpo_terms_path, custom_mappings_path=None,
         files (list): List of file paths to process.
         schema_path (str): Path to the JSON schema file.
         hpo_terms_path (str): Path to the HPO terms JSON file.
+        unique_identifiers (list): List of unique identifier columns.
         custom_mappings_path (str, optional): Path to the custom mapping JSON file.
         impute_strategy (str): Strategy for imputing missing data.
         output_dir (str): Directory to save reports and processed data.
@@ -123,7 +128,7 @@ def batch_process(files, schema_path, hpo_terms_path, custom_mappings_path=None,
     
     results = []
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = [executor.submit(process_file, file_path, schema, hpo_terms, custom_mappings, impute_strategy, output_dir) for file_path in files]
+        futures = [executor.submit(process_file, file_path, schema, hpo_terms, unique_identifiers, custom_mappings, impute_strategy, output_dir) for file_path in files]
         for future in concurrent.futures.as_completed(futures):
             result = future.result()
             results.append(result)
