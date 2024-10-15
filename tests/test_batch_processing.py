@@ -10,6 +10,17 @@ class TestBatchProcessingModule(unittest.TestCase):
         self.schema_dir = tempfile.mkdtemp()
         self.mapping_dir = tempfile.mkdtemp()
 
+        # Create a temporary configuration file
+        self.config_file = os.path.join(self.schema_dir, 'config.yaml')
+        with open(self.config_file, 'w') as f:
+            f.write("""
+ontologies:
+  HPO:
+    name: Human Phenotype Ontology
+    file: {}
+default_ontology: HPO
+""".format(os.path.join(self.mapping_dir, 'sample_mapping.json')))
+
         self.schema_file = os.path.join(self.schema_dir, 'pheno_schema.json')
         with open(self.schema_file, 'w') as f:
             json.dump({
@@ -30,9 +41,9 @@ class TestBatchProcessingModule(unittest.TestCase):
         self.mapping_file = os.path.join(self.mapping_dir, 'sample_mapping.json')
         with open(self.mapping_file, 'w') as f:
             json.dump([
-                {"name": "Hypertension", "id": "HP:0000822"},
-                {"name": "Diabetes", "id": "HP:0001627"},
-                {"name": "Asthma", "id": "HP:0002090"}
+                {"id": "HP:0000822", "name": "Hypertension", "synonyms": []},
+                {"id": "HP:0001627", "name": "Diabetes", "synonyms": []},
+                {"id": "HP:0002090", "name": "Asthma", "synonyms": []}
             ], f)
 
         self.sample_data_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv').name
@@ -66,7 +77,7 @@ class TestBatchProcessingModule(unittest.TestCase):
         results = batch_process(
             files=[self.sample_data_file],
             schema_path=self.schema_file,
-            hpo_terms_path=self.mapping_file,
+            config_path=self.config_file,  # Added config_path argument
             unique_identifiers=self.unique_identifiers,
             custom_mappings_path=None,
             impute_strategy='mean',
