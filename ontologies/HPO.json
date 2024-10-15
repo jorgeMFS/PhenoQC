@@ -1,0 +1,27 @@
+[
+    {
+      "id": "HP:0000118",
+      "name": "Phenotypic abnormality",
+      "synonyms": ["Phenotypic anomaly"]
+    },
+    {
+      "id": "HP:0000707",
+      "name": "Abnormality of the nervous system",
+      "synonyms": ["Neurological abnormality"]
+    },
+    {
+      "id": "HP:0001626",
+      "name": "Abnormality of the cardiovascular system",
+      "synonyms": ["Cardiovascular abnormality"]
+    },
+    {
+      "id": "HP:0000818",
+      "name": "Abnormality of the endocrine system",
+      "synonyms": ["Endocrine abnormality"]
+    },
+    {
+      "id": "HP:0001507",
+      "name": "Growth abnormality",
+      "synonyms": ["Abnormal growth"]
+    }
+  ]

@@ -1,8 +1,10 @@
 import streamlit as st
-from batch_processing import batch_process
+from batch_processing import batch_process, collect_files
 import os
 import tempfile
 import zipfile
+from configuration import load_config
+from logging_module import setup_logging, log_activity
 
 def extract_zip(zip_path, extract_to):
     """
@@ -47,13 +49,18 @@ def collect_supported_files(directory, supported_extensions):
     return collected_files
 
 def main():
+    # Setup logging
+    setup_logging()
+
     st.title("PhenoQC - Phenotypic Data Quality Control Toolkit")
     
     st.sidebar.header("Configuration")
     schema_file = st.sidebar.file_uploader("Upload JSON Schema", type=["json"])
-    mapping_file = st.sidebar.file_uploader("Upload HPO Mapping", type=["json"])
+    config_file = st.sidebar.file_uploader("Upload Configuration (config.yaml)", type=["yaml", "yml"])
     custom_mapping_file = st.sidebar.file_uploader("Upload Custom Mapping (Optional)", type=["json"])
     impute_strategy = st.sidebar.selectbox("Imputation Strategy", options=['mean', 'median'])
+    unique_identifiers = st.sidebar.text_input("Unique Identifier Columns (comma-separated)", help="Enter column names separated by commas, e.g., SampleID,PatientID")
+    ontologies = st.sidebar.text_input("Ontologies to Map (space-separated)", help="Enter ontology IDs separated by space, e.g., HPO DO MPO")
     
     st.sidebar.header("Data Ingestion")
     data_source_option = st.sidebar.radio("Select Data Source", options=['Upload Files', 'Upload Directory (ZIP)'])
@@ -74,8 +81,9 @@ def main():
     enable_recursive = st.sidebar.checkbox("Enable Recursive Directory Scanning", value=True)
     
     if st.button("Run Quality Control"):
-        if not schema_file or not mapping_file:
-            st.error("Please upload both the schema and mapping files.")
+        # Validate required uploads
+        if not schema_file or not config_file:
+            st.error("Please upload both the JSON schema and configuration (config.yaml) files.")
             return
         
         if data_source_option == 'Upload Files' and not uploaded_files:
@@ -85,6 +93,22 @@ def main():
             st.error("Please upload a ZIP archive containing your data files.")
             return
         
+        # Validate unique identifiers
+        if not unique_identifiers.strip():
+            st.error("Please specify unique identifier columns.")
+            return
+        
+        # Prepare unique identifiers
+        unique_identifiers_list = [uid.strip() for uid in unique_identifiers.split(',') if uid.strip()]
+        if not unique_identifiers_list:
+            st.error("Please provide at least one unique identifier column.")
+            return
+            
+        # Prepare ontologies list
+        ontologies_list = [ont.strip() for ont in ontologies.split() if ont.strip()]
+        if not ontologies_list:
+            ontologies_list = None  # Defaults in batch_process
+
         # Save uploaded files to a temporary directory
         with tempfile.TemporaryDirectory() as tmpdirname:
             input_paths = []
@@ -110,7 +134,7 @@ def main():
                     st.error(error)
                     return
                 
-                # Collect supported files recursively if enabled
+                # Collect supported files
                 supported_extensions = {'.csv', '.tsv', '.json'}
                 if enable_recursive:
                     collected_files = collect_supported_files(extract_dir, supported_extensions)
@@ -128,15 +152,16 @@ def main():
                     st.error("No supported data files found in the uploaded archive.")
                     return
             
-            # Save schema and mapping files
+            # Save schema and config files
             schema_path = os.path.join(tmpdirname, "schema.json")
             with open(schema_path, 'wb') as f:
                 f.write(schema_file.getbuffer())
             
-            mapping_path = os.path.join(tmpdirname, "hpo_mapping.json")
-            with open(mapping_path, 'wb') as f:
-                f.write(mapping_file.getbuffer())
+            config_path = os.path.join(tmpdirname, "config.yaml")
+            with open(config_path, 'wb') as f:
+                f.write(config_file.getbuffer())
             
+            # Save custom mappings if provided
             custom_mapping_path = None
             if custom_mapping_file:
                 custom_mapping_path = os.path.join(tmpdirname, "custom_mapping.json")
@@ -149,14 +174,21 @@ def main():
             
             # Run batch processing
             with st.spinner("Processing files..."):
-                results = batch_process(
-                    files=input_paths,
-                    schema_path=schema_path,
-                    hpo_terms_path=mapping_path,
-                    custom_mappings_path=custom_mapping_path,
-                    impute_strategy=impute_strategy,
-                    output_dir=output_dir
-                )
+                try:
+                    results = batch_process(
+                        files=input_paths,
+                        schema_path=schema_path,
+                        config_path=config_path,  # Corrected to config.yaml
+                        unique_identifiers=unique_identifiers_list,
+                        custom_mappings_path=custom_mapping_path,
+                        impute_strategy=impute_strategy,
+                        output_dir=output_dir,
+                        target_ontologies=ontologies_list
+                    )
+                except Exception as e:
+                    st.error(f"An error occurred during processing: {str(e)}")
+                    log_activity(f"Batch processing error: {str(e)}", level='error')
+                    return
             
             # Display results
             st.header("Processing Results")

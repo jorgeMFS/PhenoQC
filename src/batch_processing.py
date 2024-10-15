@@ -1,14 +1,14 @@
 import concurrent.futures
 import os
 import json
-import pandas as pd 
+import pandas as pd
 from input import load_data
-from validation import DataValidator  # Updated import
-from mapping import fetch_hpo_terms, map_to_hpo, load_custom_mappings
+from validation import DataValidator
+from mapping import OntologyMapper
 from missing_data import detect_missing_data, impute_missing_data
 from reporting import generate_qc_report, create_visual_summary
 from logging_module import log_activity
-from configuration import load_config  # Ensure configuration module is imported
+from configuration import load_config
 
 def get_file_type(file_path):
     _, ext = os.path.splitext(file_path.lower())
@@ -20,8 +20,8 @@ def get_file_type(file_path):
         return 'json'
     else:
         raise ValueError(f"Unsupported file extension: {ext}")
-        
-def process_file(file_path, schema, hpo_terms, unique_identifiers, custom_mappings=None, impute_strategy='mean', output_dir='reports'):
+
+def process_file(file_path, schema, ontology_mapper, unique_identifiers, custom_mappings=None, impute_strategy='mean', output_dir='reports', target_ontologies=None):
     file_type = get_file_type(file_path)
     log_activity(f"Processing file: {file_path}")
     print(f"Processing file: {file_path}")
@@ -31,7 +31,7 @@ def process_file(file_path, schema, hpo_terms, unique_identifiers, custom_mappin
     try:
         data = load_data(file_path, file_type)
         log_activity("Data loaded successfully.")
-        
+
         df = pd.DataFrame(data) if isinstance(data, list) else data
 
         # Initialize DataValidator
@@ -55,80 +55,130 @@ def process_file(file_path, schema, hpo_terms, unique_identifiers, custom_mappin
         # Check for Conflicting Records
         conflicts = validation_results["Conflicting Records"]
         if not conflicts.empty:
-            log_activity(f"{file_path}: Conflicting records detected.", level='warning')
+            log_activity(f"{file_path}: Conflicting records found.", level='warning')
             # Optionally, handle conflicts as needed
 
-        # Check for Integrity Issues
+        # Integrity Issues
         integrity_issues = validation_results["Integrity Issues"]
         if not integrity_issues.empty:
-            log_activity(f"{file_path}: Integrity issues found.", level='warning')
+            log_activity(f"{file_path}: Integrity issues detected.", level='warning')
             # Optionally, handle integrity issues as needed
 
-        # Ontology mapping
+        # Ontology Mapping
         if 'Phenotype' in df.columns:
-            df['HPO_ID'] = df['Phenotype'].apply(lambda x: map_to_hpo(x, hpo_terms, custom_mappings))
-            unmapped = df[df['HPO_ID'].isnull()]
-            if not unmapped.empty:
-                log_activity(f"Unmapped phenotypes in {file_path}: {unmapped['Phenotype'].unique()}", level='warning')
+            phenotypic_terms = df['Phenotype'].unique().tolist()
+            mappings = ontology_mapper.map_terms(phenotypic_terms, target_ontologies, custom_mappings)
 
-        # Missing data handling
+            # Add mapped IDs to the DataFrame
+            for ontology_id in target_ontologies or [ontology_mapper.default_ontology]:
+                mapped_column = f"{ontology_id}_ID"
+                df[mapped_column] = df['Phenotype'].apply(lambda x: mappings.get(x, {}).get(ontology_id))
+
+        else:
+            log_activity(f"{file_path}: 'Phenotype' column not found.", level='error')
+            return {'file': file_path, 'status': 'Invalid', 'error': "'Phenotype' column not found."}
+
+        # Missing Data Handling
         missing = detect_missing_data(df)
         if not missing.empty:
-            if impute_strategy:
-                df = impute_missing_data(df, strategy=impute_strategy)
-                log_activity(f"{file_path}: Missing data imputed using {impute_strategy} strategy.")
-            else:
-                log_activity(f"{file_path}: Missing data detected: {missing.to_dict()}", level='warning')
+            df = impute_missing_data(df, strategy=impute_strategy)
+            log_activity(f"{file_path}: Missing data imputed using '{impute_strategy}' strategy.")
 
-        # Generate report
-        report_file = os.path.join(output_dir, os.path.splitext(os.path.basename(file_path))[0] + "_report.pdf")
-        generate_qc_report(validation_results, missing, report_file)  # Ensure parameters match
-        create_visual_summary(missing, os.path.join(output_dir, os.path.splitext(os.path.basename(file_path))[0] + "_missing_data.png"))
-        log_activity(f"{file_path}: Report generated at {report_file}")
+        # Generate Reports
+        report_path = os.path.join(output_dir, os.path.basename(file_path).split('.')[0] + "_report.pdf")
+        generate_qc_report(validation_results, missing, report_path)
+        create_visual_summary(missing, output_image_path=os.path.join(output_dir, os.path.basename(file_path).split('.')[0] + "_missing_data.png"))
+        log_activity(f"{file_path}: QC report generated at {report_path}.")
 
-        # Save the cleaned DataFrame if needed
+        # Save the cleaned DataFrame
         output_data_file = os.path.join(output_dir, os.path.basename(file_path))
         df.to_csv(output_data_file, index=False)
         log_activity(f"{file_path}: Processed data saved at {output_data_file}")
 
         return {'file': file_path, 'status': 'Processed', 'error': None}
-    
+
     except Exception as e:
         log_activity(f"Error processing file {file_path}: {str(e)}", level='error')
         return {'file': file_path, 'status': 'Error', 'error': str(e)}
-        
-def batch_process(files, schema_path, hpo_terms_path, unique_identifiers, custom_mappings_path=None, impute_strategy='mean', output_dir='reports'):
+
+def collect_files(inputs, recursive=True):
     """
-    Processes multiple phenotypic data files, each potentially of different types.
-    
+    Collects all supported files from the provided input paths.
+
+    Args:
+        inputs (list): List of file or directory paths.
+        recursive (bool): Whether to scan directories recursively.
+
+    Returns:
+        list: List of file paths.
+    """
+    supported_extensions = {'.csv', '.tsv', '.json'}
+    collected_files = []
+
+    for input_path in inputs:
+        if os.path.isfile(input_path):
+            ext = os.path.splitext(input_path)[1].lower()
+            if ext in supported_extensions:
+                collected_files.append(input_path)
+        elif os.path.isdir(input_path):
+            for root, dirs, files in os.walk(input_path):
+                for file in files:
+                    ext = os.path.splitext(file)[1].lower()
+                    if ext in supported_extensions:
+                        collected_files.append(os.path.join(root, file))
+                if not recursive:
+                    break
+        else:
+            log_activity(f"Input path '{input_path}' is neither a file nor a directory.", level='warning')
+
+    return collected_files
+
+def batch_process(files, schema_path, config_path, unique_identifiers, custom_mappings_path=None, impute_strategy='mean', output_dir='reports', target_ontologies=None):
+    """
+    Processes multiple phenotypic data files.
+
     Args:
         files (list): List of file paths to process.
         schema_path (str): Path to the JSON schema file.
-        hpo_terms_path (str): Path to the HPO terms JSON file.
+        config_path (str): Path to the config.yaml file.
         unique_identifiers (list): List of unique identifier columns.
         custom_mappings_path (str, optional): Path to the custom mapping JSON file.
         impute_strategy (str): Strategy for imputing missing data.
         output_dir (str): Directory to save reports and processed data.
-    
+        target_ontologies (list, optional): List of ontologies to map to.
+
     Returns:
         list: List of results for each file.
     """
     # Load schema
     with open(schema_path, 'r') as f:
         schema = json.load(f)
-    
-    # Fetch HPO terms
-    hpo_terms = fetch_hpo_terms(local_file_path=hpo_terms_path)
-    
+
+    # Initialize OntologyMapper
+    ontology_mapper = OntologyMapper(config_path=config_path)
+
     # Load custom mappings if provided
-    custom_mappings = load_custom_mappings(custom_mappings_path) if custom_mappings_path else None
-    
+    custom_mappings = None
+    if custom_mappings_path and os.path.exists(custom_mappings_path):
+        with open(custom_mappings_path, 'r') as f:
+            custom_mappings = json.load(f)
+
     # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)
-    
+
     results = []
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = [executor.submit(process_file, file_path, schema, hpo_terms, unique_identifiers, custom_mappings, impute_strategy, output_dir) for file_path in files]
+        futures = [executor.submit(
+            process_file,
+            file_path,
+            schema,
+            ontology_mapper,
+            unique_identifiers,
+            custom_mappings,
+            impute_strategy,
+            output_dir,
+            target_ontologies
+        ) for file_path in files]
         for future in concurrent.futures.as_completed(futures):
             result = future.result()
             results.append(result)
@@ -138,5 +188,5 @@ def batch_process(files, schema_path, hpo_terms_path, unique_identifiers, custom
                 print(f"⚠️ {os.path.basename(result['file'])} failed validation: {result['error']}")
             else:
                 print(f"❌ {os.path.basename(result['file'])} encountered an error: {result['error']}")
-    
+
     return results

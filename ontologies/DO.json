@@ -1,0 +1,27 @@
+[
+    {
+      "id": "DOID:4",
+      "name": "disease",
+      "synonyms": ["disorder"]
+    },
+    {
+      "id": "DOID:630",
+      "name": "genetic disease",
+      "synonyms": ["hereditary disorder"]
+    },
+    {
+      "id": "DOID:0050117",
+      "name": "disease by infectious agent",
+      "synonyms": ["infectious disease"]
+    },
+    {
+      "id": "DOID:0060037",
+      "name": "developmental disorder of mental health",
+      "synonyms": ["neurodevelopmental disorder"]
+    },
+    {
+      "id": "DOID:0080015",
+      "name": "psychiatric disorder",
+      "synonyms": ["mental illness"]
+    }
+  ]

@@ -1,0 +1,12 @@
+ontologies:
+  HPO:
+    name: Human Phenotype Ontology
+    file: ontologies/HPO.json
+  DO:
+    name: Disease Ontology
+    file: ontologies/DO.json
+  MPO:
+    name: Mammalian Phenotype Ontology
+    file: ontologies/MPO.json
+
+default_ontology: HPO

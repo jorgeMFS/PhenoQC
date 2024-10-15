@@ -1,0 +1,27 @@
+[
+    {
+      "id": "MP:0000001",
+      "name": "mammalian phenotype",
+      "synonyms": ["mouse phenotype"]
+    },
+    {
+      "id": "MP:0005386",
+      "name": "behavior/neurological phenotype",
+      "synonyms": ["behavioral/neurological phenotype"]
+    },
+    {
+      "id": "MP:0005385",
+      "name": "cardiovascular system phenotype",
+      "synonyms": ["cardiovascular phenotype"]
+    },
+    {
+      "id": "MP:0005381",
+      "name": "digestive/alimentary phenotype",
+      "synonyms": ["gastrointestinal phenotype"]
+    },
+    {
+      "id": "MP:0005382",
+      "name": "craniofacial phenotype",
+      "synonyms": ["head and face phenotype"]
+    }
+  ]
