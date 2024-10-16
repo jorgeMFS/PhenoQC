@@ -10,3 +10,9 @@ ontologies:
     file: ontologies/MPO.json
 
 default_ontology: HPO
+
+imputation_strategies:
+  Age: mean
+  Gender: mode
+  Height: median
+  Phenotype: mode

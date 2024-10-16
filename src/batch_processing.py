@@ -5,7 +5,7 @@ import pandas as pd
 from input import load_data
 from validation import DataValidator
 from mapping import OntologyMapper
-from missing_data import detect_missing_data, impute_missing_data
+from missing_data import detect_missing_data, impute_missing_data, flag_missing_data_records
 from reporting import generate_qc_report, create_visual_summary
 from logging_module import log_activity
 from configuration import load_config
@@ -21,7 +21,17 @@ def get_file_type(file_path):
     else:
         raise ValueError(f"Unsupported file extension: {ext}")
 
-def process_file(file_path, schema, ontology_mapper, unique_identifiers, custom_mappings=None, impute_strategy='mean', output_dir='reports', target_ontologies=None):
+def process_file(
+    file_path,
+    schema,
+    ontology_mapper,
+    unique_identifiers,
+    custom_mappings=None,
+    impute_strategy='mean',
+    field_strategies=None,
+    output_dir='reports',
+    target_ontologies=None
+):
     file_type = get_file_type(file_path)
     log_activity(f"Processing file: {file_path}")
     print(f"Processing file: {file_path}")
@@ -45,6 +55,37 @@ def process_file(file_path, schema, ontology_mapper, unique_identifiers, custom_
             error_msg = "Format validation failed. Schema compliance issues detected."
             log_activity(f"{file_path}: {error_msg}", level='error')
             return {'file': file_path, 'status': 'Invalid', 'error': error_msg}
+
+        # Missing Data Handling
+        missing = detect_missing_data(df)
+        if not missing.empty:
+            # Flag records with missing data
+            df = flag_missing_data_records(df)
+            flagged_records_count = df['MissingDataFlag'].sum()
+            log_activity(f"{file_path}: {flagged_records_count} records flagged for missing data.")
+
+            # Save flagged records for manual review
+            flagged_records = df[df['MissingDataFlag']]
+            flagged_records_path = os.path.join(
+                output_dir, f"{os.path.splitext(os.path.basename(file_path))[0]}_flagged_records.csv"
+            )
+            flagged_records.to_csv(flagged_records_path, index=False)
+            log_activity(f"Flagged records saved to {flagged_records_path}.")
+
+            # Impute missing data
+            df = impute_missing_data(df, strategy=impute_strategy, field_strategies=field_strategies)
+            log_activity(
+                f"{file_path}: Missing data imputed using strategy '{impute_strategy}' "
+                f"with field-specific strategies: {field_strategies}"
+            )
+
+            # Recalculate MissingDataFlag after imputation
+            df = flag_missing_data_records(df)
+            flagged_records_count = df['MissingDataFlag'].sum()
+            log_activity(f"{file_path}: {flagged_records_count} records have missing data after imputation.")
+
+        else:
+            flagged_records_count = 0
 
         # Check for Duplicate Records
         duplicates = validation_results["Duplicate Records"]
@@ -78,16 +119,17 @@ def process_file(file_path, schema, ontology_mapper, unique_identifiers, custom_
             log_activity(f"{file_path}: 'Phenotype' column not found.", level='error')
             return {'file': file_path, 'status': 'Invalid', 'error': "'Phenotype' column not found."}
 
-        # Missing Data Handling
-        missing = detect_missing_data(df)
-        if not missing.empty:
-            df = impute_missing_data(df, strategy=impute_strategy)
-            log_activity(f"{file_path}: Missing data imputed using '{impute_strategy}' strategy.")
-
         # Generate Reports
-        report_path = os.path.join(output_dir, os.path.basename(file_path).split('.')[0] + "_report.pdf")
-        generate_qc_report(validation_results, missing, report_path)
-        create_visual_summary(missing, output_image_path=os.path.join(output_dir, os.path.basename(file_path).split('.')[0] + "_missing_data.png"))
+        report_path = os.path.join(
+            output_dir, f"{os.path.splitext(os.path.basename(file_path))[0]}_report.pdf"
+        )
+        generate_qc_report(validation_results, missing, flagged_records_count, report_path)
+        create_visual_summary(
+            missing,
+            output_image_path=os.path.join(
+                output_dir, f"{os.path.splitext(os.path.basename(file_path))[0]}_missing_data.png"
+            )
+        )
         log_activity(f"{file_path}: QC report generated at {report_path}.")
 
         # Save the cleaned DataFrame
@@ -133,26 +175,25 @@ def collect_files(inputs, recursive=True):
 
     return collected_files
 
-def batch_process(files, schema_path, config_path, unique_identifiers, custom_mappings_path=None, impute_strategy='mean', output_dir='reports', target_ontologies=None):
-    """
-    Processes multiple phenotypic data files.
-
-    Args:
-        files (list): List of file paths to process.
-        schema_path (str): Path to the JSON schema file.
-        config_path (str): Path to the config.yaml file.
-        unique_identifiers (list): List of unique identifier columns.
-        custom_mappings_path (str, optional): Path to the custom mapping JSON file.
-        impute_strategy (str): Strategy for imputing missing data.
-        output_dir (str): Directory to save reports and processed data.
-        target_ontologies (list, optional): List of ontologies to map to.
-
-    Returns:
-        list: List of results for each file.
-    """
+def batch_process(
+    files,
+    schema_path,
+    config_path,
+    unique_identifiers,
+    custom_mappings_path=None,
+    impute_strategy='mean',
+    output_dir='reports',
+    target_ontologies=None
+):
     # Load schema
     with open(schema_path, 'r') as f:
         schema = json.load(f)
+
+    # Load configuration
+    config = load_config(config_path)
+
+    # Extract field-specific imputation strategies from config
+    field_strategies = config.get('imputation_strategies', {})
 
     # Initialize OntologyMapper
     ontology_mapper = OntologyMapper(config_path=config_path)
@@ -168,17 +209,20 @@ def batch_process(files, schema_path, config_path, unique_identifiers, custom_ma
 
     results = []
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = [executor.submit(
-            process_file,
-            file_path,
-            schema,
-            ontology_mapper,
-            unique_identifiers,
-            custom_mappings,
-            impute_strategy,
-            output_dir,
-            target_ontologies
-        ) for file_path in files]
+        futures = [
+            executor.submit(
+                process_file,
+                file_path,
+                schema,
+                ontology_mapper,
+                unique_identifiers,
+                custom_mappings,
+                impute_strategy,
+                field_strategies,
+                output_dir,
+                target_ontologies
+            ) for file_path in files
+        ]
         for future in concurrent.futures.as_completed(futures):
             result = future.result()
             results.append(result)
