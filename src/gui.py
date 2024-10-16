@@ -1,10 +1,15 @@
 import streamlit as st
-from batch_processing import batch_process, collect_files
+from batch_processing import process_file  # Access the process_file function directly
 import os
 import tempfile
 import zipfile
 from configuration import load_config
 from logging_module import setup_logging, log_activity
+from mapping import OntologyMapper
+import pandas as pd
+from reporting import create_visual_summary, generate_qc_report
+import json
+import io
 
 def extract_zip(zip_path, extract_to):
     """
@@ -52,16 +57,26 @@ def main():
     # Setup logging
     setup_logging()
 
+    # Configure Streamlit page
+    st.set_page_config(page_title="PhenoQC - Phenotypic Data QC Toolkit", layout="wide")
     st.title("PhenoQC - Phenotypic Data Quality Control Toolkit")
     
+    # Sidebar Configuration
     st.sidebar.header("Configuration")
     schema_file = st.sidebar.file_uploader("Upload JSON Schema", type=["json"])
     config_file = st.sidebar.file_uploader("Upload Configuration (config.yaml)", type=["yaml", "yml"])
     custom_mapping_file = st.sidebar.file_uploader("Upload Custom Mapping (Optional)", type=["json"])
-    impute_strategy = st.sidebar.selectbox("Imputation Strategy", options=['mean', 'median'])
-    unique_identifiers = st.sidebar.text_input("Unique Identifier Columns (comma-separated)", help="Enter column names separated by commas, e.g., SampleID,PatientID")
-    ontologies = st.sidebar.text_input("Ontologies to Map (space-separated)", help="Enter ontology IDs separated by space, e.g., HPO DO MPO")
+    impute_strategy = st.sidebar.selectbox("Imputation Strategy", options=['mean', 'median', 'mode', 'none'])
+    unique_identifiers = st.sidebar.text_input(
+        "Unique Identifier Columns (comma-separated)",
+        help="Enter column names separated by commas, e.g., SampleID,PatientID"
+    )
+    ontologies = st.sidebar.text_input(
+        "Ontologies to Map (space-separated)",
+        help="Enter ontology IDs separated by space, e.g., HPO DO MPO"
+    )
     
+    # Sidebar Data Ingestion Options
     st.sidebar.header("Data Ingestion")
     data_source_option = st.sidebar.radio("Select Data Source", options=['Upload Files', 'Upload Directory (ZIP)'])
     
@@ -107,7 +122,7 @@ def main():
         # Prepare ontologies list
         ontologies_list = [ont.strip() for ont in ontologies.split() if ont.strip()]
         if not ontologies_list:
-            ontologies_list = None  # Defaults in batch_process
+            ontologies_list = None  # Defaults in process_file
 
         # Save uploaded files to a temporary directory
         with tempfile.TemporaryDirectory() as tmpdirname:
@@ -144,71 +159,137 @@ def main():
                     for file in os.listdir(extract_dir):
                         file_path = os.path.join(extract_dir, file)
                         if os.path.isfile(file_path):
-                            ext = os.path.splitext(file_path)[1].lower()
+                            ext = os.path.splitext(file)[1].lower()
                             if ext in supported_extensions:
                                 input_paths.append(file_path)
                 
                 if not input_paths:
                     st.error("No supported data files found in the uploaded archive.")
                     return
-            
+                
             # Save schema and config files
             schema_path = os.path.join(tmpdirname, "schema.json")
             with open(schema_path, 'wb') as f:
                 f.write(schema_file.getbuffer())
-            
+                
             config_path = os.path.join(tmpdirname, "config.yaml")
             with open(config_path, 'wb') as f:
                 f.write(config_file.getbuffer())
-            
+                
             # Save custom mappings if provided
-            custom_mapping_path = None
+            custom_mappings = None
             if custom_mapping_file:
-                custom_mapping_path = os.path.join(tmpdirname, "custom_mapping.json")
-                with open(custom_mapping_path, 'wb') as f:
+                custom_mappings_path = os.path.join(tmpdirname, "custom_mapping.json")
+                with open(custom_mappings_path, 'wb') as f:
                     f.write(custom_mapping_file.getbuffer())
+                with open(custom_mappings_path, 'r') as f:
+                    custom_mappings = json.load(f)
+            
+            # Load schema and configuration
+            with open(schema_path, 'r') as f:
+                schema = json.load(f)
+            
+            config = load_config(config_path)
+            field_strategies = config.get('imputation_strategies', {})
+            
+            # Initialize OntologyMapper
+            ontology_mapper = OntologyMapper(config_path=config_path)
             
             # Define output directory
             output_dir = os.path.join(tmpdirname, "reports")
             os.makedirs(output_dir, exist_ok=True)
             
-            # Run batch processing
-            with st.spinner("Processing files..."):
-                try:
-                    results = batch_process(
-                        files=input_paths,
-                        schema_path=schema_path,
-                        config_path=config_path,  # Corrected to config.yaml
-                        unique_identifiers=unique_identifiers_list,
-                        custom_mappings_path=custom_mapping_path,
-                        impute_strategy=impute_strategy,
-                        output_dir=output_dir,
-                        target_ontologies=ontologies_list
-                    )
-                except Exception as e:
-                    st.error(f"An error occurred during processing: {str(e)}")
-                    log_activity(f"Batch processing error: {str(e)}", level='error')
-                    return
-            
-            # Display results
+            total_files = len(input_paths)
+            progress_bar = st.progress(0)
+            current_progress = 0
+            progress_increment = 100 / total_files if total_files > 0 else 0
+
             st.header("Processing Results")
-            for result in results:
-                file = os.path.basename(result['file'])
-                if result['status'] == 'Processed':
-                    st.success(f"{file} processed successfully.")
-                    report_path = os.path.join(output_dir, os.path.splitext(file)[0] + "_report.pdf")
-                    if os.path.exists(report_path):
-                        with open(report_path, 'rb') as f:
+            
+            # Create tabs for each file
+            tab_labels = [os.path.basename(file_path) for file_path in input_paths]
+            tabs = st.tabs(tab_labels) if tab_labels else []
+
+            for idx, (file_path, tab) in enumerate(zip(input_paths, tabs)):
+                file_name = os.path.basename(file_path)
+                with tab:
+                    st.subheader(f"Processing `{file_name}`")
+                    log_activity(f"Processing file: {file_name}")
+
+                    try:
+                        # Process the file
+                        result = process_file(
+                            file_path=file_path,
+                            schema=schema,
+                            ontology_mapper=ontology_mapper,
+                            unique_identifiers=unique_identifiers_list,
+                            custom_mappings=custom_mappings,
+                            impute_strategy=impute_strategy,
+                            field_strategies=field_strategies,
+                            output_dir=output_dir,
+                            target_ontologies=ontologies_list
+                        )
+
+                        if result['status'] == 'Processed':
+                            st.success(f"`{file_name}` processed successfully.")
+
+                            # Read processed data
+                            processed_data_path = os.path.join(output_dir, file_name)
+                            try:
+                                df = pd.read_csv(processed_data_path)
+                            except Exception as e:
+                                st.error(f"Failed to read processed data for `{file_name}`: {str(e)}")
+                                log_activity(f"Failed to read processed data for {file_name}: {str(e)}", level='error')
+                                continue
+
+                            # Display visual summaries
+                            st.subheader("Visual Summaries")
+                            figs = create_visual_summary(df, output_image_path=None)
+                            for fig_idx, fig in enumerate(figs):
+                                st.plotly_chart(fig, use_container_width=True, key=f"{file_name}_plot_{fig_idx}")
+
+                            # Generate QC report in memory
+                            report_buffer = io.BytesIO()
+                            generate_qc_report(
+                                validation_results=result.get('validation_results', {}),
+                                missing_data=result.get('missing_data', pd.Series()),
+                                flagged_records_count=result.get('flagged_records_count', 0),
+                                output_path_or_buffer=report_buffer
+                            )
+                            report_buffer.seek(0)
+
+                            # Download buttons
                             st.download_button(
-                                label=f"Download Report for {file}",
-                                data=f,
-                                file_name=os.path.basename(report_path),
+                                label=f"Download QC Report for `{file_name}` (PDF)",
+                                data=report_buffer,
+                                file_name=f"{os.path.splitext(file_name)[0]}_qc_report.pdf",
                                 mime='application/pdf'
                             )
-                elif result['status'] == 'Invalid':
-                    st.warning(f"{file} failed validation: {result['error']}")
-                else:
-                    st.error(f"{file} encountered an error: {result['error']}")
+
+                            st.download_button(
+                                label=f"Download Processed Data for `{file_name}` (CSV)",
+                                data=df.to_csv(index=False).encode('utf-8'),
+                                file_name=f"processed_{file_name}",
+                                mime='text/csv'
+                            )
+
+                        elif result['status'] == 'Invalid':
+                            st.warning(f"`{file_name}` failed validation: {result['error']}")
+                        else:
+                            st.error(f"`{file_name}` encountered an error: {result['error']}")
+
+                    except Exception as e:
+                        st.error(f"An error occurred while processing `{file_name}`: {str(e)}")
+                        log_activity(f"Error processing file {file_path}: {str(e)}", level='error')
+
+                    # Update progress bar
+                    current_progress += progress_increment
+                    progress_bar.progress(int(current_progress))
+
+                    # Separator within tab
+                    st.markdown("---")
+
+            st.success("All files have been processed.")
 
 if __name__ == '__main__':
     main()

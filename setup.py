@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='PhenoQC',
-    version='0.1.1',
+    version='0.1.2',
     packages=find_packages(where='src'),
     package_dir={'': 'src'},
     install_requires=[
@@ -14,7 +14,8 @@ setup(
         'streamlit',
         'pyyaml',
         'watchdog',
-        'kaleido>=0.1.0'
+        'kaleido>=0.1.0',
+        'tqdm'
     ],
     entry_points={
         'console_scripts': [
