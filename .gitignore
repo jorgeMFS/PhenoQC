@@ -53,3 +53,5 @@ Thumbs.db
 # Other miscellaneous
 *.bak
 *.backup
+concatenate_src_files.py
+concatenated_src.txt

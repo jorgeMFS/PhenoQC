@@ -4,20 +4,32 @@ from typing import List, Dict, Any
 from jsonschema import validate, ValidationError
 
 class DataValidator:
-    def __init__(self, df: pd.DataFrame, schema: Dict[str, Any], unique_identifiers: List[str]):
+    def __init__(
+        self,
+        df: pd.DataFrame,
+        schema: Dict[str, Any],
+        unique_identifiers: List[str],
+        reference_data: pd.DataFrame = None,
+        reference_columns: List[str] = None
+    ):
         """
-        Initializes the DataValidator with the dataset, schema, and unique identifiers.
+        Initializes the DataValidator with the dataset, schema, unique identifiers, and reference data.
 
         :param df: pandas DataFrame containing the phenotypic data.
         :param schema: JSON schema dict to validate the data against.
         :param unique_identifiers: List of column names that uniquely identify a record.
+        :param reference_data: pandas DataFrame containing the reference genomic records.
+        :param reference_columns: List of columns in df to check against reference_data.
         """
         self.df = df
         self.schema = schema
         self.unique_identifiers = unique_identifiers
+        self.reference_data = reference_data
+        self.reference_columns = reference_columns
         self.duplicate_records = pd.DataFrame()
         self.conflicting_records = pd.DataFrame()
         self.integrity_issues = pd.DataFrame()
+        self.referential_integrity_issues = pd.DataFrame()
 
     def validate_format(self) -> bool:
         """
@@ -131,12 +143,12 @@ class DataValidator:
             # 3. Check additional constraints like 'minimum'
             if 'minimum' in props:
                 min_value = props['minimum']
-                
+
                 # Only perform 'minimum' check if the column is of a numeric type
                 if expected_type in ['number', 'integer']:
                     # Convert column to numeric, coercing errors to NaN
                     numeric_series = pd.to_numeric(self.df[column], errors='coerce')
-                    
+
                     # Identify rows where conversion failed (i.e., non-numeric entries)
                     non_numeric = self.df[column].where(numeric_series.isna())
                     if not non_numeric.dropna().empty:
@@ -148,9 +160,32 @@ class DataValidator:
                     if not below_min.empty:
                         integrity_issues = pd.concat([integrity_issues, below_min])
 
-        # **Modify the following line to append new integrity issues instead of overwriting**
+        # Append new integrity issues
         self.integrity_issues = pd.concat([self.integrity_issues, integrity_issues]).drop_duplicates()
+
+        # 4. Referential Integrity Check
+        if self.reference_data is not None and self.reference_columns is not None:
+            self.check_referential_integrity()
+
         return self.integrity_issues
+
+    def check_referential_integrity(self):
+        """
+        Checks if the data references exist in the reference dataset.
+
+        Populates self.referential_integrity_issues with records that have missing references.
+        """
+        # For each reference column, check if the values exist in the reference data
+        for column in self.reference_columns:
+            if column in self.df.columns and column in self.reference_data.columns:
+                missing_refs = self.df[~self.df[column].isin(self.reference_data[column])]
+                if not missing_refs.empty:
+                    self.referential_integrity_issues = pd.concat([self.referential_integrity_issues, missing_refs])
+            else:
+                print(f"Column '{column}' not found in both data and reference data.")
+
+        # Remove duplicates
+        self.referential_integrity_issues = self.referential_integrity_issues.drop_duplicates()
 
     def run_all_validations(self) -> Dict[str, Any]:
         """
@@ -167,16 +202,21 @@ class DataValidator:
         # Detect conflicts
         conflicts = self.detect_conflicts()
 
-        # Verify integrity
+        # Verify integrity (includes referential integrity if applicable)
         verify_integrity_issues = self.verify_integrity()
 
         # Combine all integrity issues (from format validation and verify_integrity)
         all_integrity_issues = self.integrity_issues.copy()
 
+        # Include referential integrity issues
+        if not self.referential_integrity_issues.empty:
+            all_integrity_issues = pd.concat([all_integrity_issues, self.referential_integrity_issues]).drop_duplicates()
+
         results = {
             "Format Validation": format_valid,
             "Duplicate Records": duplicates,
             "Conflicting Records": conflicts,
-            "Integrity Issues": all_integrity_issues
+            "Integrity Issues": all_integrity_issues,
+            "Referential Integrity Issues": self.referential_integrity_issues
         }
         return results
