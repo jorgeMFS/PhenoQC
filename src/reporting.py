@@ -2,48 +2,120 @@ import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
 from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, PageBreak
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import inch
 import os
 import io
 
-def generate_qc_report(validation_results, missing_data, flagged_records_count, output_path_or_buffer):
+def generate_qc_report(validation_results, missing_data, flagged_records_count, mapping_success_rates, visualization_images, output_path_or_buffer, report_format='pdf'):
     """
-    Generates a PDF quality control report.
+    Generates a quality control report.
 
     Args:
         validation_results (dict): Results from schema validation.
         missing_data (pd.Series): Series with counts of missing data per column.
         flagged_records_count (int): Number of records flagged for missing data.
-        output_path_or_buffer (str or BytesIO): Path or buffer to save the PDF report.
+        mapping_success_rates (dict): Ontology mapping success rates.
+        visualization_images (list): List of paths to visualization images.
+        output_path_or_buffer (str or BytesIO): Path or buffer to save the report.
+        report_format (str): Format of the report ('pdf' or 'md').
     """
-    if isinstance(output_path_or_buffer, str):
-        c = canvas.Canvas(output_path_or_buffer, pagesize=letter)
+    if report_format == 'pdf':
+        # Generate PDF report using ReportLab Platypus
+        styles = getSampleStyleSheet()
+        story = []
+        
+        # Title
+        story.append(Paragraph("PhenoQC Quality Control Report", styles['Title']))
+        story.append(Spacer(1, 12))
+        
+        # Schema Validation Results
+        story.append(Paragraph("Schema Validation Results:", styles['Heading2']))
+        for key, value in validation_results.items():
+            story.append(Paragraph(f"{key}: {value}", styles['Normal']))
+        story.append(Spacer(1, 12))
+        
+        # Missing Data Summary
+        story.append(Paragraph("Missing Data Summary:", styles['Heading2']))
+        for column, count in missing_data.items():
+            story.append(Paragraph(f"{column}: {count} missing values", styles['Normal']))
+        story.append(Spacer(1, 12))
+        
+        # Records Flagged for Missing Data
+        story.append(Paragraph(f"Records Flagged for Missing Data: {flagged_records_count}", styles['Normal']))
+        story.append(Spacer(1, 12))
+        
+        # Ontology Mapping Success Rates
+        story.append(Paragraph("Ontology Mapping Success Rates:", styles['Heading2']))
+        for ontology_id, stats in mapping_success_rates.items():
+            story.append(Paragraph(f"{ontology_id}:", styles['Heading3']))
+            story.append(Paragraph(f"Total Terms: {stats['total_terms']}", styles['Normal']))
+            story.append(Paragraph(f"Mapped Terms: {stats['mapped_terms']}", styles['Normal']))
+            story.append(Paragraph(f"Success Rate: {stats['success_rate']:.2f}%", styles['Normal']))
+            story.append(Spacer(1, 12))
+        
+        # Visualizations
+        story.append(Paragraph("Visualizations:", styles['Heading2']))
+        for image_path in visualization_images:
+            # Ensure the image exists before adding
+            if os.path.exists(image_path):
+                img = Image(image_path, width=6*inch, height=4*inch)
+                story.append(img)
+                story.append(Spacer(1, 12))
+            else:
+                story.append(Paragraph(f"Image not found: {image_path}", styles['Normal']))
+        
+        # Build the PDF
+        if isinstance(output_path_or_buffer, str):
+            doc = SimpleDocTemplate(output_path_or_buffer, pagesize=letter)
+        else:
+            doc = SimpleDocTemplate(output_path_or_buffer, pagesize=letter)
+        doc.build(story)
+    elif report_format == 'md':
+        # Generate Markdown report
+        md_lines = []
+        md_lines.append("# PhenoQC Quality Control Report\n")
+        
+        # Schema Validation Results
+        md_lines.append("## Schema Validation Results")
+        for key, value in validation_results.items():
+            md_lines.append(f"- **{key}**: {value}")
+        md_lines.append("")
+        
+        # Missing Data Summary
+        md_lines.append("## Missing Data Summary")
+        for column, count in missing_data.items():
+            md_lines.append(f"- **{column}**: {count} missing values")
+        md_lines.append("")
+        
+        # Records Flagged for Missing Data
+        md_lines.append(f"**Records Flagged for Missing Data**: {flagged_records_count}\n")
+        
+        # Ontology Mapping Success Rates
+        md_lines.append("## Ontology Mapping Success Rates")
+        for ontology_id, stats in mapping_success_rates.items():
+            md_lines.append(f"### {ontology_id}")
+            md_lines.append(f"- **Total Terms**: {stats['total_terms']}")
+            md_lines.append(f"- **Mapped Terms**: {stats['mapped_terms']}")
+            md_lines.append(f"- **Success Rate**: {stats['success_rate']:.2f}%")
+            md_lines.append("")
+        
+        # Visualizations
+        md_lines.append("## Visualizations")
+        for image_path in visualization_images:
+            image_filename = os.path.basename(image_path)
+            md_lines.append(f"![{image_filename}]({image_filename})")
+            md_lines.append("")
+        
+        # Write the markdown content to the file or buffer
+        if isinstance(output_path_or_buffer, str):
+            with open(output_path_or_buffer, 'w') as f:
+                f.write('\n'.join(md_lines))
+        else:
+            output_path_or_buffer.write('\n'.join(md_lines).encode('utf-8'))
     else:
-        c = canvas.Canvas(output_path_or_buffer, pagesize=letter)
-
-    width, height = letter
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(50, height - 50, "PhenoQC Quality Control Report")
-
-    c.setFont("Helvetica", 12)
-    c.drawString(50, height - 80, "Schema Validation Results:")
-    y = height - 100
-    for key, value in validation_results.items():
-        c.drawString(60, y, f"{key}: {value}")
-        y -= 20
-
-    y -= 10
-    c.drawString(50, y, "Missing Data Summary:")
-    y -= 20
-    for column, count in missing_data.items():
-        c.drawString(60, y, f"{column}: {count} missing values")
-        y -= 20
-
-    y -= 10
-    c.drawString(50, y, f"Records Flagged for Missing Data: {flagged_records_count}")
-    y -= 20
-
-    c.save()
+        raise ValueError("Unsupported report format. Use 'pdf' or 'md'.")
 
 def create_visual_summary(df, output_image_path="visual_summary.html"):
     """

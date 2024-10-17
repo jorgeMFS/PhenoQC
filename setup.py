@@ -15,13 +15,24 @@ setup(
         'pyyaml',
         'watchdog',
         'kaleido>=0.1.0',
-        'tqdm'
+        'tqdm',
+        'Pillow',
     ],
+    extras_require={
+        'test': [
+            'pytest',
+            'unittest',
+        ],
+    },
     entry_points={
         'console_scripts': [
             'phenoqc=cli:main',
         ],
     },
+    package_data={
+        'phenoqc': ['*.json', '*.yaml'],
+    },
+    include_package_data=True,
     author='Jorge Miguel Ferreira da Silva',
     description='Phenotypic Data Quality Control Toolkit for Genomic Data Infrastructure (GDI)',
     long_description=open('README.md').read(),
@@ -31,6 +42,8 @@ setup(
         'Programming Language :: Python :: 3',
         'License :: OSI Approved :: MIT License',
         'Operating System :: OS Independent',
+        'Intended Audience :: Science/Research',
+        'Topic :: Scientific/Engineering :: Bio-Informatics',
     ],
     python_requires='>=3.6',
 )

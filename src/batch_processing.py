@@ -31,7 +31,8 @@ def process_file(
     impute_strategy='mean',
     field_strategies=None,
     output_dir='reports',
-    target_ontologies=None
+    target_ontologies=None,
+    report_format='pdf'   # New parameter
 ):
     file_type = get_file_type(file_path)
     log_activity(f"Processing file: {file_path}")
@@ -111,6 +112,19 @@ def process_file(
                     mapped_column = f"{ontology_id}_ID"
                     df[mapped_column] = df['Phenotype'].apply(lambda x: mappings.get(x, {}).get(ontology_id))
 
+                # Compute mapping success rates
+                mapping_success_rates = {}
+                for ontology_id in target_ontologies or [ontology_mapper.default_ontology]:
+                    mapped_column = f"{ontology_id}_ID"
+                    total_terms = len(df)
+                    mapped_terms = df[mapped_column].notnull().sum()
+                    success_rate = (mapped_terms / total_terms) * 100 if total_terms > 0 else 0
+                    mapping_success_rates[ontology_id] = {
+                        'total_terms': total_terms,
+                        'mapped_terms': mapped_terms,
+                        'success_rate': success_rate
+                    }
+
                 pbar.update(20)
             else:
                 log_activity(f"{file_path}: 'Phenotype' column not found.", level='error')
@@ -119,14 +133,24 @@ def process_file(
 
             # Generate Reports
             report_path = os.path.join(
-                output_dir, f"{os.path.splitext(os.path.basename(file_path))[0]}_report.pdf"
+                output_dir, f"{os.path.splitext(os.path.basename(file_path))[0]}_report.{report_format}"
             )
-            generate_qc_report(validation_results, missing, flagged_records_count, report_path)
-            create_visual_summary(
-                df,
-                output_image_path=os.path.join(
-                    output_dir, f"{os.path.splitext(os.path.basename(file_path))[0]}_visual_summary.html"
-                )
+            figs = create_visual_summary(df, output_image_path=None)
+            # Save visualizations as images
+            visualization_images = []
+            for idx, fig in enumerate(figs):
+                image_filename = f"{os.path.splitext(os.path.basename(file_path))[0]}_visual_{idx}.png"
+                image_path = os.path.join(output_dir, image_filename)
+                fig.write_image(image_path)
+                visualization_images.append(image_path)
+            generate_qc_report(
+                validation_results,
+                missing,
+                flagged_records_count,
+                mapping_success_rates,
+                visualization_images,
+                report_path,
+                report_format
             )
             log_activity(f"{file_path}: QC report generated at {report_path}.")
             pbar.update(10)
@@ -195,7 +219,8 @@ def batch_process(
     custom_mappings_path=None,
     impute_strategy='mean',
     output_dir='reports',
-    target_ontologies=None
+    target_ontologies=None,
+    report_format='pdf'   # New parameter
 ):
     # Load schema
     with open(schema_path, 'r') as f:
@@ -232,7 +257,8 @@ def batch_process(
                 impute_strategy,
                 field_strategies,
                 output_dir,
-                target_ontologies
+                target_ontologies,
+                report_format    # Pass the report format
             ): file_path for file_path in files
         }
         for future in tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Batch Processing"):
