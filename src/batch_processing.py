@@ -32,7 +32,8 @@ def process_file(
     field_strategies=None,
     output_dir='reports',
     target_ontologies=None,
-    report_format='pdf'   # New parameter
+    report_format='pdf',
+    chunksize=10000
 ):
     file_type = get_file_type(file_path)
     log_activity(f"Processing file: {file_path}")
@@ -41,70 +42,104 @@ def process_file(
     try:
         # Initialize progress bar for file processing
         with tqdm(total=100, desc=f"Processing {os.path.basename(file_path)}") as pbar:
-            data = load_data(file_path, file_type)
-            pbar.update(10)
-            log_activity("Data loaded successfully.")
+            data_iterator = load_data(file_path, file_type, chunksize=chunksize)
+            pbar.update(5)
+            log_activity("Data loading initiated.")
 
-            df = pd.DataFrame(data) if isinstance(data, list) else data
+            # Initialize accumulators for global statistics
+            validation_results = {
+                "Format Validation": True,
+                "Duplicate Records": pd.DataFrame(),
+                "Conflicting Records": pd.DataFrame(),
+                "Integrity Issues": pd.DataFrame(),
+                "Referential Integrity Issues": pd.DataFrame()
+            }
+            missing_counts = pd.Series(dtype=int)
+            total_records = 0
+            flagged_records_count = 0
+            phenotype_terms_set = set()
+            df_list = []  # To collect processed chunks
 
-            # Initialize DataValidator
-            validator = DataValidator(df, schema, unique_identifiers)
+            # Process chunks
+            chunk_progress = 80  # Percentage of progress allocated to chunk processing
+            chunk_number = 0
+            for chunk in data_iterator:
+                chunk_number += 1
+                chunk_total = len(chunk)
+                total_records += chunk_total
 
-            # Run all validations
-            validation_results = validator.run_all_validations()
-            pbar.update(20)
+                # Initialize DataValidator for the chunk
+                validator = DataValidator(chunk, schema, unique_identifiers)
 
-            # Check Format Validation
+                # Run format validation on the chunk
+                format_valid = validator.validate_format()
+                if not format_valid:
+                    validation_results["Format Validation"] = False
+                    validation_results["Integrity Issues"] = pd.concat(
+                        [validation_results["Integrity Issues"], validator.integrity_issues]
+                    )
+
+                # Identify duplicates in the chunk
+                duplicates = validator.identify_duplicates()
+                if not duplicates.empty:
+                    validation_results["Duplicate Records"] = pd.concat(
+                        [validation_results["Duplicate Records"], duplicates]
+                    )
+
+                # Detect conflicts in the chunk
+                conflicts = validator.detect_conflicts()
+                if not conflicts.empty:
+                    validation_results["Conflicting Records"] = pd.concat(
+                        [validation_results["Conflicting Records"], conflicts]
+                    )
+
+                # Verify integrity in the chunk
+                integrity_issues = validator.verify_integrity()
+                if not integrity_issues.empty:
+                    validation_results["Integrity Issues"] = pd.concat(
+                        [validation_results["Integrity Issues"], integrity_issues]
+                    )
+
+                # Missing Data Handling
+                missing = detect_missing_data(chunk)
+                missing_counts = missing_counts.add(missing, fill_value=0)
+
+                # Flag records with missing data
+                chunk = flag_missing_data_records(chunk)
+                chunk_flagged_count = chunk['MissingDataFlag'].sum()
+                flagged_records_count += chunk_flagged_count
+
+                # Impute missing data
+                chunk = impute_missing_data(chunk, strategy=impute_strategy, field_strategies=field_strategies)
+
+                # Recalculate MissingDataFlag after imputation
+                chunk = flag_missing_data_records(chunk)
+                chunk_flagged_count_after = chunk['MissingDataFlag'].sum()
+
+                # Collect phenotype terms
+                if 'Phenotype' in chunk.columns:
+                    phenotype_terms_set.update(chunk['Phenotype'].unique())
+
+                # Store processed chunk
+                df_list.append(chunk)
+
+                # Update progress
+                pbar.update(chunk_progress / max(1, total_records / chunksize))
+
+            pbar.update(5)  # Update remaining progress
+
             if not validation_results["Format Validation"]:
                 error_msg = "Format validation failed. Schema compliance issues detected."
                 log_activity(f"{file_path}: {error_msg}", level='error')
                 pbar.close()
                 return {'file': file_path, 'status': 'Invalid', 'error': error_msg}
 
-            # Missing Data Handling
-            missing = detect_missing_data(df)
-            pbar.update(10)
-            if not missing.empty:
-                # Flag records with missing data
-                df = flag_missing_data_records(df)
-                flagged_records_count = df['MissingDataFlag'].sum()
-                log_activity(f"{file_path}: {flagged_records_count} records flagged for missing data.")
-
-                # Save flagged records for manual review
-                flagged_records = df[df['MissingDataFlag']]
-                flagged_records_path = os.path.join(
-                    output_dir, f"{os.path.splitext(os.path.basename(file_path))[0]}_flagged_records.csv"
-                )
-                flagged_records.to_csv(flagged_records_path, index=False)
-                log_activity(f"Flagged records saved to {flagged_records_path}.")
-
-                # Impute missing data
-                df = impute_missing_data(df, strategy=impute_strategy, field_strategies=field_strategies)
-                log_activity(
-                    f"{file_path}: Missing data imputed using strategy '{impute_strategy}' "
-                    f"with field-specific strategies: {field_strategies}"
-                )
-
-                # Recalculate MissingDataFlag after imputation
-                df = flag_missing_data_records(df)
-                flagged_records_count = df['MissingDataFlag'].sum()
-                log_activity(f"{file_path}: {flagged_records_count} records have missing data after imputation.")
-                pbar.update(20)
-            else:
-                flagged_records_count = 0
-                pbar.update(20)
-
-            # Check for Duplicate Records
-            duplicates = validation_results["Duplicate Records"]
-            if not duplicates.empty:
-                log_activity(f"{file_path}: Duplicate records found.", level='warning')
-                # Optionally, handle duplicates as needed
-
-            pbar.update(10)
+            # Combine processed chunks into a single DataFrame
+            df = pd.concat(df_list, ignore_index=True)
 
             # Ontology Mapping
             if 'Phenotype' in df.columns:
-                phenotypic_terms = df['Phenotype'].unique().tolist()
+                phenotypic_terms = list(phenotype_terms_set)
                 mappings = ontology_mapper.map_terms(phenotypic_terms, target_ontologies, custom_mappings)
 
                 # Add mapped IDs to the DataFrame
@@ -125,7 +160,7 @@ def process_file(
                         'success_rate': success_rate
                     }
 
-                pbar.update(20)
+                pbar.update(5)
             else:
                 log_activity(f"{file_path}: 'Phenotype' column not found.", level='error')
                 pbar.close()
@@ -145,7 +180,7 @@ def process_file(
                 visualization_images.append(image_path)
             generate_qc_report(
                 validation_results,
-                missing,
+                missing_counts,
                 flagged_records_count,
                 mapping_success_rates,
                 visualization_images,
@@ -153,14 +188,14 @@ def process_file(
                 report_format
             )
             log_activity(f"{file_path}: QC report generated at {report_path}.")
-            pbar.update(10)
+            pbar.update(5)
 
             # Save the cleaned DataFrame
             output_data_file = os.path.join(output_dir, os.path.basename(file_path))
             df.to_csv(output_data_file, index=False)
             log_activity(f"{file_path}: Processed data saved at {output_data_file}")
 
-            pbar.update(10)
+            pbar.update(5)
             pbar.close()
 
             # After processing, collect necessary data
@@ -169,7 +204,7 @@ def process_file(
                 'status': 'Processed',
                 'error': None,
                 'validation_results': validation_results,
-                'missing_data': missing,
+                'missing_data': missing_counts,
                 'flagged_records_count': flagged_records_count
             }
 
@@ -220,7 +255,8 @@ def batch_process(
     impute_strategy='mean',
     output_dir='reports',
     target_ontologies=None,
-    report_format='pdf'   # New parameter
+    report_format='pdf',
+    chunksize=10000
 ):
     # Load schema
     with open(schema_path, 'r') as f:
@@ -258,7 +294,8 @@ def batch_process(
                 field_strategies,
                 output_dir,
                 target_ontologies,
-                report_format    # Pass the report format
+                report_format,
+                chunksize
             ): file_path for file_path in files
         }
         for future in tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Batch Processing"):

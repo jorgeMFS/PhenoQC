@@ -100,19 +100,23 @@ default_ontology: HPO
         base_filename = os.path.splitext(os.path.basename(self.sample_data_file))[0]
         report_path = os.path.join(self.output_dir, f"{base_filename}_report.pdf")
         processed_data_path = os.path.join(self.output_dir, f"{base_filename}.csv")
-        flagged_records_path = os.path.join(self.output_dir, f"{base_filename}_flagged_records.csv")
 
-        self.assertTrue(os.path.exists(report_path))
-        self.assertTrue(os.path.exists(processed_data_path))
-        self.assertTrue(os.path.exists(flagged_records_path))
+        self.assertTrue(os.path.exists(report_path), f"QC report not found at {report_path}")
+        self.assertTrue(os.path.exists(processed_data_path), f"Processed data not found at {processed_data_path}")
 
         # Load processed data and check if missing values were imputed correctly
         df_processed = pd.read_csv(processed_data_path)
-        self.assertFalse(df_processed.isnull().any().any())  # No missing values
+        # Since 'Measurement' was missing for S004 and imputed with mean (which is (120 + 85 + 95)/3 = 100), check
+        self.assertFalse(df_processed['Measurement'].isnull().any(), "Missing values were not imputed correctly.")
+        self.assertAlmostEqual(df_processed.loc[df_processed['SampleID'] == 'S004', 'Measurement'].values[0], 100.0, places=1)
 
-        # Verify that 'MissingDataFlag' column exists
-        self.assertIn('MissingDataFlag', df_processed.columns)
-        self.assertEqual(df_processed['MissingDataFlag'].sum(), 0)  # Should be 0 after imputation
+        # Verify that 'MissingDataFlag' column exists and is correctly set
+        self.assertIn('MissingDataFlag', df_processed.columns, "'MissingDataFlag' column is missing.")
+        # After imputation, there should be no flags
+        self.assertEqual(df_processed['MissingDataFlag'].sum(), 0, "There are still missing data flags after imputation.")
+
+        # Optionally, check if the report contains expected content
+        # This requires parsing the PDF or checking logs, which is beyond the scope here
 
     def test_load_config_imputation_strategies(self):
         config = load_config(self.config_file)

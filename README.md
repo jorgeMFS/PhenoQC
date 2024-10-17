@@ -35,7 +35,7 @@ pip install -e .
 Process a single file:
 
 ```bash
-phenoqc --input examples/samples/sample_data.csv \
+phenoqc --input examples/samples/sample_data.json \
 --output ./reports/ \
 --schema examples/schemas/pheno_schema.json \
 --config config.yaml \
