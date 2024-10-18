@@ -8,7 +8,7 @@ from reportlab.lib.units import inch
 import os
 import io
 
-def generate_qc_report(validation_results, missing_data, flagged_records_count, mapping_success_rates, visualization_images, output_path_or_buffer, report_format='pdf'):
+def generate_qc_report(validation_results, missing_data, flagged_records_count, mapping_success_rates, visualization_images,impute_strategy, output_path_or_buffer, report_format='pdf'):
     """
     Generates a quality control report.
 
@@ -18,6 +18,7 @@ def generate_qc_report(validation_results, missing_data, flagged_records_count, 
         flagged_records_count (int): Number of records flagged for missing data.
         mapping_success_rates (dict): Ontology mapping success rates.
         visualization_images (list): List of paths to visualization images.
+        impute_strategy (str): Imputation strategy used.
         output_path_or_buffer (str or BytesIO): Path or buffer to save the report.
         report_format (str): Format of the report ('pdf' or 'md').
     """
@@ -30,10 +31,16 @@ def generate_qc_report(validation_results, missing_data, flagged_records_count, 
         story.append(Paragraph("PhenoQC Quality Control Report", styles['Title']))
         story.append(Spacer(1, 12))
         
+        # Imputation Strategy
+        story.append(Paragraph("Imputation Strategy Used:", styles['Heading2']))
+        story.append(Paragraph(f"{impute_strategy.capitalize()}", styles['Normal']))
+        story.append(Spacer(1, 12))
+
         # Schema Validation Results
         story.append(Paragraph("Schema Validation Results:", styles['Heading2']))
         for key, value in validation_results.items():
             story.append(Paragraph(f"{key}: {value}", styles['Normal']))
+            
         story.append(Spacer(1, 12))
         
         # Missing Data Summary
@@ -76,6 +83,11 @@ def generate_qc_report(validation_results, missing_data, flagged_records_count, 
         # Generate Markdown report
         md_lines = []
         md_lines.append("# PhenoQC Quality Control Report\n")
+        
+        # Imputation Strategy
+        md_lines.append("## Imputation Strategy Used")
+        md_lines.append(f"{impute_strategy.capitalize()}\n")
+        md_lines.append("\n")
         
         # Schema Validation Results
         md_lines.append("## Schema Validation Results")

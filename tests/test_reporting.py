@@ -43,6 +43,8 @@ class TestReportingModule(unittest.TestCase):
         # Paths for the output report
         self.output_report_pdf = tempfile.mktemp(suffix='.pdf')
         self.output_report_md = tempfile.mktemp(suffix='.md')
+        # Define impute_strategy for tests
+        self.impute_strategy = 'mean' 
 
     def tearDown(self):
         # Clean up the created files after tests
@@ -68,6 +70,7 @@ class TestReportingModule(unittest.TestCase):
             self.flagged_records_count,
             self.mapping_success_rates,
             self.visualization_images,
+            self.impute_strategy,  # Added impute_strategy
             self.output_report_pdf,
             report_format='pdf'
         )
@@ -82,6 +85,7 @@ class TestReportingModule(unittest.TestCase):
             self.flagged_records_count,
             self.mapping_success_rates,
             self.visualization_images,
+            self.impute_strategy,  # Added impute_strategy
             self.output_report_md,
             report_format='md'
         )
@@ -92,8 +96,9 @@ class TestReportingModule(unittest.TestCase):
         """Test creating visual summaries with missing data."""
         # Convert Series to DataFrame with meaningful column names
         missing_data_df = self.missing_data.to_frame(name='MissingData')
-        create_visual_summary(missing_data_df, self.output_report_pdf)
-        self.assertTrue(os.path.exists(self.output_report_pdf), "Visual summary was not created.")
+        figs = create_visual_summary(missing_data_df, output_image_path=None)
+        self.assertIsInstance(figs, list, "Visual summaries should return a list of figures.")
+        self.assertGreater(len(figs), 0, "There should be at least one visual summary created.")
 
     def test_create_visual_summary_no_missing_data(self):
         """Test creating visual summaries with no missing data."""
@@ -102,8 +107,9 @@ class TestReportingModule(unittest.TestCase):
             "Age": [0],
             "Measurement": [0]
         })
-        create_visual_summary(no_missing_data, self.output_report_pdf)
-        self.assertTrue(os.path.exists(self.output_report_pdf), "Visual summary was not created even though there is no missing data.")
+        figs = create_visual_summary(no_missing_data, output_image_path=None)
+        self.assertIsInstance(figs, list, "Visual summaries should return a list of figures.")
+        self.assertGreater(len(figs), 0, "There should be at least one visual summary created.")
 
     def test_create_visual_summary_invalid_input(self):
         """Test creating visual summaries with invalid input type."""
@@ -135,6 +141,7 @@ class TestReportingModule(unittest.TestCase):
             flagged_records,
             self.mapping_success_rates,
             self.visualization_images,
+            self.impute_strategy,  # Added impute_strategy
             self.output_report_pdf,
             report_format='pdf'
         )
@@ -156,6 +163,7 @@ class TestReportingModule(unittest.TestCase):
             flagged_records,
             self.mapping_success_rates,
             self.visualization_images,
+            self.impute_strategy,  # Added impute_strategy
             self.output_report_md,
             report_format='md'
         )

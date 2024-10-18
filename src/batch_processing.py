@@ -184,6 +184,7 @@ def process_file(
                 flagged_records_count,
                 mapping_success_rates,
                 visualization_images,
+                impute_strategy,
                 report_path,
                 report_format
             )

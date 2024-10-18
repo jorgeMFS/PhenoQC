@@ -16,3 +16,8 @@ imputation_strategies:
   Gender: mode
   Height: median
   Phenotype: mode
+
+advanced_imputation_methods:
+  - MICE
+  - KNN
+  - IterativeSVD

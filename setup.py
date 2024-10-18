@@ -17,6 +17,8 @@ setup(
         'kaleido>=0.1.0',
         'tqdm',
         'Pillow',
+        'scikit-learn',
+        'fancyimpute',
     ],
     extras_require={
         'test': [

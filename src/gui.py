@@ -66,7 +66,12 @@ def main():
     schema_file = st.sidebar.file_uploader("Upload JSON Schema", type=["json"])
     config_file = st.sidebar.file_uploader("Upload Configuration (config.yaml)", type=["yaml", "yml"])
     custom_mapping_file = st.sidebar.file_uploader("Upload Custom Mapping (Optional)", type=["json"])
-    impute_strategy = st.sidebar.selectbox("Imputation Strategy", options=['mean', 'median', 'mode', 'none'])
+    impute_strategy = st.sidebar.selectbox(
+        "Imputation Strategy",
+        options=['mean', 'median', 'mode', 'knn', 'mice', 'svd', 'none'],  
+        index=0,
+        help="Select the strategy to impute missing data."
+    )
     unique_identifiers = st.sidebar.text_input(
         "Unique Identifier Columns (comma-separated)",
         help="Enter column names separated by commas, e.g., SampleID,PatientID"
@@ -75,6 +80,7 @@ def main():
         "Ontologies to Map (space-separated)",
         help="Enter ontology IDs separated by space, e.g., HPO DO MPO"
     )
+
     
     # Sidebar Data Ingestion Options
     st.sidebar.header("Data Ingestion")
@@ -254,6 +260,9 @@ def main():
                                 validation_results=result.get('validation_results', {}),
                                 missing_data=result.get('missing_data', pd.Series()),
                                 flagged_records_count=result.get('flagged_records_count', 0),
+                                mapping_success_rates=result.get('mapping_success_rates', {}),
+                                visualization_images=result.get('visualization_images', []),
+                                impute_strategy=impute_strategy,
                                 output_path_or_buffer=report_buffer
                             )
                             report_buffer.seek(0)

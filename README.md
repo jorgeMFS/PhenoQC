@@ -40,9 +40,10 @@ phenoqc --input examples/samples/sample_data.json \
 --schema examples/schemas/pheno_schema.json \
 --config config.yaml \
 --custom_mappings examples/mapping/custom_mappings.json \
---impute mean \
+--impute mice \
 --unique_identifiers SampleID \
 --ontologies HPO DO MPO
+
 ```
 
 Batch process multiple files:
@@ -53,21 +54,30 @@ phenoqc --input examples/samples/sample_data.csv examples/samples/sample_data.js
 --schema examples/schemas/pheno_schema.json \
 --config config.yaml \
 --custom_mappings examples/mapping/custom_mappings.json \
---impute median \
+--impute none \
 --unique_identifiers SampleID \
 --ontologies HPO DO MPO
 ```
 
 **Parameters:**
 
-- `--input`: One or more input data files or directories.
-- `--output`: Directory to save reports and processed data.
+- `--input`: One or more input data files or directories (supported formats: `csv`, `tsv`, `json`).
+- `--output`: Directory to save reports and processed data. Defaults to `./reports/`.
 - `--schema`: Path to the JSON schema file for data validation.
-- `--config`: Path to the configuration YAML file (`config.yaml`) defining ontology mappings.
-- `--custom_mappings`: (Optional) Path to a custom mapping JSON file.
-- `--impute`: Strategy for imputing missing data (`mean` or `median`).
-- `--unique_identifiers`: Column names that uniquely identify a record (e.g., `SampleID`).
+- `--config`: Path to the configuration YAML file (`config.yaml`) defining ontology mappings. Defaults to `config.yaml`.
+- `--custom_mappings`: (Optional) Path to a custom mapping JSON file for ontology term resolutions.
+- `--impute`: Strategy for imputing missing data. Choices:
+  - `mean`: Impute missing numeric data with the column mean.
+  - `median`: Impute missing numeric data with the column median.
+  - `mode`: Impute missing categorical data with the column mode.
+  - `knn`: Impute missing numeric data using k-Nearest Neighbors.
+  - `mice`: Impute missing numeric data using Multiple Imputation by Chained Equations.
+  - `svd`: Impute missing numeric data using Iterative Singular Value Decomposition.
+  - `none`: Do not perform imputation; simply flag missing data.
+- `--unique_identifiers`: List of column names that uniquely identify a record (e.g., `SampleID`).
 - `--ontologies`: (Optional) List of ontologies to map to (e.g., `HPO DO MPO`).
+- `--recursive`: (Optional) Enable recursive directory scanning when input paths include directories.
+
 
 ### Graphical User Interface (GUI)
 

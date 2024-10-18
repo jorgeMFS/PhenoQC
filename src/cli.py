@@ -20,11 +20,17 @@ def parse_arguments():
     parser.add_argument('--schema', required=True, help='Path to the JSON schema file')
     parser.add_argument('--config', default='config.yaml', help='Path to the configuration YAML file')
     parser.add_argument('--custom_mappings', help='Path to custom mapping JSON file', default=None)
-    parser.add_argument('--impute', choices=['mean', 'median'], default='mean', help='Imputation strategy for missing data')
+    parser.add_argument(
+        '--impute',
+        choices=['mean', 'median', 'mode', 'knn', 'mice', 'svd', 'none'],  # Added 'none' here
+        default='mean',
+        help='Imputation strategy for missing data'
+    )
     parser.add_argument('--recursive', action='store_true', help='Enable recursive directory scanning for nested files')
     parser.add_argument('--unique_identifiers', nargs='+', required=True, help='List of column names that uniquely identify a record')
     parser.add_argument('--ontologies', nargs='+', help='List of ontologies to map to (e.g., HPO DO MPO)', default=None)
     return parser.parse_args()
+
 
 def collect_files(input_paths, recursive=False):
     """
