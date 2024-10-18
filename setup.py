@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='PhenoQC',
-    version='0.1.2',
+    version='0.1.0',
     packages=find_packages(where='src'),
     package_dir={'': 'src'},
     install_requires=[
