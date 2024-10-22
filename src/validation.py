@@ -58,6 +58,7 @@ class DataValidator:
 
         return valid
 
+
     def identify_duplicates(self) -> pd.DataFrame:
         """
         Identifies duplicate records based on unique identifiers.

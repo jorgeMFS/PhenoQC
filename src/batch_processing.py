@@ -80,12 +80,13 @@ def process_file(
             # Initialize sample DataFrame for visualizations
             sample_df = pd.DataFrame()
             sample_size_per_chunk = 1000  # Adjust as needed
+            max_total_samples = 10000     # Maximum total samples for visualization
 
             # Process chunks
             chunk_progress = 80  # Percentage of progress allocated to chunk processing
+            chunks_processed = 0
             for chunk in data_iterator:
-                # Update progress based on chunks processed
-                pbar.update(chunk_progress / max(1, total_records / chunksize))
+                chunks_processed += 1
                 total_records += len(chunk)
 
                 # Initialize DataValidator for the chunk
@@ -134,7 +135,7 @@ def process_file(
 
                 # Recalculate MissingDataFlag after imputation
                 chunk = flag_missing_data_records(chunk)
-                chunk_flagged_count_after = chunk['MissingDataFlag'].sum()
+                # Note: After imputation, MissingDataFlag should decrease or remain the same
 
                 # Collect phenotype terms
                 if 'Phenotype' in chunk.columns:
@@ -166,16 +167,22 @@ def process_file(
                     return {'file': file_path, 'status': 'Invalid', 'error': "'Phenotype' column not found in chunk."}
 
                 # Collect sample data for visualizations
-                if len(chunk) > sample_size_per_chunk:
-                    sample_chunk = chunk.sample(n=sample_size_per_chunk, random_state=42)
-                else:
-                    sample_chunk = chunk.copy()
-                sample_df = pd.concat([sample_df, sample_chunk], ignore_index=True)
+                if len(sample_df) < max_total_samples:
+                    remaining_samples = max_total_samples - len(sample_df)
+                    sample_size = min(sample_size_per_chunk, remaining_samples)
+                    if len(chunk) > sample_size:
+                        sample_chunk = chunk.sample(n=sample_size, random_state=42)
+                    else:
+                        sample_chunk = chunk.copy()
+                    sample_df = pd.concat([sample_df, sample_chunk], ignore_index=True)
 
                 # Write processed chunk to the output file
                 chunk.to_csv(output_data_file, mode='a', index=False, header=write_header)
                 if write_header:
                     write_header = False
+
+                # Update progress bar
+                pbar.update(chunk_progress / max(1, total_records / chunksize))
 
             pbar.update(5)  # Update remaining progress
 
@@ -314,7 +321,6 @@ def batch_process(
                 print(f"❌ Error in processing {os.path.basename(file_path)}: {str(e)}")
 
     return results
-
 
 def collect_files(inputs, recursive=True):
     """
