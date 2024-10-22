@@ -1,7 +1,7 @@
 import pandas as pd
 import json
 from typing import List, Dict, Any
-from jsonschema import validate, ValidationError
+import fastjsonschema  # Use fastjsonschema for faster validation
 
 class DataValidator:
     def __init__(
@@ -31,6 +31,9 @@ class DataValidator:
         self.integrity_issues = pd.DataFrame()
         self.referential_integrity_issues = pd.DataFrame()
 
+        # Compile the schema once for faster validation
+        self.validate_record = fastjsonschema.compile(self.schema)
+
     def validate_format(self) -> bool:
         """
         Validates the DataFrame against the provided JSON schema.
@@ -38,21 +41,21 @@ class DataValidator:
         :return: True if validation passes, False otherwise.
         """
         valid = True
-        for index, row in self.df.iterrows():
+        records = self.df.to_dict(orient='records')
+        invalid_indices = []
+
+        for idx, record in enumerate(records):
             try:
-                record = row.to_dict()
-                validate(instance=record, schema=self.schema)
-            except ValidationError as ve:
-                print(f"Format Validation Error at row {index}: {ve.message}")
-                # Collect the invalid record
-                self.integrity_issues = pd.concat([self.integrity_issues, self.df.loc[[index]]])
-                valid = False
-            except Exception as e:
-                print(f"Unexpected error during format validation at row {index}: {e}")
-                self.integrity_issues = pd.concat([self.integrity_issues, self.df.loc[[index]]])
+                self.validate_record(record)
+            except fastjsonschema.JsonSchemaException as e:
+                # Collect the index of invalid record
+                invalid_indices.append(idx)
                 valid = False
 
-        self.integrity_issues = self.integrity_issues.drop_duplicates()
+        if invalid_indices:
+            # Collect invalid records
+            self.integrity_issues = self.df.iloc[invalid_indices]
+
         return valid
 
     def identify_duplicates(self) -> pd.DataFrame:

@@ -11,3 +11,4 @@ tqdm
 Pillow
 scikit-learn
 fancyimpute
+fastjsonschema

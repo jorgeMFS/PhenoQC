@@ -19,6 +19,7 @@ setup(
         'Pillow',
         'scikit-learn',
         'fancyimpute',
+        'fastjsonschema'
     ],
     extras_require={
         'test': [

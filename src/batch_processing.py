@@ -58,15 +58,35 @@ def process_file(
             total_records = 0
             flagged_records_count = 0
             phenotype_terms_set = set()
-            df_list = []  # To collect processed chunks
+
+            # Prepare output file path
+            output_data_file = os.path.join(output_dir, os.path.basename(file_path))
+            # Remove existing output file if exists
+            if os.path.exists(output_data_file):
+                os.remove(output_data_file)
+
+            # Initialize a flag to write header only once
+            write_header = True
+
+            # Initialize mapping success rates accumulators
+            cumulative_mapping_stats = {}
+            if target_ontologies:
+                for ontology_id in target_ontologies:
+                    cumulative_mapping_stats[ontology_id] = {'total_terms': 0, 'mapped_terms': 0}
+            else:
+                # Use default ontology
+                cumulative_mapping_stats[ontology_mapper.default_ontology] = {'total_terms': 0, 'mapped_terms': 0}
+
+            # Initialize sample DataFrame for visualizations
+            sample_df = pd.DataFrame()
+            sample_size_per_chunk = 1000  # Adjust as needed
 
             # Process chunks
             chunk_progress = 80  # Percentage of progress allocated to chunk processing
-            chunk_number = 0
             for chunk in data_iterator:
-                chunk_number += 1
-                chunk_total = len(chunk)
-                total_records += chunk_total
+                # Update progress based on chunks processed
+                pbar.update(chunk_progress / max(1, total_records / chunksize))
+                total_records += len(chunk)
 
                 # Initialize DataValidator for the chunk
                 validator = DataValidator(chunk, schema, unique_identifiers)
@@ -119,12 +139,43 @@ def process_file(
                 # Collect phenotype terms
                 if 'Phenotype' in chunk.columns:
                     phenotype_terms_set.update(chunk['Phenotype'].unique())
+                else:
+                    log_activity(f"{file_path}: 'Phenotype' column not found in chunk.", level='error')
+                    pbar.close()
+                    return {'file': file_path, 'status': 'Invalid', 'error': "'Phenotype' column not found in chunk."}
 
-                # Store processed chunk
-                df_list.append(chunk)
+                # Ontology Mapping
+                if 'Phenotype' in chunk.columns:
+                    phenotypic_terms = chunk['Phenotype'].unique()
+                    mappings = ontology_mapper.map_terms(phenotypic_terms, target_ontologies, custom_mappings)
 
-                # Update progress
-                pbar.update(chunk_progress / max(1, total_records / chunksize))
+                    # Add mapped IDs to the DataFrame
+                    for ontology_id in target_ontologies or [ontology_mapper.default_ontology]:
+                        mapped_column = f"{ontology_id}_ID"
+                        chunk[mapped_column] = chunk['Phenotype'].apply(
+                            lambda x: mappings.get(x, {}).get(ontology_id)
+                        )
+
+                        # Update mapping success rates
+                        mapped_terms = chunk[mapped_column].notnull().sum()
+                        cumulative_mapping_stats[ontology_id]['total_terms'] += len(chunk)
+                        cumulative_mapping_stats[ontology_id]['mapped_terms'] += mapped_terms
+                else:
+                    log_activity(f"{file_path}: 'Phenotype' column not found in chunk.", level='error')
+                    pbar.close()
+                    return {'file': file_path, 'status': 'Invalid', 'error': "'Phenotype' column not found in chunk."}
+
+                # Collect sample data for visualizations
+                if len(chunk) > sample_size_per_chunk:
+                    sample_chunk = chunk.sample(n=sample_size_per_chunk, random_state=42)
+                else:
+                    sample_chunk = chunk.copy()
+                sample_df = pd.concat([sample_df, sample_chunk], ignore_index=True)
+
+                # Write processed chunk to the output file
+                chunk.to_csv(output_data_file, mode='a', index=False, header=write_header)
+                if write_header:
+                    write_header = False
 
             pbar.update(5)  # Update remaining progress
 
@@ -134,43 +185,25 @@ def process_file(
                 pbar.close()
                 return {'file': file_path, 'status': 'Invalid', 'error': error_msg}
 
-            # Combine processed chunks into a single DataFrame
-            df = pd.concat(df_list, ignore_index=True)
-
-            # Ontology Mapping
-            if 'Phenotype' in df.columns:
-                phenotypic_terms = list(phenotype_terms_set)
-                mappings = ontology_mapper.map_terms(phenotypic_terms, target_ontologies, custom_mappings)
-
-                # Add mapped IDs to the DataFrame
-                for ontology_id in target_ontologies or [ontology_mapper.default_ontology]:
-                    mapped_column = f"{ontology_id}_ID"
-                    df[mapped_column] = df['Phenotype'].apply(lambda x: mappings.get(x, {}).get(ontology_id))
-
-                # Compute mapping success rates
-                mapping_success_rates = {}
-                for ontology_id in target_ontologies or [ontology_mapper.default_ontology]:
-                    mapped_column = f"{ontology_id}_ID"
-                    total_terms = len(df)
-                    mapped_terms = df[mapped_column].notnull().sum()
-                    success_rate = (mapped_terms / total_terms) * 100 if total_terms > 0 else 0
-                    mapping_success_rates[ontology_id] = {
-                        'total_terms': total_terms,
-                        'mapped_terms': mapped_terms,
-                        'success_rate': success_rate
-                    }
-
-                pbar.update(5)
-            else:
-                log_activity(f"{file_path}: 'Phenotype' column not found.", level='error')
-                pbar.close()
-                return {'file': file_path, 'status': 'Invalid', 'error': "'Phenotype' column not found."}
+            # Calculate mapping success rates
+            mapping_success_rates = {}
+            for ontology_id, stats in cumulative_mapping_stats.items():
+                total_terms = stats['total_terms']
+                mapped_terms = stats['mapped_terms']
+                success_rate = (mapped_terms / total_terms) * 100 if total_terms > 0 else 0
+                mapping_success_rates[ontology_id] = {
+                    'total_terms': total_terms,
+                    'mapped_terms': mapped_terms,
+                    'success_rate': success_rate
+                }
 
             # Generate Reports
             report_path = os.path.join(
                 output_dir, f"{os.path.splitext(os.path.basename(file_path))[0]}_report.{report_format}"
             )
-            figs = create_visual_summary(df, output_image_path=None)
+
+            # Create visualizations using sample_df
+            figs = create_visual_summary(sample_df, output_image_path=None)
             # Save visualizations as images
             visualization_images = []
             for idx, fig in enumerate(figs):
@@ -178,6 +211,7 @@ def process_file(
                 image_path = os.path.join(output_dir, image_filename)
                 fig.write_image(image_path)
                 visualization_images.append(image_path)
+
             generate_qc_report(
                 validation_results,
                 missing_counts,
@@ -191,9 +225,6 @@ def process_file(
             log_activity(f"{file_path}: QC report generated at {report_path}.")
             pbar.update(5)
 
-            # Save the cleaned DataFrame
-            output_data_file = os.path.join(output_dir, os.path.basename(file_path))
-            df.to_csv(output_data_file, index=False)
             log_activity(f"{file_path}: Processed data saved at {output_data_file}")
 
             pbar.update(5)
@@ -214,38 +245,6 @@ def process_file(
     except Exception as e:
         log_activity(f"Error processing file {file_path}: {str(e)}", level='error')
         return {'file': file_path, 'status': 'Error', 'error': str(e)}
-
-def collect_files(inputs, recursive=True):
-    """
-    Collects all supported files from the provided input paths.
-
-    Args:
-        inputs (list): List of file or directory paths.
-        recursive (bool): Whether to scan directories recursively.
-
-    Returns:
-        list: List of file paths.
-    """
-    supported_extensions = {'.csv', '.tsv', '.json'}
-    collected_files = []
-
-    for input_path in inputs:
-        if os.path.isfile(input_path):
-            ext = os.path.splitext(input_path)[1].lower()
-            if ext in supported_extensions:
-                collected_files.append(input_path)
-        elif os.path.isdir(input_path):
-            for root, dirs, files in os.walk(input_path):
-                for file in files:
-                    ext = os.path.splitext(file)[1].lower()
-                    if ext in supported_extensions:
-                        collected_files.append(os.path.join(root, file))
-                if not recursive:
-                    break
-        else:
-            log_activity(f"Input path '{input_path}' is neither a file nor a directory.", level='warning')
-
-    return collected_files
 
 def batch_process(
     files,
@@ -315,3 +314,36 @@ def batch_process(
                 print(f"❌ Error in processing {os.path.basename(file_path)}: {str(e)}")
 
     return results
+
+
+def collect_files(inputs, recursive=True):
+    """
+    Collects all supported files from the provided input paths.
+
+    Args:
+        inputs (list): List of file or directory paths.
+        recursive (bool): Whether to scan directories recursively.
+
+    Returns:
+        list: List of file paths.
+    """
+    supported_extensions = {'.csv', '.tsv', '.json'}
+    collected_files = []
+
+    for input_path in inputs:
+        if os.path.isfile(input_path):
+            ext = os.path.splitext(input_path)[1].lower()
+            if ext in supported_extensions:
+                collected_files.append(input_path)
+        elif os.path.isdir(input_path):
+            for root, dirs, files in os.walk(input_path):
+                for file in files:
+                    ext = os.path.splitext(file)[1].lower()
+                    if ext in supported_extensions:
+                        collected_files.append(os.path.join(root, file))
+                if not recursive:
+                    break
+        else:
+            log_activity(f"Input path '{input_path}' is neither a file nor a directory.", level='warning')
+
+    return collected_files
