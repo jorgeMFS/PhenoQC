@@ -1,8 +1,6 @@
 import argparse
 import os
 from batch_processing import batch_process
-from batch_processing import batch_process, collect_files
-from configuration import load_config
 from logging_module import setup_logging, log_activity
 
 SUPPORTED_EXTENSIONS = {'.csv', '.tsv', '.json'}
@@ -22,7 +20,7 @@ def parse_arguments():
     parser.add_argument('--custom_mappings', help='Path to custom mapping JSON file', default=None)
     parser.add_argument(
         '--impute',
-        choices=['mean', 'median', 'mode', 'knn', 'mice', 'svd', 'none'],  # Added 'none' here
+        choices=['mean', 'median', 'mode', 'knn', 'mice', 'svd', 'none'],
         default='mean',
         help='Imputation strategy for missing data'
     )
@@ -30,7 +28,6 @@ def parse_arguments():
     parser.add_argument('--unique_identifiers', nargs='+', required=True, help='List of column names that uniquely identify a record')
     parser.add_argument('--ontologies', nargs='+', help='List of ontologies to map to (e.g., HPO DO MPO)', default=None)
     return parser.parse_args()
-
 
 def collect_files(input_paths, recursive=False):
     """
@@ -99,7 +96,7 @@ def main():
         custom_mappings_path=args.custom_mappings,
         impute_strategy=args.impute,
         output_dir=args.output,
-        target_ontologies=args.ontologies  # Pass the target ontologies
+        target_ontologies=args.ontologies
     )
 
     # Summary of results

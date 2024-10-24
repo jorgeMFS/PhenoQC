@@ -1,0 +1,459 @@
+import streamlit as st
+import os
+import tempfile
+import zipfile
+from configuration import load_config
+from logging_module import setup_logging, log_activity
+from mapping import OntologyMapper
+import pandas as pd
+from reporting import create_visual_summary, generate_qc_report
+import json
+import io
+from batch_processing import process_file
+import shutil  # For deleting temporary directories
+
+def extract_zip(zip_file, extract_to):
+    try:
+        zip_file.extractall(extract_to)
+        return True, None
+    except zipfile.BadZipFile:
+        return False, "The uploaded file is not a valid ZIP archive."
+
+def collect_supported_files(directory, supported_extensions):
+    collected_files = []
+    for root, dirs, files in os.walk(directory):
+        dirs[:] = [d for d in dirs if d != '__MACOSX']
+        for file in files:
+            if file.startswith('._'):
+                continue
+            ext = os.path.splitext(file)[1].lower()
+            if ext in supported_extensions:
+                collected_files.append(os.path.join(root, file))
+    return collected_files
+
+def main():
+    setup_logging()
+    st.set_page_config(page_title="PhenoQC - Phenotypic Data QC Toolkit", layout="wide")
+
+    st.title("PhenoQC - Phenotypic Data Quality Control Toolkit")
+
+    # Steps definition
+    steps = {
+        "Step 1: Upload Configuration Files": False,
+        "Step 2: Upload Phenotypic Data Files": False,
+        "Step 3: Select Unique Identifier Columns": False,
+        "Step 4: Select Ontologies and Imputation Strategy": False,
+        "Step 5: Run Quality Control": False,
+        "Step 6: Processing Results": False
+    }
+
+    # Initialize session state
+    if 'current_step' not in st.session_state:
+        st.session_state.current_step = "Step 1: Upload Configuration Files"
+    if 'steps_completed' not in st.session_state:
+        st.session_state.steps_completed = steps.copy()
+
+    # Sidebar navigation
+    def navigate_to_step(step_name):
+        st.session_state.current_step = step_name
+
+    with st.sidebar:
+        st.header("Navigation")
+        step_titles = list(steps.keys())
+        step_descriptions = [
+            "Upload Configuration Files",
+            "Upload Phenotypic Data Files",
+            "Select Unique Identifier Columns",
+            "Select Ontologies and Imputation Strategy",
+            "Run Quality Control",
+            "Processing Results"
+        ]
+        for idx, (title, desc) in enumerate(zip(step_titles, step_descriptions), 1):
+            if title == st.session_state.current_step:
+                # Display current step in bold
+                st.markdown(f"**Step {idx}: {desc}**")
+            else:
+                # Use a button for navigation
+                if st.button(f"Step {idx}: {desc}", key=f"nav_button_{idx}"):
+                    navigate_to_step(title)
+
+    # Step 1: Upload Configuration Files
+    if st.session_state.current_step == "Step 1: Upload Configuration Files":
+        st.header("Step 1: Upload Configuration Files")
+        config_col1, config_col2 = st.columns(2)
+        with config_col1:
+            config_file = st.file_uploader(
+                "Upload Configuration File (config.yaml)",
+                type=["yaml", "yml"],
+                key="config_file"
+            )
+            if config_file:
+                try:
+                    st.session_state['config'] = load_config(config_file)
+                    st.session_state['available_ontologies'] = list(st.session_state['config'].get('ontologies', {}).keys())
+                    st.success("Configuration file uploaded successfully.")
+                    st.session_state.steps_completed["Step 1: Upload Configuration Files"] = True
+                except Exception as e:
+                    st.error(f"Error loading configuration file: {e}")
+        with config_col2:
+            schema_file = st.file_uploader(
+                "Upload JSON Schema File",
+                type=["json"],
+                key="schema_file"
+            )
+            if schema_file:
+                try:
+                    st.session_state['schema'] = json.load(schema_file)
+                    st.success("JSON schema file uploaded successfully.")
+                    st.session_state.steps_completed["Step 1: Upload Configuration Files"] = True
+                except Exception as e:
+                    st.error(f"Error loading JSON schema file: {e}")
+        st.markdown("---")
+        if st.session_state.steps_completed["Step 1: Upload Configuration Files"]:
+            if st.button("Proceed to Step 2"):
+                st.session_state.current_step = "Step 2: Upload Phenotypic Data Files"
+
+    # Step 2: Upload Data Files
+    elif st.session_state.current_step == "Step 2: Upload Phenotypic Data Files":
+        st.header("Step 2: Upload Phenotypic Data Files")
+        data_source_option = st.radio(
+            "Select Data Source",
+            options=['Upload Files', 'Upload Directory (ZIP)'],
+            key="data_source_option",
+            on_change=lambda: st.session_state.pop('uploaded_files_list', None)
+        )
+        if data_source_option == 'Upload Files':
+            st.session_state['data_source'] = 'files'
+            uploaded_files = st.file_uploader(
+                "Upload Phenotypic Data Files",
+                type=["csv", "tsv", "json"],
+                accept_multiple_files=True,
+                key="uploaded_files_widget"
+            )
+            if uploaded_files:
+                st.session_state['uploaded_files_list'] = uploaded_files
+                st.session_state.steps_completed["Step 2: Upload Phenotypic Data Files"] = True
+        else:
+            st.session_state['data_source'] = 'zip'
+            uploaded_zip = st.file_uploader(
+                "Upload Data Directory (ZIP Archive)",
+                type=["zip"],
+                key="uploaded_zip_widget"
+            )
+            enable_recursive = st.checkbox(
+                "Enable Recursive Directory Scanning",
+                value=True,
+                key="enable_recursive"
+            )
+            if uploaded_zip:
+                st.session_state['uploaded_zip_file'] = uploaded_zip
+                st.session_state['enable_recursive'] = enable_recursive
+                st.session_state.steps_completed["Step 2: Upload Phenotypic Data Files"] = True
+        st.markdown("---")
+        if st.session_state.steps_completed["Step 2: Upload Phenotypic Data Files"]:
+            if st.button("Proceed to Step 3"):
+                st.session_state.current_step = "Step 3: Select Unique Identifier Columns"
+
+    # Step 3: Select Unique Identifier Columns
+    elif st.session_state.current_step == "Step 3: Select Unique Identifier Columns":
+        st.header("Step 3: Select Unique Identifier Columns")
+        sample_df = None
+        if st.session_state['data_source'] == 'files':
+            uploaded_files = st.session_state.get('uploaded_files_list', [])
+            for uploaded_file in uploaded_files:
+                try:
+                    file_content = uploaded_file.getvalue()
+                    ext = os.path.splitext(uploaded_file.name)[1].lower()
+                    if ext == '.csv':
+                        df = pd.read_csv(io.StringIO(file_content.decode('utf-8', 'ignore')), nrows=100)
+                    elif ext == '.tsv':
+                        df = pd.read_csv(io.StringIO(file_content.decode('utf-8', 'ignore')), sep='\t', nrows=100)
+                    elif ext == '.json':
+                        df = pd.read_json(io.StringIO(file_content.decode('utf-8', 'ignore')), lines=True, nrows=100)
+                    else:
+                        st.warning(f"Unsupported file extension: {ext}")
+                        continue
+                    if df.empty or df.columns.empty:
+                        st.error(f"The file {uploaded_file.name} does not contain any data or columns.")
+                        continue
+                    sample_df = df
+                    break
+                except Exception as e:
+                    st.error(f"Error reading file {uploaded_file.name}: {str(e)}")
+            if sample_df is None:
+                st.error("No valid data files could be read. Please check your files and try again.")
+                st.stop()
+        else:
+            uploaded_zip = st.session_state.get('uploaded_zip_file')
+            if uploaded_zip:
+                with zipfile.ZipFile(uploaded_zip) as zip_ref:
+                    supported_extensions = {'.csv', '.tsv', '.json'}
+                    collected_files = [f for f in zip_ref.namelist() if os.path.splitext(f)[1].lower() in supported_extensions]
+                    if collected_files:
+                        for file_name in collected_files:
+                            try:
+                                with zip_ref.open(file_name) as f:
+                                    file_content = f.read()
+                                    ext = os.path.splitext(file_name)[1].lower()
+                                    if ext == '.csv':
+                                        df = pd.read_csv(io.StringIO(file_content.decode('utf-8', 'ignore')), nrows=100)
+                                    elif ext == '.tsv':
+                                        df = pd.read_csv(io.StringIO(file_content.decode('utf-8', 'ignore')), sep='\t', nrows=100)
+                                    elif ext == '.json':
+                                        df = pd.read_json(io.StringIO(file_content.decode('utf-8', 'ignore')), lines=True, nrows=100)
+                                    else:
+                                        st.warning(f"Unsupported file extension: {ext}")
+                                        continue
+                                    if df.empty or df.columns.empty:
+                                        st.error(f"The file {file_name} does not contain any data or columns.")
+                                        continue
+                                    sample_df = df
+                                    break
+                            except Exception as e:
+                                st.error(f"Error reading file {file_name} in ZIP: {str(e)}")
+                    else:
+                        st.error("No supported data files found in the uploaded ZIP archive.")
+                        st.stop()
+            if sample_df is None:
+                st.error("No valid data files could be read from the ZIP archive. Please check your files and try again.")
+                st.stop()
+        if sample_df is not None:
+            st.subheader("Sample Data Preview")
+            st.dataframe(sample_df.head(5))
+            st.session_state['data_columns'] = sample_df.columns.tolist()
+            previous_unique_identifiers = st.session_state.get('unique_identifiers_list', [])
+            current_data_columns = st.session_state['data_columns']
+            default_unique_identifiers = [uid for uid in previous_unique_identifiers if uid in current_data_columns]
+            unique_identifiers = st.multiselect(
+                "Select Unique Identifier Columns",
+                options=current_data_columns,
+                default=default_unique_identifiers,
+                key="unique_identifiers_widget"
+            )
+            if unique_identifiers:
+                st.session_state['unique_identifiers_list'] = unique_identifiers
+                st.session_state.steps_completed["Step 3: Select Unique Identifier Columns"] = True
+            else:
+                st.warning("Please select at least one unique identifier column.")
+                st.session_state.steps_completed["Step 3: Select Unique Identifier Columns"] = False
+        st.markdown("---")
+        if st.session_state.steps_completed["Step 3: Select Unique Identifier Columns"]:
+            if st.button("Proceed to Step 4"):
+                st.session_state.current_step = "Step 4: Select Ontologies and Imputation Strategy"
+
+    # Step 4: Select Ontologies and Imputation Strategy
+    elif st.session_state.current_step == "Step 4: Select Ontologies and Imputation Strategy":
+        st.header("Step 4: Select Ontologies and Imputation Strategy")
+        if st.session_state.get('available_ontologies'):
+            default_ontologies = st.session_state.get('ontologies_selected_list', st.session_state['available_ontologies'])
+            ontologies_selected = st.multiselect(
+                "Select Ontologies to Map",
+                options=st.session_state['available_ontologies'],
+                default=default_ontologies,
+                key="ontologies_selected_widget"
+            )
+            if ontologies_selected:
+                st.session_state['ontologies_selected_list'] = ontologies_selected
+                st.session_state.steps_completed["Step 4: Select Ontologies and Imputation Strategy"] = True
+            else:
+                st.error("Please select at least one ontology.")
+                st.session_state.steps_completed["Step 4: Select Ontologies and Imputation Strategy"] = False
+        else:
+            st.error("No ontologies available in the configuration file.")
+            st.stop()
+        impute_strategy = st.selectbox(
+            "Select Imputation Strategy",
+            options=['mean', 'median', 'mode', 'knn', 'mice', 'svd', 'none'],
+            index=st.session_state.get('impute_strategy_index', 0),
+            key="impute_strategy_widget"
+        )
+        st.session_state['impute_strategy_value'] = impute_strategy
+        st.session_state['impute_strategy_index'] = ['mean', 'median', 'mode', 'knn', 'mice', 'svd', 'none'].index(impute_strategy)
+        custom_mapping_file = st.file_uploader(
+            "Upload Custom Mapping File (Optional)",
+            type=["json"],
+            key="custom_mapping_widget"
+        )
+        if custom_mapping_file:
+            try:
+                st.session_state['custom_mappings_data'] = json.load(custom_mapping_file)
+                st.success("Custom mapping file uploaded successfully.")
+            except Exception as e:
+                st.error(f"Error loading custom mapping file: {e}")
+        else:
+            st.session_state['custom_mappings_data'] = None
+        st.markdown("---")
+        if st.session_state.steps_completed["Step 4: Select Ontologies and Imputation Strategy"]:
+            if st.button("Proceed to Step 5"):
+                st.session_state.current_step = "Step 5: Run Quality Control"
+
+    # Step 5: Run Quality Control
+    elif st.session_state.current_step == "Step 5: Run Quality Control":
+        st.header("Step 5: Run Quality Control")
+        if st.button("Start Processing", key="start_processing_button"):
+            with st.spinner("Processing..."):
+                try:
+                    # Create temporary directory if not already created
+                    if 'tmpdirname' not in st.session_state:
+                        st.session_state.tmpdirname = tempfile.mkdtemp()
+                    tmpdirname = st.session_state.tmpdirname
+                    input_paths = []
+                    schema_path = os.path.join(tmpdirname, "schema.json")
+                    with open(schema_path, 'w') as f:
+                        json.dump(st.session_state['schema'], f)
+                    config_path = os.path.join(tmpdirname, "config.yaml")
+                    with open(config_path, 'w') as f:
+                        import yaml
+                        yaml.dump(st.session_state['config'], f)
+                    # Save custom mappings if provided
+                    if st.session_state['custom_mappings_data']:
+                        custom_mappings_path = os.path.join(tmpdirname, "custom_mapping.json")
+                        with open(custom_mappings_path, 'w') as f:
+                            json.dump(st.session_state['custom_mappings_data'], f)
+                    else:
+                        custom_mappings_path = None
+                    # Handle data files
+                    if st.session_state['data_source'] == 'files':
+                        for uploaded_file in st.session_state.get('uploaded_files_list', []):
+                            file_path = os.path.join(tmpdirname, uploaded_file.name)
+                            with open(file_path, 'wb') as f:
+                                f.write(uploaded_file.getbuffer())
+                            input_paths.append(file_path)
+                    else:
+                        # Extract ZIP archive
+                        uploaded_zip = st.session_state.get('uploaded_zip_file')
+                        if uploaded_zip:
+                            zip_ref = zipfile.ZipFile(uploaded_zip)
+                            extract_dir = os.path.join(tmpdirname, "extracted")
+                            os.makedirs(extract_dir, exist_ok=True)
+                            success, error = extract_zip(zip_ref, extract_dir)
+                            if not success:
+                                st.error(error)
+                                st.stop()
+                            # Collect supported files
+                            supported_extensions = {'.csv', '.tsv', '.json'}
+                            if st.session_state.get('enable_recursive', False):
+                                collected_files = collect_supported_files(extract_dir, supported_extensions)
+                            else:
+                                collected_files = []
+                                for file in os.listdir(extract_dir):
+                                    file_path = os.path.join(extract_dir, file)
+                                    if os.path.isfile(file_path):
+                                        ext = os.path.splitext(file)[1].lower()
+                                        if ext in supported_extensions:
+                                            collected_files.append(file_path)
+                            input_paths.extend(collected_files)
+                    if not input_paths:
+                        st.error("No data files found to process.")
+                        st.stop()
+                    # Initialize OntologyMapper
+                    ontology_mapper = OntologyMapper(config_path=config_path)
+                    # Load configuration
+                    config = st.session_state['config']
+                    field_strategies = config.get('imputation_strategies', {})
+                    # Define output directory
+                    output_dir = os.path.join(tmpdirname, "reports")
+                    os.makedirs(output_dir, exist_ok=True)
+                    total_files = len(input_paths)
+                    progress_bar = st.progress(0)
+                    current_progress = 0
+                    progress_increment = 100 / total_files if total_files > 0 else 0
+                    st.session_state['processing_results'] = []
+                    for idx, file_path in enumerate(input_paths):
+                        file_name = os.path.basename(file_path)
+                        st.write(f"Processing {file_name}...")
+                        result = process_file(
+                            file_path=file_path,
+                            schema=st.session_state['schema'],
+                            ontology_mapper=ontology_mapper,
+                            unique_identifiers=st.session_state.get('unique_identifiers_list', []),
+                            custom_mappings=st.session_state.get('custom_mappings_data'),
+                            impute_strategy=st.session_state.get('impute_strategy_value'),
+                            field_strategies=field_strategies,
+                            output_dir=output_dir,
+                            target_ontologies=st.session_state.get('ontologies_selected_list', [])
+                        )
+                        # Get the actual processed file path from result
+                        processed_data_path = result.get('processed_file_path')
+                        if processed_data_path and os.path.exists(processed_data_path):
+                            st.success(f"{file_name} processed successfully.")
+                        else:
+                            st.warning(f"Processed data file not found for {file_name}.")
+                        st.session_state['processing_results'].append((file_name, result, output_dir))
+                        current_progress += progress_increment
+                        progress_bar.progress(int(current_progress))
+                    st.success("Processing completed!")
+                    st.session_state.steps_completed["Step 5: Run Quality Control"] = True
+                    st.session_state.current_step = "Step 6: Processing Results"
+                except Exception as e:
+                    st.error(f"An error occurred during processing: {e}")
+
+    # Step 6: View Results
+    elif st.session_state.current_step == "Step 6: Processing Results":
+        st.header("Step 6: Processing Results")
+        if 'processing_results' in st.session_state:
+            # Create tabs for each file
+            tab_labels = [os.path.basename(file_name) for file_name, _, _ in st.session_state['processing_results']]
+            tabs = st.tabs(tab_labels)
+            for (file_name, result, output_dir), tab in zip(st.session_state['processing_results'], tabs):
+                with tab:
+                    st.subheader(f"Results for {file_name}")
+                    if result['status'] == 'Processed':
+                        processed_data_path = result.get('processed_file_path')
+                        if processed_data_path and os.path.exists(processed_data_path):
+                            try:
+                                df = pd.read_csv(processed_data_path)
+                                st.write("Sample of Processed Data:")
+                                st.dataframe(df.head(5))
+                                # Display visual summaries
+                                figs = create_visual_summary(df, output_image_path=None)
+                                for fig_idx, fig in enumerate(figs):
+                                    st.plotly_chart(fig, use_container_width=True, key=f"{file_name}_plot_{fig_idx}")
+                                # Generate QC report in memory
+                                report_buffer = io.BytesIO()
+                                generate_qc_report(
+                                    validation_results=result.get('validation_results', {}),
+                                    missing_data=result.get('missing_data', pd.Series()),
+                                    flagged_records_count=result.get('flagged_records_count', 0),
+                                    mapping_success_rates=result.get('mapping_success_rates', {}),
+                                    visualization_images=result.get('visualization_images', []),
+                                    impute_strategy=st.session_state.get('impute_strategy_value'),
+                                    output_path_or_buffer=report_buffer
+                                )
+                                report_buffer.seek(0)
+                                # Download buttons
+                                st.download_button(
+                                    label=f"Download QC Report for {file_name} (PDF)",
+                                    data=report_buffer,
+                                    file_name=f"{os.path.splitext(file_name)[0]}_qc_report.pdf",
+                                    mime='application/pdf'
+                                )
+                                st.download_button(
+                                    label=f"Download Processed Data for {file_name} (CSV)",
+                                    data=df.to_csv(index=False).encode('utf-8'),
+                                    file_name=f"processed_{file_name}",
+                                    mime='text/csv'
+                                )
+                            except Exception as e:
+                                st.error(f"Failed to read processed data for {file_name}: {str(e)}")
+                                continue
+                        else:
+                            st.error(f"Processed data file not found for {file_name}.")
+                    elif result['status'] == 'Invalid':
+                        st.warning(f"{file_name} failed validation: {result['error']}")
+                    else:
+                        st.error(f"{file_name} encountered an error: {result['error']}")
+            if st.button("Restart Application"):
+                # Clean up temporary directory
+                tmpdirname = st.session_state.get('tmpdirname')
+                if tmpdirname and os.path.exists(tmpdirname):
+                    shutil.rmtree(tmpdirname)
+                # Clear session state
+                for key in list(st.session_state.keys()):
+                    del st.session_state[key]
+                st.experimental_rerun()
+        else:
+            st.info("No processing results available.")
+
+if __name__ == '__main__':
+    main()

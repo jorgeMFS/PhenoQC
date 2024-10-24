@@ -12,3 +12,4 @@ Pillow
 scikit-learn
 fancyimpute
 fastjsonschema
+pronto
