@@ -12,7 +12,7 @@ class TestBatchProcessingModule(unittest.TestCase):
         self.schema_dir = tempfile.mkdtemp()
         self.mapping_dir = tempfile.mkdtemp()
 
-        # Create a temporary configuration file
+        # Create a temporary configuration file with corrected key
         self.config_file = os.path.join(self.schema_dir, 'config.yaml')
         with open(self.config_file, 'w') as f:
             f.write(f"""
@@ -23,8 +23,8 @@ imputation_strategies:
 ontologies:
   HPO:
     name: Human Phenotype Ontology
-    file: {os.path.join(self.mapping_dir, 'sample_mapping.json')}
-default_ontology: HPO
+    file: {os.path.join(self.mapping_dir, 'sample_mapping.obo')}
+default_ontologies: [HPO]
 """)
 
         # Create schema file
@@ -45,14 +45,29 @@ default_ontology: HPO
                 "additionalProperties": False
             }, f)
 
-        # Create sample mapping file
-        self.mapping_file = os.path.join(self.mapping_dir, 'sample_mapping.json')
+        # Create sample ontology file in OBO format
+        self.mapping_file = os.path.join(self.mapping_dir, 'sample_mapping.obo')
         with open(self.mapping_file, 'w') as f:
-            json.dump([
-                {"id": "HP:0000822", "name": "Hypertension", "synonyms": []},
-                {"id": "HP:0001627", "name": "Diabetes", "synonyms": []},
-                {"id": "HP:0002090", "name": "Asthma", "synonyms": []}
-            ], f)
+            f.write("""
+format-version: 1.2
+data-version: releases/2021-02-01
+ontology: sample
+
+[Term]
+id: HP:0000822
+name: Hypertension
+synonym: "High blood pressure" EXACT []
+
+[Term]
+id: HP:0001627
+name: Diabetes
+synonym: "Sugar disease" EXACT []
+
+[Term]
+id: HP:0002090
+name: Asthma
+synonym: "Bronchial disease" EXACT []
+""")
 
         # Create sample data file
         self.sample_data_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv').name
@@ -69,14 +84,11 @@ default_ontology: HPO
         self.output_dir = tempfile.mkdtemp()
 
     def tearDown(self):
+        import shutil
         # Remove temporary directories and their contents
         for dir_path in [self.schema_dir, self.mapping_dir, self.output_dir]:
             if os.path.exists(dir_path):
-                for file in os.listdir(dir_path):
-                    file_path = os.path.join(dir_path, file)
-                    if os.path.isfile(file_path):
-                        os.remove(file_path)
-                os.rmdir(dir_path)
+                shutil.rmtree(dir_path)
 
         # Remove sample data file
         if os.path.exists(self.sample_data_file):
@@ -114,9 +126,6 @@ default_ontology: HPO
         self.assertIn('MissingDataFlag', df_processed.columns, "'MissingDataFlag' column is missing.")
         # After imputation, there should be no flags
         self.assertEqual(df_processed['MissingDataFlag'].sum(), 0, "There are still missing data flags after imputation.")
-
-        # Optionally, check if the report contains expected content
-        # This requires parsing the PDF or checking logs, which is beyond the scope here
 
     def test_load_config_imputation_strategies(self):
         config = load_config(self.config_file)

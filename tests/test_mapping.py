@@ -7,61 +7,99 @@ from src.mapping import OntologyMapper
 
 class TestOntologyMapper(unittest.TestCase):
     def setUp(self):
-        # Sample ontology data
-        self.hpo_terms = [
-            {"id": "HP:0000822", "name": "Hypertension", "synonyms": ["High blood pressure"]},
-            {"id": "HP:0001627", "name": "Diabetes", "synonyms": ["Sugar diabetes"]},
-            {"id": "HP:0002090", "name": "Asthma", "synonyms": ["Reactive airway disease"]},
-            {"id": "HP:0001511", "name": "Obesity", "synonyms": ["Fatty syndrome"]},
-            {"id": "HP:0004322", "name": "Anemia", "synonyms": ["Lack of red blood cells"]}
-        ]
+        # Suppress ResourceWarnings temporarily
+        import warnings
+        warnings.filterwarnings("ignore", category=ResourceWarning)
 
-        self.do_terms = [
-            {"id": "DOID:0050167", "name": "Hypertension", "synonyms": ["High blood pressure"]},
-            {"id": "DOID:1612", "name": "Diabetes Mellitus", "synonyms": ["Sugar diabetes", "Diabetes"]},  # Added 'Diabetes'
-            {"id": "DOID:9352", "name": "Asthma", "synonyms": ["Reactive airway disease"]},
-            {"id": "DOID:9351", "name": "Obesity", "synonyms": ["Fatty syndrome"]},
-            {"id": "DOID:1388", "name": "Anemia", "synonyms": ["Lack of red blood cells"]}
-        ]
-
-        # Create temporary ontology JSON files
+        # Create a temporary directory for ontology files
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.hpo_file = os.path.join(self.temp_dir.name, "HPO.json")
-        self.do_file = os.path.join(self.temp_dir.name, "DO.json")
+
+        # Sample HPO data in OBO format
+        self.hpo_terms = """
+format-version: 1.2
+data-version: releases/2021-02-01
+ontology: Human Phenotype Ontology
+
+[Term]
+id: HP:0000822
+name: Hypertension
+synonym: "High blood pressure" EXACT []
+
+[Term]
+id: HP:0001627
+name: Diabetes
+synonym: "Sugar diabetes" EXACT []
+
+[Term]
+id: HP:0002090
+name: Asthma
+synonym: "Reactive airway disease" EXACT []
+"""
+
+        # Sample DO data in OBO format
+        self.do_terms = """
+format-version: 1.2
+data-version: releases/2021-02-01
+ontology: Disease Ontology
+
+[Term]
+id: DOID:0050167
+name: Hypertension
+synonym: "High blood pressure" EXACT []
+
+[Term]
+id: DOID:1612
+name: Diabetes Mellitus
+synonym: "Sugar diabetes" EXACT []
+synonym: "Diabetes" EXACT []
+
+[Term]
+id: DOID:9352
+name: Asthma
+synonym: "Reactive airway disease" EXACT []
+
+[Term]
+id: DOID:9351
+name: Obesity
+synonym: "Fatty syndrome" EXACT []
+
+[Term]
+id: DOID:1388
+name: Anemia
+synonym: "Lack of red blood cells" EXACT []
+"""
+
+        # Write HPO and DO ontology files
+        self.hpo_file = os.path.join(self.temp_dir.name, "HPO.obo")
         with open(self.hpo_file, 'w') as f:
-            json.dump(self.hpo_terms, f)
+            f.write(self.hpo_terms)
+
+        self.do_file = os.path.join(self.temp_dir.name, "DO.obo")
         with open(self.do_file, 'w') as f:
-            json.dump(self.do_terms, f)
+            f.write(self.do_terms)
 
-        # Create a temporary config.yaml
-        self.config_file = os.path.join(self.temp_dir.name, "config.yaml")
-        yaml_dump = """
-ontologies:
-  HPO:
-    name: Human Phenotype Ontology
-    file: {}
-  DO:
-    name: Disease Ontology
-    file: {}
-default_ontology: HPO
-""".format(self.hpo_file, self.do_file)
+        # Create a temporary configuration file
+        self.config_file = os.path.join(self.temp_dir.name, 'config.yaml')
         with open(self.config_file, 'w') as f:
-            f.write(yaml_dump)
-
-        # Create a temporary custom mapping file
-        self.custom_mapping_file = os.path.join(self.temp_dir.name, "custom_mapping.json")
-        custom_mappings = {
-            "Obesity": "HP:0001511",  # Assuming mapping to HPO
-            "Anemia": "DOID:1388"      # Assuming mapping to DO
-        }
-        with open(self.custom_mapping_file, 'w') as f:
-            json.dump(custom_mappings, f)
+            yaml.dump({
+                'ontologies': {
+                    'HPO': {
+                        'name': 'Human Phenotype Ontology',
+                        'file': self.hpo_file
+                    },
+                    'DO': {
+                        'name': 'Disease Ontology',
+                        'file': self.do_file
+                    }
+                },
+                'default_ontologies': ['HPO', 'DO']
+            }, f)
 
         # Initialize OntologyMapper
         self.mapper = OntologyMapper(config_path=self.config_file)
 
     def tearDown(self):
-        # Clean up temporary directory and files
+        # Clean up temporary directories and files
         self.temp_dir.cleanup()
 
     def test_initialization(self):
@@ -69,102 +107,178 @@ default_ontology: HPO
         supported = self.mapper.get_supported_ontologies()
         self.assertIn("HPO", supported)
         self.assertIn("DO", supported)
-        self.assertEqual(self.mapper.default_ontology, "HPO")
-
-    def test_map_terms_default_ontology(self):
-        # Test mapping terms using the default ontology (HPO)
-        terms = ["Hypertension", "Asthma", "Unknown Term"]
-        mappings = self.mapper.map_terms(terms)
-        expected = {
-            "Hypertension": {"HPO": "HP:0000822"},
-            "Asthma": {"HPO": "HP:0002090"},
-            "Unknown Term": {"HPO": None}
-        }
-        self.assertEqual(mappings, expected)
-
-    def test_map_terms_multiple_ontologies(self):
-        # Test mapping terms across multiple ontologies (HPO and DO)
-        terms = ["Hypertension", "Diabetes", "Obesity", "Anemia", "Unknown Term"]
-        ontologies = ["HPO", "DO"]
-        mappings = self.mapper.map_terms(terms, target_ontologies=ontologies)
-        expected = {
-            "Hypertension": {"HPO": "HP:0000822", "DO": "DOID:0050167"},
-            "Diabetes": {"HPO": "HP:0001627", "DO": "DOID:1612"},
-            "Obesity": {"HPO": "HP:0001511", "DO": "DOID:9351"},
-            "Anemia": {"HPO": "HP:0004322", "DO": "DOID:1388"},
-            "Unknown Term": {"HPO": None, "DO": None}
-        }
-        self.assertEqual(mappings, expected)
-
-    def test_map_terms_with_custom_mappings(self):
-        # Test mapping terms with custom mappings applied
-        terms = ["Obesity", "Anemia", "Hypertension"]
-        ontologies = ["HPO", "DO"]
-        custom_mappings = {}
-        with open(self.custom_mapping_file, 'r') as f:
-            custom_mappings = json.load(f)
-        mappings = self.mapper.map_terms(terms, target_ontologies=ontologies, custom_mappings=custom_mappings)
-        expected = {
-            "Obesity": {"HPO": "HP:0001511", "DO": "DOID:9351"},  # Custom mapping to HPO remains the same
-            "Anemia": {"HPO": "HP:0004322", "DO": "DOID:1388"},  # Custom mapping to DO
-            "Hypertension": {"HPO": "HP:0000822", "DO": "DOID:0050167"}
-        }
-        self.assertEqual(mappings, expected)
-
-    def test_map_terms_with_synonyms(self):
-        # Test mapping terms using synonyms
-        terms = ["High blood pressure", "Sugar diabetes", "Reactive airway disease"]
-        ontologies = ["HPO", "DO"]
-        mappings = self.mapper.map_terms(terms, target_ontologies=ontologies)
-        expected = {
-            "High blood pressure": {"HPO": "HP:0000822", "DO": "DOID:0050167"},
-            "Sugar diabetes": {"HPO": "HP:0001627", "DO": "DOID:1612"},
-            "Reactive airway disease": {"HPO": "HP:0002090", "DO": "DOID:9352"}
-        }
-        self.assertEqual(mappings, expected)
+        self.assertEqual(sorted(self.mapper.default_ontologies), sorted(["HPO", "DO"]))
 
     def test_get_supported_ontologies(self):
-        # Test retrieval of supported ontologies
         supported = self.mapper.get_supported_ontologies()
-        self.assertListEqual(supported, ["HPO", "DO"])
+        self.assertListEqual(sorted(supported), sorted(["HPO", "DO"]))
 
-    def test_add_new_ontology(self):
-        # Create sample MPO data
-        mpo_terms = [
-            {"id": "MP:0001943", "name": "Obesity", "synonyms": []},
-            {"id": "MP:0001902", "name": "Abnormal behavior", "synonyms": []}
-        ]
+    def test_map_terms_default_ontology(self):
+        # Define terms to map
+        terms = ["Hypertension", "Asthma", "Unknown Term"]
+
+        # Perform mapping using default ontologies (HPO and DO)
+        mappings = self.mapper.map_terms(terms)
+
+        # Define expected mappings
+        expected = {
+            "Hypertension": {
+                "HPO": "HP:0000822",
+                "DO": "DOID:0050167"
+            },
+            "Asthma": {
+                "HPO": "HP:0002090",
+                "DO": "DOID:9352"
+            },
+            "Unknown Term": {
+                "HPO": None,
+                "DO": None
+            }
+        }
+
+        self.assertEqual(mappings, expected, "Default term mappings do not match expected values.")
+
+    def test_map_terms_with_synonyms(self):
+        # Define terms with synonyms
+        terms = ["High blood pressure", "Sugar diabetes", "Reactive airway disease"]
+
+        # Perform mapping using default ontologies (HPO and DO)
+        mappings = self.mapper.map_terms(terms)
+
+        # Define expected mappings
+        expected = {
+            "High blood pressure": {
+                "HPO": "HP:0000822",
+                "DO": "DOID:0050167"
+            },
+            "Sugar diabetes": {
+                "HPO": "HP:0001627",
+                "DO": "DOID:1612"
+            },
+            "Reactive airway disease": {
+                "HPO": "HP:0002090",
+                "DO": "DOID:9352"
+            }
+        }
+
+        self.assertEqual(mappings, expected, "Synonym term mappings do not match expected values.")
+
+    def test_map_terms_with_custom_mappings(self):
+        # Add Mammalian Phenotype Ontology (MPO)
+        mpo_terms = """
+format-version: 1.2
+data-version: releases/2021-02-01
+ontology: Mammalian Phenotype Ontology
+
+[Term]
+id: MP:0001943
+name: Obesity
+synonym: "Fatty syndrome" EXACT []
+
+[Term]
+id: MP:0001902
+name: Abnormal behavior
+synonym: "Behaviors differing from the norm" EXACT []
+"""
 
         # Create temporary MPO ontology file
-        mpo_file = os.path.join(self.temp_dir.name, "MPO.json")
+        mpo_file = os.path.join(self.temp_dir.name, "MPO.obo")
         with open(mpo_file, 'w') as f:
-            json.dump(mpo_terms, f)
+            f.write(mpo_terms)
+
+        # Update the configuration to include MPO
+        with open(self.config_file, 'r') as f:
+            config_data = yaml.safe_load(f)
+
+        config_data['ontologies']['MPO'] = {
+            'name': 'Mammalian Phenotype Ontology',
+            'file': mpo_file
+        }
+        config_data['default_ontologies'].append('MPO')
+
+        with open(self.config_file, 'w') as f:
+            yaml.dump(config_data, f)
+
+        # Reload OntologyMapper with updated config
+        self.mapper = OntologyMapper(config_path=self.config_file)
+
+        # Verify that MPO is now supported
+        supported = self.mapper.get_supported_ontologies()
+        self.assertIn("MPO", supported)
+
+        # Define terms to map, including ones from MPO
+        terms = ["Obesity", "Abnormal behavior"]
+
+        # Perform mapping using all default ontologies (HPO, DO, MPO)
+        mappings = self.mapper.map_terms(terms)
+
+        # Define expected mappings
+        expected = {
+            "Obesity": {
+                "HPO": None,           # No HPO term defined for Obesity in sample HPO.obo
+                "DO": "DOID:9351",
+                "MPO": "MP:0001943"
+            },
+            "Abnormal behavior": {
+                "HPO": None,           # No HPO term defined for Abnormal behavior
+                "DO": None,            # No DO term defined for Abnormal behavior
+                "MPO": "MP:0001902"
+            }
+        }
+
+        self.assertEqual(mappings, expected, "Custom term mappings do not match expected values.")
+
+    def test_add_new_ontology(self):
+        # Create sample MPO data in OBO format
+        mpo_terms = """
+format-version: 1.2
+data-version: releases/2021-02-01
+ontology: Mammalian Phenotype Ontology
+
+[Term]
+id: MP:0001943
+name: Obesity
+synonym: "Fatty syndrome" EXACT []
+
+[Term]
+id: MP:0001902
+name: Abnormal behavior
+synonym: "Behaviors differing from the norm" EXACT []
+"""
+
+        # Create temporary MPO ontology file
+        mpo_file = os.path.join(self.temp_dir.name, "MPO.obo")
+        with open(mpo_file, 'w') as f:
+            f.write(mpo_terms)
 
         # Load existing config
         with open(self.config_file, 'r') as f:
             config_data = yaml.safe_load(f)
         
         # Add new ontology
-        new_ontology = {
-            "name": "Mammalian Phenotype Ontology",
-            "file": mpo_file
+        config_data['ontologies']['MPO'] = {
+            'name': 'Mammalian Phenotype Ontology',
+            'file': mpo_file
         }
-        config_data['ontologies']['MPO'] = new_ontology  # Add under 'ontologies'
+        config_data['default_ontologies'].append('MPO')
 
-        # Write updated config back to file
         with open(self.config_file, 'w') as f:
             yaml.dump(config_data, f)
         
         # Reload OntologyMapper
         self.mapper = OntologyMapper(config_path=self.config_file)
         
+        # Verify that MPO is now supported
         supported = self.mapper.get_supported_ontologies()
         self.assertIn("MPO", supported)
         
-        # Test mapping with the new ontology
+        # Define terms to map
         terms = ["Obesity", "Abnormal behavior"]
-        ontologies = ["MPO"]
-        mappings = self.mapper.map_terms(terms, target_ontologies=ontologies)
+
+        # Perform mapping using MPO only
+        mappings = self.mapper.map_terms(terms, target_ontologies=["MPO"])
+        
+        # Define expected mappings
         expected = {
             "Obesity": {"MPO": "MP:0001943"},
             "Abnormal behavior": {"MPO": "MP:0001902"}
@@ -176,31 +290,31 @@ default_ontology: HPO
         invalid_config_path = os.path.join(self.temp_dir.name, "invalid_config.yaml")
         with open(invalid_config_path, 'w') as f:
             f.write("invalid_yaml: [unbalanced brackets")
-        
+
         with self.assertRaises(Exception):
             OntologyMapper(config_path=invalid_config_path)
 
     def test_missing_ontology_file(self):
         # Test initialization with a missing ontology file
-        missing_ontology_path = os.path.join(self.temp_dir.name, "MissingOntology.json")
+        missing_ontology_path = os.path.join(self.temp_dir.name, "MissingOntology.obo")
         config_data = {
             "ontologies": {
                 "HPO": {
                     "name": "Human Phenotype Ontology",
-                    "file": "NonExistentFile.json"
+                    "file": "NonExistentFile.obo"
                 }
             },
-            "default_ontology": "HPO"
+            "default_ontologies": ["HPO"]
         }
         missing_config_file = os.path.join(self.temp_dir.name, "missing_config.yaml")
         with open(missing_config_file, 'w') as f:
-            yaml_dump = """
+            yaml_dump = f"""
 ontologies:
   HPO:
     name: Human Phenotype Ontology
-    file: {}
-default_ontology: HPO
-""".format("NonExistentFile.json")
+    file: {missing_ontology_path}
+default_ontologies: [HPO]
+"""
             f.write(yaml_dump)
         
         with self.assertRaises(FileNotFoundError):

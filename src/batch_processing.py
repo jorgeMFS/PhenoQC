@@ -70,12 +70,9 @@ def process_file(
 
             # Initialize mapping success rates accumulators
             cumulative_mapping_stats = {}
-            if target_ontologies:
-                for ontology_id in target_ontologies:
-                    cumulative_mapping_stats[ontology_id] = {'total_terms': 0, 'mapped_terms': 0}
-            else:
-                # Use default ontology
-                cumulative_mapping_stats[ontology_mapper.default_ontology] = {'total_terms': 0, 'mapped_terms': 0}
+            target_ontologies = target_ontologies or ontology_mapper.default_ontologies
+            for ontology_id in target_ontologies:
+                cumulative_mapping_stats[ontology_id] = {'total_terms': 0, 'mapped_terms': 0}
 
             # Initialize sample DataFrame for visualizations
             sample_df = pd.DataFrame()
@@ -151,7 +148,7 @@ def process_file(
                     mappings = ontology_mapper.map_terms(phenotypic_terms, target_ontologies, custom_mappings)
 
                     # Add mapped IDs to the DataFrame
-                    for ontology_id in target_ontologies or [ontology_mapper.default_ontology]:
+                    for ontology_id in target_ontologies:
                         mapped_column = f"{ontology_id}_ID"
                         chunk[mapped_column] = chunk['Phenotype'].apply(
                             lambda x: mappings.get(x, {}).get(ontology_id)
@@ -238,13 +235,26 @@ def process_file(
             pbar.close()
 
             # After processing, collect necessary data
+            # result = {
+            #     'file': file_path,
+            #     'status': 'Processed',
+            #     'error': None,
+            #     'validation_results': validation_results,
+            #     'missing_data': missing_counts,
+            #     'flagged_records_count': flagged_records_count
+            # }
+
+            # return result
             result = {
                 'file': file_path,
                 'status': 'Processed',
                 'error': None,
                 'validation_results': validation_results,
                 'missing_data': missing_counts,
-                'flagged_records_count': flagged_records_count
+                'flagged_records_count': flagged_records_count,
+                'processed_file_path': output_data_file,  # Add this line
+                'mapping_success_rates': mapping_success_rates,  # Include if needed for reporting
+                'visualization_images': visualization_images   # Include if needed for reporting
             }
 
             return result
@@ -321,6 +331,7 @@ def batch_process(
                 print(f"❌ Error in processing {os.path.basename(file_path)}: {str(e)}")
 
     return results
+
 
 def collect_files(inputs, recursive=True):
     """

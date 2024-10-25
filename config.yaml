@@ -1,15 +1,20 @@
 ontologies:
   HPO:
     name: Human Phenotype Ontology
-    file: ontologies/HPO.json
+    file: ontologies/hp.obo
   DO:
     name: Disease Ontology
-    file: ontologies/DO.json
+    file: ontologies/doid.obo
   MPO:
     name: Mammalian Phenotype Ontology
-    file: ontologies/MPO.json
+    file: ontologies/mp.obo
+  GO:
+    name: Gene Ontology
+    file: ontologies/go.obo
 
-default_ontology: HPO
+default_ontologies:
+  - HPO
+  - DO
 
 imputation_strategies:
   Age: mean
