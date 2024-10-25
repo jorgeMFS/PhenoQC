@@ -2,6 +2,7 @@ import unittest
 import os
 import pandas as pd
 import tempfile
+import types
 from src.input import read_csv, read_tsv, read_json, load_data
 
 class TestInputModule(unittest.TestCase):
@@ -33,21 +34,27 @@ class TestInputModule(unittest.TestCase):
 
     def test_read_csv(self):
         reader = read_csv(self.csv_file)
-        self.assertIsInstance(reader, pd.io.parsers.TextFileReader)
-        df = next(reader)
-        self.assertIsInstance(df, pd.DataFrame)
-        self.assertEqual(len(df), 4)
+        self.assertIsInstance(reader, types.GeneratorType)
+        try:
+            chunk = next(reader)
+            self.assertIsInstance(chunk, pd.DataFrame)
+            self.assertEqual(len(chunk), 4)
+        except StopIteration:
+            self.fail("read_csv generator did not yield any chunks.")
 
     def test_read_tsv(self):
         reader = read_tsv(self.tsv_file)
-        self.assertIsInstance(reader, pd.io.parsers.TextFileReader)
-        df = next(reader)
-        self.assertIsInstance(df, pd.DataFrame)
-        self.assertEqual(len(df), 4)
+        self.assertIsInstance(reader, types.GeneratorType)
+        try:
+            chunk = next(reader)
+            self.assertIsInstance(chunk, pd.DataFrame)
+            self.assertEqual(len(chunk), 4)
+        except StopIteration:
+            self.fail("read_tsv generator did not yield any chunks.")
 
     def test_read_json(self):
         reader = read_json(self.json_file, chunksize=2)
-        self.assertIsNotNone(reader)
+        self.assertIsInstance(reader, types.GeneratorType)
         # Collect all chunks into a list for testing
         chunks = list(reader)
         self.assertEqual(len(chunks), 2)  # Expecting 2 chunks (2 records each)
@@ -57,21 +64,27 @@ class TestInputModule(unittest.TestCase):
 
     def test_load_data_csv(self):
         reader = load_data(self.csv_file, 'csv', chunksize=2)
-        self.assertIsInstance(reader, pd.io.parsers.TextFileReader)
-        df = next(reader)
-        self.assertIsInstance(df, pd.DataFrame)
-        self.assertEqual(len(df), 2)
+        self.assertIsInstance(reader, types.GeneratorType)
+        try:
+            df = next(reader)
+            self.assertIsInstance(df, pd.DataFrame)
+            self.assertEqual(len(df), 2)
+        except StopIteration:
+            self.fail("load_data for CSV did not yield any chunks.")
 
     def test_load_data_tsv(self):
         reader = load_data(self.tsv_file, 'tsv', chunksize=2)
-        self.assertIsInstance(reader, pd.io.parsers.TextFileReader)
-        df = next(reader)
-        self.assertIsInstance(df, pd.DataFrame)
-        self.assertEqual(len(df), 2)
+        self.assertIsInstance(reader, types.GeneratorType)
+        try:
+            df = next(reader)
+            self.assertIsInstance(df, pd.DataFrame)
+            self.assertEqual(len(df), 2)
+        except StopIteration:
+            self.fail("load_data for TSV did not yield any chunks.")
 
     def test_load_data_json(self):
         reader = load_data(self.json_file, 'json', chunksize=2)
-        self.assertIsNotNone(reader)
+        self.assertIsInstance(reader, types.GeneratorType)
         chunks = list(reader)
         self.assertEqual(len(chunks), 2)  # Expecting 2 chunks (2 records each)
         for chunk in chunks:
