@@ -4,67 +4,55 @@ import csv
 
 def read_csv(file_path, chunksize=10000):
     """
-    Reads a CSV file and returns an iterator over pandas DataFrame chunks after validating delimiter consistency.
+    Reads a CSV file and returns an iterator over pandas DataFrame chunks while validating delimiter consistency.
 
     Args:
         file_path (str): Path to the CSV file.
         chunksize (int): Number of rows per chunk.
 
-    Returns:
-        Iterator[pd.DataFrame]: Iterator over DataFrame chunks.
+    Yields:
+        pd.DataFrame: DataFrame chunk.
 
     Raises:
         ValueError: If delimiter inconsistencies are found.
     """
-    # Validate delimiter consistency
-    with open(file_path, 'r', newline='') as f:
-        reader = csv.reader(f)
+    with pd.read_csv(file_path, chunksize=chunksize) as reader:
         expected_columns = None
-        line_number = 0
-        for row in reader:
-            line_number += 1
+        for chunk in reader:
             if expected_columns is None:
-                expected_columns = len(row)
-            else:
-                if len(row) != expected_columns:
-                    raise ValueError(
-                        f"Delimiter inconsistency detected in file '{file_path}' at line {line_number}. "
-                        f"Expected {expected_columns} columns but found {len(row)} columns."
-                    )
-    # Read the file in chunks
-    return pd.read_csv(file_path, chunksize=chunksize)
+                expected_columns = chunk.shape[1]
+            elif chunk.shape[1] != expected_columns:
+                raise ValueError(
+                    f"Delimiter inconsistency detected in file '{file_path}'. "
+                    f"Expected {expected_columns} columns but found {chunk.shape[1]} columns."
+                )
+            yield chunk
 
 def read_tsv(file_path, chunksize=10000):
     """
-    Reads a TSV file and returns an iterator over pandas DataFrame chunks after validating delimiter consistency.
+    Reads a TSV file and returns an iterator over pandas DataFrame chunks while validating delimiter consistency.
 
     Args:
         file_path (str): Path to the TSV file.
         chunksize (int): Number of rows per chunk.
 
-    Returns:
-        Iterator[pd.DataFrame]: Iterator over DataFrame chunks.
+    Yields:
+        pd.DataFrame: DataFrame chunk.
 
     Raises:
         ValueError: If delimiter inconsistencies are found.
     """
-    # Validate delimiter consistency
-    with open(file_path, 'r', newline='') as f:
-        reader = csv.reader(f, delimiter='\t')
+    with pd.read_csv(file_path, sep='\t', chunksize=chunksize) as reader:
         expected_columns = None
-        line_number = 0
-        for row in reader:
-            line_number += 1
+        for chunk in reader:
             if expected_columns is None:
-                expected_columns = len(row)
-            else:
-                if len(row) != expected_columns:
-                    raise ValueError(
-                        f"Delimiter inconsistency detected in file '{file_path}' at line {line_number}. "
-                        f"Expected {expected_columns} columns but found {len(row)} columns."
-                    )
-    # Read the file in chunks
-    return pd.read_csv(file_path, sep='\t', chunksize=chunksize)
+                expected_columns = chunk.shape[1]
+            elif chunk.shape[1] != expected_columns:
+                raise ValueError(
+                    f"Delimiter inconsistency detected in file '{file_path}'. "
+                    f"Expected {expected_columns} columns but found {chunk.shape[1]} columns."
+                )
+            yield chunk
 
 def read_json(file_path, chunksize=10000):
     """
