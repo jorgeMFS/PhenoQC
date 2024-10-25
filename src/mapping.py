@@ -1,7 +1,8 @@
 import os
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import yaml
 import pronto  # Library for parsing ontologies
+from rapidfuzz import fuzz, process  # For fuzzy matching
 
 class OntologyMapper:
     def __init__(self, config_path: str = 'config.yaml'):
@@ -16,6 +17,7 @@ class OntologyMapper:
         self.default_ontologies = self.config.get('default_ontologies', [])
         if not self.default_ontologies:
             raise ValueError("No default ontologies specified in the configuration.")
+        self.fuzzy_threshold = self.config.get('fuzzy_threshold', 80)  # Default threshold
 
     def load_config(self, config_path: str) -> Dict[str, Any]:
         """
@@ -70,7 +72,7 @@ class OntologyMapper:
                     mapping[t] = term_id
         return mapping
 
-    def map_term(self, term: str, target_ontologies: List[str] = None, custom_mappings: Dict[str, str] = None) -> Dict[str, str]:
+    def map_term(self, term: str, target_ontologies: Optional[List[str]] = None, custom_mappings: Optional[Dict[str, str]] = None) -> Dict[str, Optional[str]]:
         """
         Maps a phenotypic term to IDs in the specified ontologies.
 
@@ -99,10 +101,21 @@ class OntologyMapper:
         for ontology_id in target_ontologies:
             ontology_mapping = self.ontologies.get(ontology_id, {})
             mapped_id = ontology_mapping.get(term_lower, None)
+
+            if not mapped_id:
+                # Perform fuzzy matching
+                match, score, _ = process.extractOne(
+                    term_lower, ontology_mapping.keys(), scorer=fuzz.token_sort_ratio
+                )
+                if score >= self.fuzzy_threshold:
+                    mapped_id = ontology_mapping[match]
+                else:
+                    mapped_id = None  # No suitable match found
+
             mappings[ontology_id] = mapped_id
         return mappings
 
-    def map_terms(self, terms: List[str], target_ontologies: List[str] = None, custom_mappings: Dict[str, str] = None) -> Dict[str, Dict[str, str]]:
+    def map_terms(self, terms: List[str], target_ontologies: Optional[List[str]] = None, custom_mappings: Optional[Dict[str, str]] = None) -> Dict[str, Dict[str, Optional[str]]]:
         """
         Maps a list of phenotypic terms to IDs in the specified ontologies.
 

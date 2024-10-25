@@ -16,6 +16,8 @@ default_ontologies:
   - HPO
   - DO
 
+fuzzy_threshold: 85  # (0-100)
+
 imputation_strategies:
   Age: mean
   Gender: mode
