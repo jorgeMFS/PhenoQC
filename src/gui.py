@@ -397,10 +397,6 @@ def main():
                                 # Always use recursive scanning for better reliability
                                 collected_files = collect_supported_files(extract_dir, supported_extensions)
                                 st.info(f"Collected {len(collected_files)} files.")
-                                # List collected files
-                                # st.write("Collected Files:")
-                                # for f in collected_files:
-                                #     st.write(f" - {f}")
                                 input_paths.extend(collected_files)
                         if not input_paths:
                             st.error("No data files found to process.")
