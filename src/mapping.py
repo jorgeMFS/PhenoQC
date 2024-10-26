@@ -3,6 +3,8 @@ from typing import Dict, List, Any, Optional
 import yaml
 import pronto  # Library for parsing ontologies
 from rapidfuzz import fuzz, process  # For fuzzy matching
+import requests
+import tempfile  # For creating temporary files
 
 class OntologyMapper:
     def __init__(self, config_path: str = 'config.yaml'):
@@ -42,26 +44,63 @@ class OntologyMapper:
         ontologies = {}
         ontology_configs = self.config.get('ontologies', {})
         for ontology_id, ontology_info in ontology_configs.items():
-            ontology_file = ontology_info.get('file')
-            if ontology_file and os.path.exists(ontology_file):
-                print(f"Loading ontology '{ontology_id}' from '{ontology_file}'...")
-                ontologies[ontology_id] = self.parse_ontology(ontology_file)
+            source = ontology_info.get('source', 'local').lower()
+            if source == 'local':
+                ontology_file = ontology_info.get('file')
+                if ontology_file and os.path.exists(ontology_file):
+                    print(f"Loading ontology '{ontology_id}' from local file '{ontology_file}'...")
+                    ontologies[ontology_id] = self.parse_ontology(ontology_file, ontology_info.get('format'))
+                else:
+                    raise FileNotFoundError(f"Ontology file '{ontology_file}' for '{ontology_id}' not found.")
+            elif source == 'url':
+                url = ontology_info.get('url')
+                file_format = ontology_info.get('format')
+                if url and file_format:
+                    print(f"Fetching ontology '{ontology_id}' from URL...")
+                    ontology_file_path = self.fetch_ontology_file_from_url(url, file_format)
+                    ontologies[ontology_id] = self.parse_ontology(ontology_file_path, file_format)
+                else:
+                    raise ValueError(f"URL or format not specified for ontology '{ontology_id}' in configuration.")
             else:
-                raise FileNotFoundError(f"Ontology file '{ontology_file}' for '{ontology_id}' not found.")
+                raise ValueError(f"Unknown source '{source}' for ontology '{ontology_id}'.")
         return ontologies
 
-    def parse_ontology(self, ontology_file: str) -> Dict[str, str]:
+    def fetch_ontology_file_from_url(self, url: str, file_format: str) -> str:
+        """
+        Fetches the ontology file from a specified URL and saves it to a temporary file.
+
+        Args:
+            url (str): The URL to download the ontology from.
+            file_format (str): The format of the ontology file ('obo', 'owl', 'json').
+
+        Returns:
+            str: Path to the saved ontology file.
+        """
+        response = requests.get(url)
+        if response.status_code == 200:
+            # Set file extension based on the specified format
+            file_extension = f".{file_format.lower()}"
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=file_extension)
+            temp_file.write(response.content)
+            temp_file.close()
+            return temp_file.name
+        else:
+            raise Exception(f"Failed to download ontology from '{url}'. Status code: {response.status_code}")
+
+    def parse_ontology(self, ontology_file_path: str, file_format: str) -> Dict[str, str]:
         """
         Parses an ontology file into a mapping dictionary.
 
         Args:
-            ontology_file (str): Path to the ontology file.
+            ontology_file_path (str): Path to the ontology file.
+            file_format (str): The format of the ontology file ('obo', 'owl', 'json').
 
         Returns:
             dict: Mapping from term names and synonyms to their standardized IDs.
         """
         mapping = {}
-        onto = pronto.Ontology(ontology_file)
+        print(f"Parsing ontology file '{ontology_file_path}'...")
+        onto = pronto.Ontology(ontology_file_path)
         for term in onto.terms():
             term_id = term.id
             term_name = term.name.lower().strip() if term.name else ''
@@ -104,9 +143,12 @@ class OntologyMapper:
 
             if not mapped_id:
                 # Perform fuzzy matching
-                match, score, _ = process.extractOne(
-                    term_lower, ontology_mapping.keys(), scorer=fuzz.token_sort_ratio
-                )
+                match = None
+                score = 0
+                if ontology_mapping:
+                    match, score, _ = process.extractOne(
+                        term_lower, ontology_mapping.keys(), scorer=fuzz.token_sort_ratio
+                    )
                 if score >= self.fuzzy_threshold:
                     mapped_id = ontology_mapping[match]
                 else:
