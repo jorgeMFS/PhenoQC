@@ -1,12 +1,14 @@
 import os
 from typing import Dict, List, Any, Optional
 import yaml
-import pronto  # Library for parsing ontologies
-from rapidfuzz import fuzz, process  # For fuzzy matching
+import pronto
+from rapidfuzz import fuzz, process
 import requests
-import tempfile  # For creating temporary files
+from datetime import datetime, timedelta
 
 class OntologyMapper:
+    CACHE_DIR = os.path.expanduser("~/.phenoqc/ontologies")
+
     def __init__(self, config_path: str = 'config.yaml'):
         """
         Initializes the OntologyMapper by loading ontologies from the configuration file.
@@ -15,11 +17,12 @@ class OntologyMapper:
             config_path (str): Path to the configuration YAML file.
         """
         self.config = self.load_config(config_path)
+        self.cache_expiry_days = self.config.get('cache_expiry_days', 30)
         self.ontologies = self.load_ontologies()
         self.default_ontologies = self.config.get('default_ontologies', [])
         if not self.default_ontologies:
             raise ValueError("No default ontologies specified in the configuration.")
-        self.fuzzy_threshold = self.config.get('fuzzy_threshold', 80)  # Default threshold
+        self.fuzzy_threshold = self.config.get('fuzzy_threshold', 80)
 
     def load_config(self, config_path: str) -> Dict[str, Any]:
         """
@@ -56,8 +59,8 @@ class OntologyMapper:
                 url = ontology_info.get('url')
                 file_format = ontology_info.get('format')
                 if url and file_format:
-                    print(f"Fetching ontology '{ontology_id}' from URL...")
-                    ontology_file_path = self.fetch_ontology_file_from_url(url, file_format)
+                    print(f"Loading ontology '{ontology_id}' from cache or URL...")
+                    ontology_file_path = self.fetch_ontology_file_with_cache(ontology_id, url, file_format)
                     ontologies[ontology_id] = self.parse_ontology(ontology_file_path, file_format)
                 else:
                     raise ValueError(f"URL or format not specified for ontology '{ontology_id}' in configuration.")
@@ -65,27 +68,43 @@ class OntologyMapper:
                 raise ValueError(f"Unknown source '{source}' for ontology '{ontology_id}'.")
         return ontologies
 
-    def fetch_ontology_file_from_url(self, url: str, file_format: str) -> str:
+    def fetch_ontology_file_with_cache(self, ontology_id: str, url: str, file_format: str) -> str:
         """
-        Fetches the ontology file from a specified URL and saves it to a temporary file.
+        Fetches the ontology file from the cache or downloads it if not present or expired.
 
         Args:
+            ontology_id (str): The ontology identifier.
             url (str): The URL to download the ontology from.
             file_format (str): The format of the ontology file ('obo', 'owl', 'json').
 
         Returns:
             str: Path to the saved ontology file.
         """
+        # Ensure cache directory exists
+        os.makedirs(self.CACHE_DIR, exist_ok=True)
+
+        # Construct the cached file path
+        cached_file_path = os.path.join(self.CACHE_DIR, f"{ontology_id}.{file_format.lower()}")
+
+        # Check if the cached file exists and is not expired
+        if os.path.exists(cached_file_path):
+            file_mod_time = datetime.fromtimestamp(os.path.getmtime(cached_file_path))
+            if datetime.now() - file_mod_time < timedelta(days=self.cache_expiry_days):
+                print(f"Using cached ontology file for '{ontology_id}' at '{cached_file_path}'")
+                return cached_file_path
+            else:
+                print(f"Cached ontology file for '{ontology_id}' is expired. Downloading new version...")
+
+        # Download the ontology and save to cache
+        print(f"Downloading ontology '{ontology_id}' from '{url}'...")
         response = requests.get(url)
         if response.status_code == 200:
-            # Set file extension based on the specified format
-            file_extension = f".{file_format.lower()}"
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=file_extension)
-            temp_file.write(response.content)
-            temp_file.close()
-            return temp_file.name
+            with open(cached_file_path, 'wb') as f:
+                f.write(response.content)
+            print(f"Ontology '{ontology_id}' saved to cache at '{cached_file_path}'")
+            return cached_file_path
         else:
-            raise Exception(f"Failed to download ontology from '{url}'. Status code: {response.status_code}")
+            raise Exception(f"Failed to download ontology '{ontology_id}' from '{url}'. Status code: {response.status_code}")
 
     def parse_ontology(self, ontology_file_path: str, file_format: str) -> Dict[str, str]:
         """
