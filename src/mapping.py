@@ -1,9 +1,14 @@
 import os
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import yaml
-import pronto  # Library for parsing ontologies
+import pronto
+from rapidfuzz import fuzz, process
+import requests
+from datetime import datetime, timedelta
 
 class OntologyMapper:
+    CACHE_DIR = os.path.expanduser("~/.phenoqc/ontologies")
+
     def __init__(self, config_path: str = 'config.yaml'):
         """
         Initializes the OntologyMapper by loading ontologies from the configuration file.
@@ -12,10 +17,12 @@ class OntologyMapper:
             config_path (str): Path to the configuration YAML file.
         """
         self.config = self.load_config(config_path)
+        self.cache_expiry_days = self.config.get('cache_expiry_days', 30)
         self.ontologies = self.load_ontologies()
         self.default_ontologies = self.config.get('default_ontologies', [])
         if not self.default_ontologies:
             raise ValueError("No default ontologies specified in the configuration.")
+        self.fuzzy_threshold = self.config.get('fuzzy_threshold', 80)
 
     def load_config(self, config_path: str) -> Dict[str, Any]:
         """
@@ -40,26 +47,79 @@ class OntologyMapper:
         ontologies = {}
         ontology_configs = self.config.get('ontologies', {})
         for ontology_id, ontology_info in ontology_configs.items():
-            ontology_file = ontology_info.get('file')
-            if ontology_file and os.path.exists(ontology_file):
-                print(f"Loading ontology '{ontology_id}' from '{ontology_file}'...")
-                ontologies[ontology_id] = self.parse_ontology(ontology_file)
+            source = ontology_info.get('source', 'local').lower()
+            if source == 'local':
+                ontology_file = ontology_info.get('file')
+                if ontology_file and os.path.exists(ontology_file):
+                    print(f"Loading ontology '{ontology_id}' from local file '{ontology_file}'...")
+                    ontologies[ontology_id] = self.parse_ontology(ontology_file, ontology_info.get('format'))
+                else:
+                    raise FileNotFoundError(f"Ontology file '{ontology_file}' for '{ontology_id}' not found.")
+            elif source == 'url':
+                url = ontology_info.get('url')
+                file_format = ontology_info.get('format')
+                if url and file_format:
+                    print(f"Loading ontology '{ontology_id}' from cache or URL...")
+                    ontology_file_path = self.fetch_ontology_file_with_cache(ontology_id, url, file_format)
+                    ontologies[ontology_id] = self.parse_ontology(ontology_file_path, file_format)
+                else:
+                    raise ValueError(f"URL or format not specified for ontology '{ontology_id}' in configuration.")
             else:
-                raise FileNotFoundError(f"Ontology file '{ontology_file}' for '{ontology_id}' not found.")
+                raise ValueError(f"Unknown source '{source}' for ontology '{ontology_id}'.")
         return ontologies
 
-    def parse_ontology(self, ontology_file: str) -> Dict[str, str]:
+    def fetch_ontology_file_with_cache(self, ontology_id: str, url: str, file_format: str) -> str:
+        """
+        Fetches the ontology file from the cache or downloads it if not present or expired.
+
+        Args:
+            ontology_id (str): The ontology identifier.
+            url (str): The URL to download the ontology from.
+            file_format (str): The format of the ontology file ('obo', 'owl', 'json').
+
+        Returns:
+            str: Path to the saved ontology file.
+        """
+        # Ensure cache directory exists
+        os.makedirs(self.CACHE_DIR, exist_ok=True)
+
+        # Construct the cached file path
+        cached_file_path = os.path.join(self.CACHE_DIR, f"{ontology_id}.{file_format.lower()}")
+
+        # Check if the cached file exists and is not expired
+        if os.path.exists(cached_file_path):
+            file_mod_time = datetime.fromtimestamp(os.path.getmtime(cached_file_path))
+            if datetime.now() - file_mod_time < timedelta(days=self.cache_expiry_days):
+                print(f"Using cached ontology file for '{ontology_id}' at '{cached_file_path}'")
+                return cached_file_path
+            else:
+                print(f"Cached ontology file for '{ontology_id}' is expired. Downloading new version...")
+
+        # Download the ontology and save to cache
+        print(f"Downloading ontology '{ontology_id}' from '{url}'...")
+        response = requests.get(url)
+        if response.status_code == 200:
+            with open(cached_file_path, 'wb') as f:
+                f.write(response.content)
+            print(f"Ontology '{ontology_id}' saved to cache at '{cached_file_path}'")
+            return cached_file_path
+        else:
+            raise Exception(f"Failed to download ontology '{ontology_id}' from '{url}'. Status code: {response.status_code}")
+
+    def parse_ontology(self, ontology_file_path: str, file_format: str) -> Dict[str, str]:
         """
         Parses an ontology file into a mapping dictionary.
 
         Args:
-            ontology_file (str): Path to the ontology file.
+            ontology_file_path (str): Path to the ontology file.
+            file_format (str): The format of the ontology file ('obo', 'owl', 'json').
 
         Returns:
             dict: Mapping from term names and synonyms to their standardized IDs.
         """
         mapping = {}
-        onto = pronto.Ontology(ontology_file)
+        print(f"Parsing ontology file '{ontology_file_path}'...")
+        onto = pronto.Ontology(ontology_file_path)
         for term in onto.terms():
             term_id = term.id
             term_name = term.name.lower().strip() if term.name else ''
@@ -70,7 +130,7 @@ class OntologyMapper:
                     mapping[t] = term_id
         return mapping
 
-    def map_term(self, term: str, target_ontologies: List[str] = None, custom_mappings: Dict[str, str] = None) -> Dict[str, str]:
+    def map_term(self, term: str, target_ontologies: Optional[List[str]] = None, custom_mappings: Optional[Dict[str, str]] = None) -> Dict[str, Optional[str]]:
         """
         Maps a phenotypic term to IDs in the specified ontologies.
 
@@ -99,10 +159,24 @@ class OntologyMapper:
         for ontology_id in target_ontologies:
             ontology_mapping = self.ontologies.get(ontology_id, {})
             mapped_id = ontology_mapping.get(term_lower, None)
+
+            if not mapped_id:
+                # Perform fuzzy matching
+                match = None
+                score = 0
+                if ontology_mapping:
+                    match, score, _ = process.extractOne(
+                        term_lower, ontology_mapping.keys(), scorer=fuzz.token_sort_ratio
+                    )
+                if score >= self.fuzzy_threshold:
+                    mapped_id = ontology_mapping[match]
+                else:
+                    mapped_id = None  # No suitable match found
+
             mappings[ontology_id] = mapped_id
         return mappings
 
-    def map_terms(self, terms: List[str], target_ontologies: List[str] = None, custom_mappings: Dict[str, str] = None) -> Dict[str, Dict[str, str]]:
+    def map_terms(self, terms: List[str], target_ontologies: Optional[List[str]] = None, custom_mappings: Optional[Dict[str, str]] = None) -> Dict[str, Dict[str, Optional[str]]]:
         """
         Maps a list of phenotypic terms to IDs in the specified ontologies.
 

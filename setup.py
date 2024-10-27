@@ -21,6 +21,7 @@ setup(
         'fancyimpute',
         'fastjsonschema',
         'pronto',
+        'rapidfuzz',
     ],
     extras_require={
         'test': [
