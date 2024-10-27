@@ -1,58 +1,31 @@
 import pandas as pd
 import json
-import csv
 
 def read_csv(file_path, chunksize=10000):
     """
-    Reads a CSV file and returns an iterator over pandas DataFrame chunks while validating delimiter consistency.
+    Reads a CSV file and returns an iterator over pandas DataFrame chunks.
 
     Args:
         file_path (str): Path to the CSV file.
         chunksize (int): Number of rows per chunk.
 
-    Yields:
-        pd.DataFrame: DataFrame chunk.
-
-    Raises:
-        ValueError: If delimiter inconsistencies are found.
+    Returns:
+        Iterator[pd.DataFrame]: DataFrame chunks.
     """
-    with pd.read_csv(file_path, chunksize=chunksize) as reader:
-        expected_columns = None
-        for chunk in reader:
-            if expected_columns is None:
-                expected_columns = chunk.shape[1]
-            elif chunk.shape[1] != expected_columns:
-                raise ValueError(
-                    f"Delimiter inconsistency detected in file '{file_path}'. "
-                    f"Expected {expected_columns} columns but found {chunk.shape[1]} columns."
-                )
-            yield chunk
+    return pd.read_csv(file_path, chunksize=chunksize)
 
 def read_tsv(file_path, chunksize=10000):
     """
-    Reads a TSV file and returns an iterator over pandas DataFrame chunks while validating delimiter consistency.
+    Reads a TSV file and returns an iterator over pandas DataFrame chunks.
 
     Args:
         file_path (str): Path to the TSV file.
         chunksize (int): Number of rows per chunk.
 
-    Yields:
-        pd.DataFrame: DataFrame chunk.
-
-    Raises:
-        ValueError: If delimiter inconsistencies are found.
+    Returns:
+        Iterator[pd.DataFrame]: DataFrame chunks.
     """
-    with pd.read_csv(file_path, sep='\t', chunksize=chunksize) as reader:
-        expected_columns = None
-        for chunk in reader:
-            if expected_columns is None:
-                expected_columns = chunk.shape[1]
-            elif chunk.shape[1] != expected_columns:
-                raise ValueError(
-                    f"Delimiter inconsistency detected in file '{file_path}'. "
-                    f"Expected {expected_columns} columns but found {chunk.shape[1]} columns."
-                )
-            yield chunk
+    return pd.read_csv(file_path, sep='\t', chunksize=chunksize)
 
 def read_json(file_path, chunksize=10000):
     """
@@ -88,7 +61,7 @@ def load_data(file_path, file_type, chunksize=10000):
         chunksize (int): Number of rows per chunk (for CSV/TSV).
 
     Returns:
-        Iterator[pd.DataFrame] or dict: Data iterator for CSV/TSV or dict for JSON.
+        Iterator[pd.DataFrame]: Data iterator for CSV/TSV/JSON.
 
     Raises:
         ValueError: If the file type is unsupported.

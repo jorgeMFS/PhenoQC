@@ -12,7 +12,7 @@ class TestBatchProcessingModule(unittest.TestCase):
         self.schema_dir = tempfile.mkdtemp()
         self.mapping_dir = tempfile.mkdtemp()
 
-        # Create a temporary configuration file with corrected key
+        # Create a temporary configuration file
         self.config_file = os.path.join(self.schema_dir, 'config.yaml')
         with open(self.config_file, 'w') as f:
             f.write(f"""

@@ -47,14 +47,6 @@ def process_file(
             log_activity("Data loading initiated.")
 
             # Initialize accumulators for global statistics
-            validation_results = {
-                "Format Validation": True,
-                "Duplicate Records": pd.DataFrame(),
-                "Conflicting Records": pd.DataFrame(),
-                "Integrity Issues": pd.DataFrame(),
-                "Referential Integrity Issues": pd.DataFrame()
-            }
-            missing_counts = pd.Series(dtype=int)
             total_records = 0
             flagged_records_count = 0
             phenotype_terms_set = set()
@@ -79,44 +71,54 @@ def process_file(
             sample_size_per_chunk = 1000  # Adjust as needed
             max_total_samples = 10000     # Maximum total samples for visualization
 
+            # Initialize accumulators for validation results
+            format_valid = True
+            duplicate_records = []
+            conflicting_records = []
+            integrity_issues = []
+            missing_counts = pd.Series(dtype=int)
+
+            # Accumulator for unique identifiers to check duplicates across chunks
+            unique_id_set = set()
+
             # Process chunks
             chunk_progress = 80  # Percentage of progress allocated to chunk processing
-            chunks_processed = 0
+            total_chunks = 0
             for chunk in data_iterator:
-                chunks_processed += 1
+                total_chunks += 1
                 total_records += len(chunk)
 
                 # Initialize DataValidator for the chunk
                 validator = DataValidator(chunk, schema, unique_identifiers)
 
                 # Run format validation on the chunk
-                format_valid = validator.validate_format()
-                if not format_valid:
-                    validation_results["Format Validation"] = False
-                    validation_results["Integrity Issues"] = pd.concat(
-                        [validation_results["Integrity Issues"], validator.integrity_issues]
-                    )
+                chunk_format_valid = validator.validate_format()
+                if not chunk_format_valid:
+                    format_valid = False
+                    integrity_issues.append(validator.integrity_issues)
 
                 # Identify duplicates in the chunk
-                duplicates = validator.identify_duplicates()
-                if not duplicates.empty:
-                    validation_results["Duplicate Records"] = pd.concat(
-                        [validation_results["Duplicate Records"], duplicates]
-                    )
+                chunk_duplicates = validator.identify_duplicates()
+                if not chunk_duplicates.empty:
+                    duplicate_records.append(chunk_duplicates)
 
                 # Detect conflicts in the chunk
-                conflicts = validator.detect_conflicts()
-                if not conflicts.empty:
-                    validation_results["Conflicting Records"] = pd.concat(
-                        [validation_results["Conflicting Records"], conflicts]
-                    )
+                chunk_conflicts = validator.detect_conflicts()
+                if not chunk_conflicts.empty:
+                    conflicting_records.append(chunk_conflicts)
 
                 # Verify integrity in the chunk
-                integrity_issues = validator.verify_integrity()
-                if not integrity_issues.empty:
-                    validation_results["Integrity Issues"] = pd.concat(
-                        [validation_results["Integrity Issues"], integrity_issues]
-                    )
+                chunk_integrity_issues = validator.verify_integrity()
+                if not chunk_integrity_issues.empty:
+                    integrity_issues.append(chunk_integrity_issues)
+
+                # Update unique identifier set for global duplicate detection
+                ids_in_chunk = set(map(tuple, chunk[unique_identifiers].drop_duplicates().values.tolist()))
+                duplicates_in_ids = unique_id_set.intersection(ids_in_chunk)
+                if duplicates_in_ids:
+                    # Records with duplicate unique identifiers across chunks
+                    duplicate_records.append(chunk[chunk[unique_identifiers].apply(tuple, axis=1).isin(duplicates_in_ids)])
+                unique_id_set.update(ids_in_chunk)
 
                 # Missing Data Handling
                 missing = detect_missing_data(chunk)
@@ -183,11 +185,20 @@ def process_file(
 
             pbar.update(5)  # Update remaining progress
 
-            if not validation_results["Format Validation"]:
+            if not format_valid:
                 error_msg = "Format validation failed. Schema compliance issues detected."
                 log_activity(f"{file_path}: {error_msg}", level='error')
                 pbar.close()
                 return {'file': file_path, 'status': 'Invalid', 'error': error_msg}
+
+            # Aggregate validation results
+            validation_results = {
+                "Format Validation": format_valid,
+                "Duplicate Records": pd.concat(duplicate_records).drop_duplicates() if duplicate_records else pd.DataFrame(),
+                "Conflicting Records": pd.concat(conflicting_records).drop_duplicates() if conflicting_records else pd.DataFrame(),
+                "Integrity Issues": pd.concat(integrity_issues).drop_duplicates() if integrity_issues else pd.DataFrame(),
+                "Referential Integrity Issues": pd.DataFrame()  # Placeholder if needed
+            }
 
             # Calculate mapping success rates
             mapping_success_rates = {}
@@ -234,17 +245,6 @@ def process_file(
             pbar.update(5)
             pbar.close()
 
-            # After processing, collect necessary data
-            # result = {
-            #     'file': file_path,
-            #     'status': 'Processed',
-            #     'error': None,
-            #     'validation_results': validation_results,
-            #     'missing_data': missing_counts,
-            #     'flagged_records_count': flagged_records_count
-            # }
-
-            # return result
             result = {
                 'file': file_path,
                 'status': 'Processed',
@@ -252,9 +252,9 @@ def process_file(
                 'validation_results': validation_results,
                 'missing_data': missing_counts,
                 'flagged_records_count': flagged_records_count,
-                'processed_file_path': output_data_file,  # Add this line
-                'mapping_success_rates': mapping_success_rates,  # Include if needed for reporting
-                'visualization_images': visualization_images   # Include if needed for reporting
+                'processed_file_path': output_data_file,
+                'mapping_success_rates': mapping_success_rates,
+                'visualization_images': visualization_images
             }
 
             return result
@@ -298,7 +298,7 @@ def batch_process(
     os.makedirs(output_dir, exist_ok=True)
 
     results = []
-    with concurrent.futures.ThreadPoolExecutor() as executor:
+    with concurrent.futures.ProcessPoolExecutor() as executor:
         futures = {
             executor.submit(
                 process_file,
@@ -331,7 +331,6 @@ def batch_process(
                 print(f"❌ Error in processing {os.path.basename(file_path)}: {str(e)}")
 
     return results
-
 
 def collect_files(inputs, recursive=True):
     """
