@@ -208,7 +208,7 @@ def create_visual_summary(df, phenotype_column='Phenotype', output_image_path=No
                 phenotype_counts,
                 labels={'index': phenotype_column, 'value': 'Count'},
                 title='Distribution of Phenotypic Traits',
-                color=phenotype_counts.index  # Add color differentiation
+                color_discrete_sequence=px.colors.qualitative.Plotly  # Define color sequence
             )
             figs.append(fig2)
 
@@ -217,7 +217,12 @@ def create_visual_summary(df, phenotype_column='Phenotype', output_image_path=No
     for ontology_column in ontology_columns:
         mapped = df[ontology_column].notnull().sum()
         unmapped = df[ontology_column].isnull().sum()
-        fig = go.Figure(data=[go.Pie(labels=['Mapped', 'Unmapped'], values=[mapped, unmapped], hole=.3)])
+        fig = go.Figure(data=[go.Pie(
+            labels=['Mapped', 'Unmapped'],
+            values=[mapped, unmapped],
+            hole=.3,
+            marker=dict(colors=px.colors.qualitative.Plotly[:2])  # Define explicit colors
+        )])
         fig.update_layout(title=f'Mapped vs Unmapped Phenotypic Terms ({ontology_column})')
         figs.append(fig)
 
