@@ -156,14 +156,15 @@ def generate_qc_report(
     else:
         raise ValueError("Unsupported report format. Use 'pdf' or 'md'.")
 
-def create_visual_summary(df, phenotype_column='Phenotype', output_image_path="reports/visual_summary.html"):
+
+def create_visual_summary(df, phenotype_column='Phenotype', output_image_path=None):
     """
     Creates interactive visual summaries of the data.
 
     Args:
         df (pd.DataFrame): The processed data frame.
         phenotype_column (str): The name of the column containing phenotypic terms.
-        output_image_path (str): Path to save the visualization HTML file.
+        output_image_path (str): Path to save the visualization HTML file (optional).
 
     Returns:
         list: List of Plotly figure objects.
@@ -179,11 +180,12 @@ def create_visual_summary(df, phenotype_column='Phenotype', output_image_path="r
         fig1 = px.imshow(
             missing_data,
             labels=dict(x="Columns", y="Records", color="Missing"),
-            title="Missing Data Heatmap"
+            title="Missing Data Heatmap",
+            color_continuous_scale='Viridis'  # Specify a color scale
         )
         figs.append(fig1)
     else:
-        # Optionally, add a message or a dummy plot indicating no missing data
+        # Add a message indicating no missing data
         fig1 = go.Figure()
         fig1.add_annotation(
             x=0.5, y=0.5,
@@ -205,7 +207,8 @@ def create_visual_summary(df, phenotype_column='Phenotype', output_image_path="r
             fig2 = px.bar(
                 phenotype_counts,
                 labels={'index': phenotype_column, 'value': 'Count'},
-                title='Distribution of Phenotypic Traits'
+                title='Distribution of Phenotypic Traits',
+                color=phenotype_counts.index  # Add color differentiation
             )
             figs.append(fig2)
 
@@ -214,7 +217,7 @@ def create_visual_summary(df, phenotype_column='Phenotype', output_image_path="r
     for ontology_column in ontology_columns:
         mapped = df[ontology_column].notnull().sum()
         unmapped = df[ontology_column].isnull().sum()
-        fig = go.Figure(data=[go.Pie(labels=['Mapped', 'Unmapped'], values=[mapped, unmapped])])
+        fig = go.Figure(data=[go.Pie(labels=['Mapped', 'Unmapped'], values=[mapped, unmapped], hole=.3)])
         fig.update_layout(title=f'Mapped vs Unmapped Phenotypic Terms ({ontology_column})')
         figs.append(fig)
 

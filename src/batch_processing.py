@@ -251,7 +251,7 @@ def process_file(
             for idx, fig in enumerate(figs):
                 image_filename = f"{os.path.splitext(os.path.basename(file_path))[0]}_visual_{idx}.png"
                 image_path = os.path.join(output_dir, image_filename)
-                fig.write_image(image_path)
+                fig.write_image(image_path, format='png', scale=2)
                 visualization_images.append(image_path)
 
             generate_qc_report(
