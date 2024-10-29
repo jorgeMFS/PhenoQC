@@ -34,23 +34,23 @@ class TestInputModule(unittest.TestCase):
 
     def test_read_csv(self):
         reader = read_csv(self.csv_file)
-        self.assertIsInstance(reader, types.GeneratorType)
+        self.assertIsInstance(reader, pd.io.parsers.TextFileReader)
         try:
             chunk = next(reader)
             self.assertIsInstance(chunk, pd.DataFrame)
             self.assertEqual(len(chunk), 4)
         except StopIteration:
-            self.fail("read_csv generator did not yield any chunks.")
+            self.fail("read_csv did not yield any chunks.")
 
     def test_read_tsv(self):
         reader = read_tsv(self.tsv_file)
-        self.assertIsInstance(reader, types.GeneratorType)
+        self.assertIsInstance(reader, pd.io.parsers.TextFileReader)
         try:
             chunk = next(reader)
             self.assertIsInstance(chunk, pd.DataFrame)
             self.assertEqual(len(chunk), 4)
         except StopIteration:
-            self.fail("read_tsv generator did not yield any chunks.")
+            self.fail("read_tsv did not yield any chunks.")
 
     def test_read_json(self):
         reader = read_json(self.json_file, chunksize=2)
@@ -64,7 +64,7 @@ class TestInputModule(unittest.TestCase):
 
     def test_load_data_csv(self):
         reader = load_data(self.csv_file, 'csv', chunksize=2)
-        self.assertIsInstance(reader, types.GeneratorType)
+        self.assertIsInstance(reader, pd.io.parsers.TextFileReader)
         try:
             df = next(reader)
             self.assertIsInstance(df, pd.DataFrame)
@@ -74,7 +74,7 @@ class TestInputModule(unittest.TestCase):
 
     def test_load_data_tsv(self):
         reader = load_data(self.tsv_file, 'tsv', chunksize=2)
-        self.assertIsInstance(reader, types.GeneratorType)
+        self.assertIsInstance(reader, pd.io.parsers.TextFileReader)
         try:
             df = next(reader)
             self.assertIsInstance(df, pd.DataFrame)

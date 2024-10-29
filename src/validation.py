@@ -1,7 +1,8 @@
 import pandas as pd
-import json
 from typing import List, Dict, Any
-import fastjsonschema  # Use fastjsonschema for faster validation
+import fastjsonschema
+import re
+from datetime import datetime
 
 class DataValidator:
     def __init__(
@@ -30,6 +31,7 @@ class DataValidator:
         self.conflicting_records = pd.DataFrame()
         self.integrity_issues = pd.DataFrame()
         self.referential_integrity_issues = pd.DataFrame()
+        self.anomalies = pd.DataFrame()
 
         # Compile the schema once for faster validation
         self.validate_record = fastjsonschema.compile(self.schema)
@@ -57,7 +59,6 @@ class DataValidator:
             self.integrity_issues = self.df.iloc[invalid_indices]
 
         return valid
-
 
     def identify_duplicates(self) -> pd.DataFrame:
         """
@@ -115,7 +116,10 @@ class DataValidator:
             'array': list,
             'object': dict,
             'boolean': bool,
-            'null': type(None)
+            'null': type(None),
+            'date': str,        # Additional validation needed
+            'date-time': str,   # Additional validation needed
+            'time': str,        # Additional validation needed
             # Add more mappings as needed
         }
 
@@ -134,7 +138,7 @@ class DataValidator:
                                 valid_types.append(type_mapping[t])
                     valid_types = tuple(valid_types)
                     # Identify rows with invalid types
-                    invalid_type = self.df[~self.df[column].apply(lambda x: isinstance(x, valid_types))]
+                    invalid_type = self.df[~self.df[column].apply(lambda x: isinstance(x, valid_types) or pd.isnull(x))]
                 else:
                     python_type = type_mapping.get(expected_type)
                     if python_type:
@@ -154,9 +158,9 @@ class DataValidator:
                     numeric_series = pd.to_numeric(self.df[column], errors='coerce')
 
                     # Identify rows where conversion failed (i.e., non-numeric entries)
-                    non_numeric = self.df[column].where(numeric_series.isna())
-                    if not non_numeric.dropna().empty:
-                        integrity_issues = pd.concat([integrity_issues, self.df[numeric_series.isna()]])
+                    non_numeric = self.df[numeric_series.isna()]
+                    if not non_numeric.empty:
+                        integrity_issues = pd.concat([integrity_issues, non_numeric])
 
                     # Now, safely perform the 'minimum' comparison using the numeric_series
                     mask = numeric_series < min_value
@@ -164,14 +168,41 @@ class DataValidator:
                     if not below_min.empty:
                         integrity_issues = pd.concat([integrity_issues, below_min])
 
+            # 4. Additional format validations
+            if 'format' in props:
+                self.validate_format_constraints(column, props['format'], integrity_issues)
+
         # Append new integrity issues
         self.integrity_issues = pd.concat([self.integrity_issues, integrity_issues]).drop_duplicates()
 
-        # 4. Referential Integrity Check
+        # 5. Referential Integrity Check
         if self.reference_data is not None and self.reference_columns is not None:
             self.check_referential_integrity()
 
         return self.integrity_issues
+
+    def validate_format_constraints(self, column, format_type, integrity_issues):
+        """
+        Validates the format constraints for a given column based on the format type specified in the schema.
+
+        :param column: The column name to validate.
+        :param format_type: The format type specified in the schema (e.g., 'date', 'email').
+        :param integrity_issues: DataFrame to collect integrity issues.
+        """
+        if format_type == 'date':
+            date_pattern = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+            invalid_dates = self.df[~self.df[column].astype(str).str.match(date_pattern)]
+            if not invalid_dates.empty:
+                integrity_issues = pd.concat([integrity_issues, invalid_dates])
+        elif format_type == 'date-time':
+            # Validate date-time format
+            try:
+                pd.to_datetime(self.df[column], errors='raise')
+            except Exception:
+                invalid_date_times = self.df[pd.to_datetime(self.df[column], errors='coerce').isna()]
+                if not invalid_date_times.empty:
+                    integrity_issues = pd.concat([integrity_issues, invalid_date_times])
+        # Implement other formats as needed
 
     def check_referential_integrity(self):
         """
@@ -179,6 +210,10 @@ class DataValidator:
 
         Populates self.referential_integrity_issues with records that have missing references.
         """
+        if self.reference_data is None or self.reference_columns is None:
+            print("Warning: Reference data or columns not provided. Skipping referential integrity checks.")
+            return
+
         # For each reference column, check if the values exist in the reference data
         for column in self.reference_columns:
             if column in self.df.columns and column in self.reference_data.columns:
@@ -190,6 +225,24 @@ class DataValidator:
 
         # Remove duplicates
         self.referential_integrity_issues = self.referential_integrity_issues.drop_duplicates()
+
+    def detect_anomalies(self):
+        """
+        Detects anomalies in numerical data fields using statistical methods (e.g., Z-score).
+        Populates self.anomalies with records that are considered outliers.
+        """
+        numeric_cols = self.df.select_dtypes(include=['number']).columns
+        for col in numeric_cols:
+            col_mean = self.df[col].mean()
+            col_std = self.df[col].std()
+            if col_std == 0 or pd.isnull(col_std):
+                continue
+            z_scores = (self.df[col] - col_mean) / col_std
+            outliers = self.df[(abs(z_scores) > 3)]
+            if not outliers.empty:
+                self.anomalies = pd.concat([self.anomalies, outliers])
+
+        self.anomalies.drop_duplicates(inplace=True)
 
     def run_all_validations(self) -> Dict[str, Any]:
         """
@@ -209,6 +262,9 @@ class DataValidator:
         # Verify integrity (includes referential integrity if applicable)
         verify_integrity_issues = self.verify_integrity()
 
+        # Detect anomalies
+        self.detect_anomalies()
+
         # Combine all integrity issues (from format validation and verify_integrity)
         all_integrity_issues = self.integrity_issues.copy()
 
@@ -221,6 +277,7 @@ class DataValidator:
             "Duplicate Records": duplicates,
             "Conflicting Records": conflicts,
             "Integrity Issues": all_integrity_issues,
-            "Referential Integrity Issues": self.referential_integrity_issues
+            "Referential Integrity Issues": self.referential_integrity_issues,
+            "Anomalies Detected": self.anomalies
         }
         return results
