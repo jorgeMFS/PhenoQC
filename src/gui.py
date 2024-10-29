@@ -113,8 +113,6 @@ def main():
                 # Render a button without an on_click to make it non-clickable
                 st.button(title, key=title, disabled=True)
 
-        # Add a separator
-        st.markdown("---")
 
     # Suppress other specific warnings if necessary
     warnings.filterwarnings('ignore', category=UnicodeWarning)
@@ -294,6 +292,22 @@ def main():
             else:
                 st.warning("Please select at least one unique identifier column.")
                 st.session_state.steps_completed["Select Unique Identifier"] = False
+
+            # **New Input for Phenotype Column Name**
+            st.subheader("Specify Phenotype Column")
+            default_phenotype_column = st.session_state.get('phenotype_column', 'Phenotype')
+            phenotype_column = st.selectbox(
+                "Select the column name for Phenotypic Terms:",
+                options=current_data_columns,
+                index=current_data_columns.index(default_phenotype_column) if default_phenotype_column in current_data_columns else 0,
+                key="phenotype_column_widget"
+            )
+            if phenotype_column:
+                st.session_state['phenotype_column'] = phenotype_column
+            else:
+                st.warning("Please specify the column name for phenotypic terms.")
+                st.session_state.steps_completed["Select Unique Identifier"] = False
+
         st.markdown("---")
         if st.session_state.steps_completed["Select Unique Identifier"]:
             st.button("Proceed to Select Ontologies & Impute", on_click=proceed_to_step, args=("Select Ontologies & Impute",))
@@ -401,6 +415,7 @@ def main():
                         if not input_paths:
                             st.error("No data files found to process.")
                             st.stop()
+                       
                         # Initialize OntologyMapper
                         ontology_mapper = OntologyMapper(config_path=config_path)
                         # Load configuration
@@ -427,8 +442,10 @@ def main():
                                     impute_strategy=st.session_state.get('impute_strategy_value'),
                                     field_strategies=field_strategies,
                                     output_dir=output_dir,
-                                    target_ontologies=st.session_state.get('ontologies_selected_list', [])
+                                    target_ontologies=st.session_state.get('ontologies_selected_list', []),
+                                    phenotype_column=st.session_state.get('phenotype_column', 'Phenotype')  # Pass phenotype_column
                                 )
+
                                 # Get the actual processed file path from result
                                 processed_data_path = result.get('processed_file_path')
                                 if processed_data_path and os.path.exists(processed_data_path):
@@ -446,6 +463,7 @@ def main():
                     except Exception as e:
                         st.error(f"An error occurred during processing: {e}")
 
+                    
         # After processing, display results
         if st.session_state.steps_completed.get("Run QC and View Results", False):
             st.header("Results")
@@ -464,7 +482,11 @@ def main():
                                     st.write("Sample of Processed Data:")
                                     st.dataframe(df.head(5))
                                     # Display visual summaries in a more elegant manner
-                                    figs = create_visual_summary(df, output_image_path=None)
+                                    figs = create_visual_summary(
+                                        df,
+                                        phenotype_column=st.session_state.get('phenotype_column', 'Phenotype'),
+                                        output_image_path=None
+                                    )
                                     num_figs = len(figs)
                                     if num_figs > 0:
                                         # Arrange graphs in two columns for better layout
@@ -481,6 +503,7 @@ def main():
                                         mapping_success_rates=result.get('mapping_success_rates', {}),
                                         visualization_images=result.get('visualization_images', []),
                                         impute_strategy=st.session_state.get('impute_strategy_value'),
+                                        quality_scores=result.get('quality_scores', {}),  # Added this line
                                         output_path_or_buffer=report_buffer
                                     )
                                     report_buffer.seek(0)

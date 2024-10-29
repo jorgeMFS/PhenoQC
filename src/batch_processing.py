@@ -1,3 +1,5 @@
+# batch_processing.py
+
 import concurrent.futures
 import os
 import json
@@ -33,7 +35,8 @@ def process_file(
     output_dir='reports',
     target_ontologies=None,
     report_format='pdf',
-    chunksize=10000
+    chunksize=10000,
+    phenotype_column='Phenotype'  # New parameter with default value
 ):
     file_type = get_file_type(file_path)
     log_activity(f"Processing file: {file_path}")
@@ -143,21 +146,21 @@ def process_file(
                 # Note: After imputation, MissingDataFlag should decrease or remain the same
 
                 # Collect phenotype terms
-                if 'Phenotype' in chunk.columns:
-                    phenotype_terms_set.update(chunk['Phenotype'].unique())
+                if phenotype_column in chunk.columns:
+                    phenotype_terms_set.update(chunk[phenotype_column].unique())
                 else:
-                    log_activity(f"{file_path}: 'Phenotype' column not found in chunk.", level='error')
+                    log_activity(f"{file_path}: '{phenotype_column}' column not found in chunk.", level='error')
                     pbar.close()
-                    return {'file': file_path, 'status': 'Invalid', 'error': "'Phenotype' column not found in chunk."}
+                    return {'file': file_path, 'status': 'Invalid', 'error': f"'{phenotype_column}' column not found in chunk."}
 
                 # Ontology Mapping
-                phenotypic_terms = chunk['Phenotype'].unique()
+                phenotypic_terms = chunk[phenotype_column].unique()
                 mappings = ontology_mapper.map_terms(phenotypic_terms, target_ontologies, custom_mappings)
 
                 # Add mapped IDs to the DataFrame
                 for ontology_id in target_ontologies:
                     mapped_column = f"{ontology_id}_ID"
-                    chunk[mapped_column] = chunk['Phenotype'].apply(
+                    chunk[mapped_column] = chunk[phenotype_column].apply(
                         lambda x: mappings.get(x, {}).get(ontology_id)
                     )
 
@@ -241,7 +244,8 @@ def process_file(
             )
 
             # Create visualizations using sample_df
-            figs = create_visual_summary(sample_df, output_image_path=None)
+            figs = create_visual_summary(sample_df, phenotype_column=phenotype_column, output_image_path=None)  # Pass phenotype_column
+
             # Save visualizations as images
             visualization_images = []
             for idx, fig in enumerate(figs):
@@ -287,6 +291,7 @@ def process_file(
     except Exception as e:
         log_activity(f"Error processing file {file_path}: {str(e)}", level='error')
         return {'file': file_path, 'status': 'Error', 'error': str(e)}
+
 
 def batch_process(
     files,

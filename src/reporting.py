@@ -156,12 +156,13 @@ def generate_qc_report(
     else:
         raise ValueError("Unsupported report format. Use 'pdf' or 'md'.")
 
-def create_visual_summary(df, output_image_path="visual_summary.html"):
+def create_visual_summary(df, phenotype_column='Phenotype', output_image_path="reports/visual_summary.html"):
     """
     Creates interactive visual summaries of the data.
 
     Args:
         df (pd.DataFrame): The processed data frame.
+        phenotype_column (str): The name of the column containing phenotypic terms.
         output_image_path (str): Path to save the visualization HTML file.
 
     Returns:
@@ -198,12 +199,12 @@ def create_visual_summary(df, output_image_path="visual_summary.html"):
         figs.append(fig1)
 
     # Distribution of Phenotypes
-    if 'Phenotype' in df.columns:
-        phenotype_counts = df['Phenotype'].value_counts()
+    if phenotype_column in df.columns:
+        phenotype_counts = df[phenotype_column].value_counts()
         if not phenotype_counts.empty:
             fig2 = px.bar(
                 phenotype_counts,
-                labels={'index': 'Phenotype', 'value': 'Count'},
+                labels={'index': phenotype_column, 'value': 'Count'},
                 title='Distribution of Phenotypic Traits'
             )
             figs.append(fig2)
