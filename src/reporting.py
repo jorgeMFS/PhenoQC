@@ -2,13 +2,22 @@ import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 import os
-import io
 
-def generate_qc_report(validation_results, missing_data, flagged_records_count, mapping_success_rates, visualization_images,impute_strategy, output_path_or_buffer, report_format='pdf'):
+def generate_qc_report(
+    validation_results,
+    missing_data,
+    flagged_records_count,
+    mapping_success_rates,
+    visualization_images,
+    impute_strategy,
+    quality_scores,
+    output_path_or_buffer,
+    report_format='pdf'
+):
     """
     Generates a quality control report.
 
@@ -19,6 +28,7 @@ def generate_qc_report(validation_results, missing_data, flagged_records_count, 
         mapping_success_rates (dict): Ontology mapping success rates.
         visualization_images (list): List of paths to visualization images.
         impute_strategy (str): Imputation strategy used.
+        quality_scores (dict): Dictionary of data quality scores.
         output_path_or_buffer (str or BytesIO): Path or buffer to save the report.
         report_format (str): Format of the report ('pdf' or 'md').
     """
@@ -26,33 +36,41 @@ def generate_qc_report(validation_results, missing_data, flagged_records_count, 
         # Generate PDF report using ReportLab Platypus
         styles = getSampleStyleSheet()
         story = []
-        
+
         # Title
         story.append(Paragraph("PhenoQC Quality Control Report", styles['Title']))
         story.append(Spacer(1, 12))
-        
+
         # Imputation Strategy
         story.append(Paragraph("Imputation Strategy Used:", styles['Heading2']))
         story.append(Paragraph(f"{impute_strategy.capitalize()}", styles['Normal']))
         story.append(Spacer(1, 12))
 
+        # Data Quality Scores
+        story.append(Paragraph("Data Quality Scores:", styles['Heading2']))
+        for score_name, score_value in quality_scores.items():
+            story.append(Paragraph(f"{score_name}: {score_value:.2f}%", styles['Normal']))
+        story.append(Spacer(1, 12))
+
         # Schema Validation Results
         story.append(Paragraph("Schema Validation Results:", styles['Heading2']))
         for key, value in validation_results.items():
-            story.append(Paragraph(f"{key}: {value}", styles['Normal']))
-            
+            if isinstance(value, pd.DataFrame) and not value.empty:
+                story.append(Paragraph(f"{key}: {len(value)} issues found.", styles['Normal']))
+            else:
+                story.append(Paragraph(f"{key}: {value}", styles['Normal']))
         story.append(Spacer(1, 12))
-        
+
         # Missing Data Summary
         story.append(Paragraph("Missing Data Summary:", styles['Heading2']))
         for column, count in missing_data.items():
             story.append(Paragraph(f"{column}: {count} missing values", styles['Normal']))
         story.append(Spacer(1, 12))
-        
+
         # Records Flagged for Missing Data
         story.append(Paragraph(f"Records Flagged for Missing Data: {flagged_records_count}", styles['Normal']))
         story.append(Spacer(1, 12))
-        
+
         # Ontology Mapping Success Rates
         story.append(Paragraph("Ontology Mapping Success Rates:", styles['Heading2']))
         for ontology_id, stats in mapping_success_rates.items():
@@ -61,18 +79,18 @@ def generate_qc_report(validation_results, missing_data, flagged_records_count, 
             story.append(Paragraph(f"Mapped Terms: {stats['mapped_terms']}", styles['Normal']))
             story.append(Paragraph(f"Success Rate: {stats['success_rate']:.2f}%", styles['Normal']))
             story.append(Spacer(1, 12))
-        
+
         # Visualizations
         story.append(Paragraph("Visualizations:", styles['Heading2']))
         for image_path in visualization_images:
             # Ensure the image exists before adding
             if os.path.exists(image_path):
-                img = Image(image_path, width=6*inch, height=4*inch)
+                img = Image(image_path, width=6 * inch, height=4 * inch)
                 story.append(img)
                 story.append(Spacer(1, 12))
             else:
                 story.append(Paragraph(f"Image not found: {image_path}", styles['Normal']))
-        
+
         # Build the PDF
         if isinstance(output_path_or_buffer, str):
             doc = SimpleDocTemplate(output_path_or_buffer, pagesize=letter)
@@ -83,27 +101,36 @@ def generate_qc_report(validation_results, missing_data, flagged_records_count, 
         # Generate Markdown report
         md_lines = []
         md_lines.append("# PhenoQC Quality Control Report\n")
-        
+
         # Imputation Strategy
         md_lines.append("## Imputation Strategy Used")
         md_lines.append(f"{impute_strategy.capitalize()}\n")
         md_lines.append("\n")
-        
+
+        # Data Quality Scores
+        md_lines.append("## Data Quality Scores")
+        for score_name, score_value in quality_scores.items():
+            md_lines.append(f"- **{score_name}**: {score_value:.2f}%")
+        md_lines.append("")
+
         # Schema Validation Results
         md_lines.append("## Schema Validation Results")
         for key, value in validation_results.items():
-            md_lines.append(f"- **{key}**: {value}")
+            if isinstance(value, pd.DataFrame) and not value.empty:
+                md_lines.append(f"- **{key}**: {len(value)} issues found.")
+            else:
+                md_lines.append(f"- **{key}**: {value}")
         md_lines.append("")
-        
+
         # Missing Data Summary
         md_lines.append("## Missing Data Summary")
         for column, count in missing_data.items():
             md_lines.append(f"- **{column}**: {count} missing values")
         md_lines.append("")
-        
+
         # Records Flagged for Missing Data
         md_lines.append(f"**Records Flagged for Missing Data**: {flagged_records_count}\n")
-        
+
         # Ontology Mapping Success Rates
         md_lines.append("## Ontology Mapping Success Rates")
         for ontology_id, stats in mapping_success_rates.items():
@@ -112,14 +139,14 @@ def generate_qc_report(validation_results, missing_data, flagged_records_count, 
             md_lines.append(f"- **Mapped Terms**: {stats['mapped_terms']}")
             md_lines.append(f"- **Success Rate**: {stats['success_rate']:.2f}%")
             md_lines.append("")
-        
+
         # Visualizations
         md_lines.append("## Visualizations")
         for image_path in visualization_images:
             image_filename = os.path.basename(image_path)
             md_lines.append(f"![{image_filename}]({image_filename})")
             md_lines.append("")
-        
+
         # Write the markdown content to the file or buffer
         if isinstance(output_path_or_buffer, str):
             with open(output_path_or_buffer, 'w') as f:

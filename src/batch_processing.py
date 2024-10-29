@@ -77,6 +77,7 @@ def process_file(
             conflicting_records = []
             integrity_issues = []
             missing_counts = pd.Series(dtype=int)
+            anomalies_detected = pd.DataFrame()
 
             # Accumulator for unique identifiers to check duplicates across chunks
             unique_id_set = set()
@@ -112,6 +113,11 @@ def process_file(
                 if not chunk_integrity_issues.empty:
                     integrity_issues.append(chunk_integrity_issues)
 
+                # Detect anomalies in the chunk
+                validator.detect_anomalies()
+                if not validator.anomalies.empty:
+                    anomalies_detected = pd.concat([anomalies_detected, validator.anomalies])
+
                 # Update unique identifier set for global duplicate detection
                 ids_in_chunk = set(map(tuple, chunk[unique_identifiers].drop_duplicates().values.tolist()))
                 duplicates_in_ids = unique_id_set.intersection(ids_in_chunk)
@@ -145,25 +151,20 @@ def process_file(
                     return {'file': file_path, 'status': 'Invalid', 'error': "'Phenotype' column not found in chunk."}
 
                 # Ontology Mapping
-                if 'Phenotype' in chunk.columns:
-                    phenotypic_terms = chunk['Phenotype'].unique()
-                    mappings = ontology_mapper.map_terms(phenotypic_terms, target_ontologies, custom_mappings)
+                phenotypic_terms = chunk['Phenotype'].unique()
+                mappings = ontology_mapper.map_terms(phenotypic_terms, target_ontologies, custom_mappings)
 
-                    # Add mapped IDs to the DataFrame
-                    for ontology_id in target_ontologies:
-                        mapped_column = f"{ontology_id}_ID"
-                        chunk[mapped_column] = chunk['Phenotype'].apply(
-                            lambda x: mappings.get(x, {}).get(ontology_id)
-                        )
+                # Add mapped IDs to the DataFrame
+                for ontology_id in target_ontologies:
+                    mapped_column = f"{ontology_id}_ID"
+                    chunk[mapped_column] = chunk['Phenotype'].apply(
+                        lambda x: mappings.get(x, {}).get(ontology_id)
+                    )
 
-                        # Update mapping success rates
-                        mapped_terms = chunk[mapped_column].notnull().sum()
-                        cumulative_mapping_stats[ontology_id]['total_terms'] += len(chunk)
-                        cumulative_mapping_stats[ontology_id]['mapped_terms'] += mapped_terms
-                else:
-                    log_activity(f"{file_path}: 'Phenotype' column not found in chunk.", level='error')
-                    pbar.close()
-                    return {'file': file_path, 'status': 'Invalid', 'error': "'Phenotype' column not found in chunk."}
+                    # Update mapping success rates
+                    mapped_terms = chunk[mapped_column].notnull().sum()
+                    cumulative_mapping_stats[ontology_id]['total_terms'] += len(chunk)
+                    cumulative_mapping_stats[ontology_id]['mapped_terms'] += mapped_terms
 
                 # Collect sample data for visualizations
                 if len(sample_df) < max_total_samples:
@@ -197,7 +198,8 @@ def process_file(
                 "Duplicate Records": pd.concat(duplicate_records).drop_duplicates() if duplicate_records else pd.DataFrame(),
                 "Conflicting Records": pd.concat(conflicting_records).drop_duplicates() if conflicting_records else pd.DataFrame(),
                 "Integrity Issues": pd.concat(integrity_issues).drop_duplicates() if integrity_issues else pd.DataFrame(),
-                "Referential Integrity Issues": pd.DataFrame()  # Placeholder if needed
+                "Referential Integrity Issues": pd.DataFrame(),  # Placeholder if needed
+                "Anomalies Detected": anomalies_detected.drop_duplicates() if not anomalies_detected.empty else pd.DataFrame()
             }
 
             # Calculate mapping success rates
@@ -211,6 +213,27 @@ def process_file(
                     'mapped_terms': mapped_terms,
                     'success_rate': success_rate
                 }
+
+            # Calculate quality scores
+            total_records = total_records or 1  # Avoid division by zero
+            valid_records = total_records - len(validation_results["Integrity Issues"])
+            schema_validation_score = (valid_records / total_records) * 100
+
+            total_cells = total_records * len(sample_df.columns)
+            total_missing = missing_counts.sum()
+            missing_data_score = ((total_cells - total_missing) / total_cells) * 100
+
+            mapping_success_scores = [stats['success_rate'] for stats in mapping_success_rates.values()]
+            mapping_success_score = sum(mapping_success_scores) / len(mapping_success_scores) if mapping_success_scores else 0
+
+            overall_quality_score = (schema_validation_score + missing_data_score + mapping_success_score) / 3
+
+            quality_scores = {
+                'Schema Validation Score': schema_validation_score,
+                'Missing Data Score': missing_data_score,
+                'Mapping Success Score': mapping_success_score,
+                'Overall Quality Score': overall_quality_score
+            }
 
             # Generate Reports
             report_path = os.path.join(
@@ -234,6 +257,7 @@ def process_file(
                 mapping_success_rates,
                 visualization_images,
                 impute_strategy,
+                quality_scores,  # Added parameter
                 report_path,
                 report_format
             )
@@ -254,7 +278,8 @@ def process_file(
                 'flagged_records_count': flagged_records_count,
                 'processed_file_path': output_data_file,
                 'mapping_success_rates': mapping_success_rates,
-                'visualization_images': visualization_images
+                'visualization_images': visualization_images,
+                'quality_scores': quality_scores  # Added parameter
             }
 
             return result

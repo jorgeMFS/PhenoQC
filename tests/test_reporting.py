@@ -46,6 +46,14 @@ class TestReportingModule(unittest.TestCase):
         # Define impute_strategy for tests
         self.impute_strategy = 'mean' 
 
+        # Define quality_scores for tests
+        self.quality_scores = {
+            'Schema Validation Score': 95.0,
+            'Missing Data Score': 98.0,
+            'Mapping Success Score': 90.0,
+            'Overall Quality Score': 94.33
+        }
+
     def tearDown(self):
         # Clean up the created files after tests
         for file_path in [
@@ -70,7 +78,8 @@ class TestReportingModule(unittest.TestCase):
             self.flagged_records_count,
             self.mapping_success_rates,
             self.visualization_images,
-            self.impute_strategy,  # Added impute_strategy
+            self.impute_strategy,
+            self.quality_scores,  # Added quality_scores
             self.output_report_pdf,
             report_format='pdf'
         )
@@ -85,7 +94,8 @@ class TestReportingModule(unittest.TestCase):
             self.flagged_records_count,
             self.mapping_success_rates,
             self.visualization_images,
-            self.impute_strategy,  # Added impute_strategy
+            self.impute_strategy,
+            self.quality_scores,  # Added quality_scores
             self.output_report_md,
             report_format='md'
         )
@@ -94,9 +104,13 @@ class TestReportingModule(unittest.TestCase):
 
     def test_create_visual_summary_with_missing_data(self):
         """Test creating visual summaries with missing data."""
-        # Convert Series to DataFrame with meaningful column names
-        missing_data_df = self.missing_data.to_frame(name='MissingData')
-        figs = create_visual_summary(missing_data_df, output_image_path=None)
+        # Create a DataFrame with missing data
+        df_with_missing = pd.DataFrame({
+            "Age": [34, None, 45],
+            "Measurement": [120, 85, None],
+            "Phenotype": ["Hypertension", "Diabetes", "Asthma"]
+        })
+        figs = create_visual_summary(df_with_missing, output_image_path=None)
         self.assertIsInstance(figs, list, "Visual summaries should return a list of figures.")
         self.assertGreater(len(figs), 0, "There should be at least one visual summary created.")
 
@@ -104,8 +118,9 @@ class TestReportingModule(unittest.TestCase):
         """Test creating visual summaries with no missing data."""
         # Create a DataFrame with no missing data
         no_missing_data = pd.DataFrame({
-            "Age": [0],
-            "Measurement": [0]
+            "Age": [34, 28, 45],
+            "Measurement": [120, 85, 95],
+            "Phenotype": ["Hypertension", "Diabetes", "Asthma"]
         })
         figs = create_visual_summary(no_missing_data, output_image_path=None)
         self.assertIsInstance(figs, list, "Visual summaries should return a list of figures.")
@@ -115,15 +130,15 @@ class TestReportingModule(unittest.TestCase):
         """Test creating visual summaries with invalid input type."""
         with self.assertRaises(TypeError):
             # Passing an integer instead of DataFrame
-            create_visual_summary(42, self.output_report_pdf)
+            create_visual_summary(42, output_image_path=None)
         
         with self.assertRaises(TypeError):
             # Passing a list instead of DataFrame
-            create_visual_summary(["Age", "Measurement"], self.output_report_pdf)
+            create_visual_summary(["Age", "Measurement"], output_image_path=None)
         
         with self.assertRaises(TypeError):
             # Passing a pandas Series instead of DataFrame
-            create_visual_summary(self.missing_data, self.output_report_pdf)
+            create_visual_summary(self.missing_data, output_image_path=None)
 
     def test_generate_qc_report_with_no_issues_pdf(self):
         """Test generating a PDF QC report with no validation issues."""
@@ -141,7 +156,8 @@ class TestReportingModule(unittest.TestCase):
             flagged_records,
             self.mapping_success_rates,
             self.visualization_images,
-            self.impute_strategy,  # Added impute_strategy
+            self.impute_strategy,
+            self.quality_scores,  # Added quality_scores
             self.output_report_pdf,
             report_format='pdf'
         )
@@ -163,7 +179,8 @@ class TestReportingModule(unittest.TestCase):
             flagged_records,
             self.mapping_success_rates,
             self.visualization_images,
-            self.impute_strategy,  # Added impute_strategy
+            self.impute_strategy,
+            self.quality_scores,  # Added quality_scores
             self.output_report_md,
             report_format='md'
         )
