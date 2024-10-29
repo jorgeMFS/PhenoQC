@@ -244,15 +244,23 @@ def process_file(
             )
 
             # Create visualizations using sample_df
-            figs = create_visual_summary(sample_df, phenotype_column=phenotype_column, output_image_path=None)  # Pass phenotype_column
+            figs = create_visual_summary(
+                sample_df,
+                phenotype_column=phenotype_column,  # Pass phenotype_column
+                output_image_path=None
+            )
 
             # Save visualizations as images
             visualization_images = []
             for idx, fig in enumerate(figs):
                 image_filename = f"{os.path.splitext(os.path.basename(file_path))[0]}_visual_{idx}.png"
                 image_path = os.path.join(output_dir, image_filename)
-                fig.write_image(image_path)
-                visualization_images.append(image_path)
+                try:
+                    # Explicitly specify format and scale
+                    fig.write_image(image_path, format='png', scale=2)
+                    visualization_images.append(image_path)
+                except Exception as e:
+                    log_activity(f"Error saving image {image_filename}: {e}", level='error')
 
             generate_qc_report(
                 validation_results,
@@ -291,7 +299,6 @@ def process_file(
     except Exception as e:
         log_activity(f"Error processing file {file_path}: {str(e)}", level='error')
         return {'file': file_path, 'status': 'Error', 'error': str(e)}
-
 
 def batch_process(
     files,

@@ -503,8 +503,9 @@ def main():
                                         mapping_success_rates=result.get('mapping_success_rates', {}),
                                         visualization_images=result.get('visualization_images', []),
                                         impute_strategy=st.session_state.get('impute_strategy_value'),
-                                        quality_scores=result.get('quality_scores', {}),  # Added this line
-                                        output_path_or_buffer=report_buffer
+                                        quality_scores=result.get('quality_scores', {}),
+                                        output_path_or_buffer=report_buffer,
+                                        report_format='pdf'
                                     )
                                     report_buffer.seek(0)
                                     # Download buttons
