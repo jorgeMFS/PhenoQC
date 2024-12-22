@@ -43,6 +43,7 @@ Thumbs.db
 # Environment variables
 .env
 .env.*
+venv/
 
 # Streamlit cache
 .streamlit/
