@@ -1,0 +1,38 @@
+ontologies:
+  HPO:
+    name: Human Phenotype Ontology
+    source: url
+    url: http://purl.obolibrary.org/obo/hp.obo
+    format: obo
+  DO:
+    name: Disease Ontology
+    source: url
+    url: http://purl.obolibrary.org/obo/doid.obo
+    format: obo
+  MPO:
+    name: Mammalian Phenotype Ontology
+    source: url
+    url: http://purl.obolibrary.org/obo/mp.obo
+    format: obo
+
+default_ontologies:
+  - HPO
+  - DO
+  - MPO
+
+fuzzy_threshold: 80
+
+imputation_strategies:
+  # Column-specific strategies (override default)
+  Height_cm: median
+  Weight_kg: mean
+  PrimaryPhenotype: mode
+  DiseaseCode: mode
+
+# Additional advanced imputation methods if needed
+advanced_imputation_methods:
+  - MICE
+  - KNN
+  - IterativeSVD
+
+cache_expiry_days: 30
