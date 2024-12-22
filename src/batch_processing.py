@@ -310,7 +310,8 @@ def batch_process(
     output_dir='reports',
     target_ontologies=None,
     report_format='pdf',
-    chunksize=10000
+    chunksize=10000,
+    phenotype_column='Phenotype'
 ):
     # Load schema
     with open(schema_path, 'r') as f:
@@ -349,7 +350,8 @@ def batch_process(
                 output_dir,
                 target_ontologies,
                 report_format,
-                chunksize
+                chunksize,
+                phenotype_column
             ): file_path for file_path in files
         }
         for future in tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Batch Processing"):
