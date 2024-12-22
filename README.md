@@ -69,6 +69,7 @@ phenoqc --input examples/samples/sample_data.json \
 --custom_mappings examples/mapping/custom_mappings.json \
 --impute mice \
 --unique_identifiers SampleID \
+--phenotype_column PrimaryPhenotype \
 --ontologies HPO DO MPO
 ```
 

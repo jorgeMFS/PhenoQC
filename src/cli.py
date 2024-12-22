@@ -27,6 +27,11 @@ def parse_arguments():
     parser.add_argument('--recursive', action='store_true', help='Enable recursive directory scanning for nested files')
     parser.add_argument('--unique_identifiers', nargs='+', required=True, help='List of column names that uniquely identify a record')
     parser.add_argument('--ontologies', nargs='+', help='List of ontologies to map to (e.g., HPO DO MPO)', default=None)
+    parser.add_argument(
+        '--phenotype_column',
+        default='Phenotype',
+        help='Column name that holds the primary phenotypic descriptor (default: Phenotype)'
+    )
     return parser.parse_args()
 
 def collect_files(input_paths, recursive=False):
@@ -96,7 +101,8 @@ def main():
         custom_mappings_path=args.custom_mappings,
         impute_strategy=args.impute,
         output_dir=args.output,
-        target_ontologies=args.ontologies
+        target_ontologies=args.ontologies,
+        phenotype_column=args.phenotype_column  
     )
 
     # Summary of results

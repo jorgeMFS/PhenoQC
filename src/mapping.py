@@ -146,7 +146,12 @@ class OntologyMapper:
         if target_ontologies is None:
             target_ontologies = self.default_ontologies
 
-        term_lower = term.lower().strip()
+        # Convert to string if it’s not None or numeric
+        if term is None:
+            term_lower = ""
+        else:
+            term_lower = str(term).strip().lower()
+        
         mappings = {}
 
         # Check custom mappings first
