@@ -463,73 +463,138 @@ def main():
                     except Exception as e:
                         st.error(f"An error occurred during processing: {e}")
 
-                    
-        # After processing, display results
+
         if st.session_state.steps_completed.get("Run QC and View Results", False):
             st.header("Results")
             if 'processing_results' in st.session_state and st.session_state['processing_results']:
                 # Create tabs for each file
                 tab_labels = [os.path.basename(file_name) for file_name, _, _ in st.session_state['processing_results']]
                 tabs = st.tabs(tab_labels)
+
                 for (file_name, result, output_dir), tab in zip(st.session_state['processing_results'], tabs):
                     with tab:
                         st.subheader(f"Results for {file_name}")
+
+                        # --- Status checks ---
                         if result['status'] == 'Processed':
-                            processed_data_path = result.get('processed_file_path')
-                            if processed_data_path and os.path.exists(processed_data_path):
-                                try:
-                                    df = pd.read_csv(processed_data_path)
-                                    st.write("Sample of Processed Data:")
-                                    st.dataframe(df.head(5))
-                                    # Display visual summaries in a more elegant manner
-                                    figs = create_visual_summary(
-                                        df,
-                                        phenotype_column=st.session_state.get('phenotype_column', 'Phenotype'),
-                                        output_image_path=None
-                                    )
-                                    num_figs = len(figs)
-                                    if num_figs > 0:
-                                        # Arrange graphs in two columns for better layout
-                                        cols = st.columns(2)
-                                        for i, fig in enumerate(figs):
-                                            with cols[i % 2]:
-                                                st.plotly_chart(fig, use_container_width=True, key=f"{file_name}_plot_{i}")
-                                    # Generate QC report in memory
-                                    report_buffer = io.BytesIO()
-                                    generate_qc_report(
-                                        validation_results=result.get('validation_results', {}),
-                                        missing_data=result.get('missing_data', pd.Series()),
-                                        flagged_records_count=result.get('flagged_records_count', 0),
-                                        mapping_success_rates=result.get('mapping_success_rates', {}),
-                                        visualization_images=result.get('visualization_images', []),
-                                        impute_strategy=st.session_state.get('impute_strategy_value'),
-                                        quality_scores=result.get('quality_scores', {}),
-                                        output_path_or_buffer=report_buffer,
-                                        report_format='pdf'
-                                    )
-                                    report_buffer.seek(0)
-                                    # Download buttons
-                                    st.download_button(
-                                        label=f"Download QC Report for {file_name} (PDF)",
-                                        data=report_buffer,
-                                        file_name=f"{os.path.splitext(file_name)[0]}_qc_report.pdf",
-                                        mime='application/pdf'
-                                    )
-                                    st.download_button(
-                                        label=f"Download Processed Data for {file_name} (CSV)",
-                                        data=df.to_csv(index=False).encode('utf-8'),
-                                        file_name=f"processed_{file_name}",
-                                        mime='text/csv'
-                                    )
-                                except Exception as e:
-                                    st.error(f"Failed to read processed data for {file_name}: {str(e)}")
-                                    continue
-                            else:
-                                st.error(f"Processed data file not found for {file_name}.")
+                            st.success("File processed successfully.")
+                        elif result['status'] == 'ProcessedWithWarnings':
+                            st.warning(
+                                "File processed, but there were schema or integrity warnings. "
+                                "Please see details below."
+                            )
                         elif result['status'] == 'Invalid':
-                            st.warning(f"{file_name} failed validation: {result['error']}")
+                            st.warning(f"File failed validation: {result['error']}")
                         else:
-                            st.error(f"{file_name} encountered an error: {result['error']}")
+                            st.error(f"An error occurred: {result['error']}")
+
+                        # --- If processed or partially processed, show details ---
+                        processed_data_path = result.get('processed_file_path')
+                        if processed_data_path and os.path.exists(processed_data_path):
+                            try:
+                                df = pd.read_csv(processed_data_path)
+                                st.write("### Sample of Processed Data:")
+                                st.dataframe(df.head(5))
+
+                                # -- Display validation summaries in collapsible sections --
+                                validation_res = result.get('validation_results', {})
+
+                                # 1) Format Validation
+                                if validation_res.get('Format Validation') is False:
+                                    st.error(
+                                        "Some records do not match the JSON schema. "
+                                        "See 'Integrity Issues' section below."
+                                    )
+
+                                # 2) Integrity Issues
+                                integrity_df = validation_res.get("Integrity Issues")
+                                if isinstance(integrity_df, pd.DataFrame) and not integrity_df.empty:
+                                    with st.expander("Integrity Issues", expanded=False):
+                                        st.error("Rows that failed validation or had data-type/constraint issues:")
+                                        st.dataframe(integrity_df.head(50))
+
+                                # 3) Duplicate Records
+                                duplicates_df = validation_res.get("Duplicate Records")
+                                if isinstance(duplicates_df, pd.DataFrame) and not duplicates_df.empty:
+                                    with st.expander("Duplicate Records", expanded=False):
+                                        st.warning("The following rows appear more than once based on unique identifiers:")
+                                        st.dataframe(duplicates_df)
+
+                                # 4) Conflicting Records
+                                conflicts_df = validation_res.get("Conflicting Records")
+                                if isinstance(conflicts_df, pd.DataFrame) and not conflicts_df.empty:
+                                    with st.expander("Conflicting Records", expanded=False):
+                                        st.warning("Within duplicated rows, some columns have conflicting data:")
+                                        st.dataframe(conflicts_df)
+
+                                # 5) Anomalies Detected
+                                anomalies_df = validation_res.get("Anomalies Detected")
+                                if isinstance(anomalies_df, pd.DataFrame) and not anomalies_df.empty:
+                                    with st.expander("Anomalies Detected", expanded=False):
+                                        st.warning(
+                                            "Potential outliers based on a simple Z-score approach (|z|>3). "
+                                            "Rows listed here may need review."
+                                        )
+                                        st.dataframe(anomalies_df)
+
+                                # 6) Visualization
+                                st.write("### Visual Summaries")
+                                figs = create_visual_summary(
+                                    df,
+                                    phenotype_column=st.session_state.get('phenotype_column', 'Phenotype'),
+                                    output_image_path=None
+                                )
+                                num_figs = len(figs)
+                                if num_figs > 0:
+                                    # Arrange graphs in two columns
+                                    cols = st.columns(2)
+                                    for i, fig in enumerate(figs):
+                                        with cols[i % 2]:
+                                            st.plotly_chart(fig, use_container_width=True, key=f"{file_name}_plot_{i}")
+
+                                # 7) Quality Scores
+                                quality_scores = result.get('quality_scores', {})
+                                if quality_scores:
+                                    st.write("### Quality Scores")
+                                    for score_name, score_val in quality_scores.items():
+                                        st.write(f"- **{score_name}**: {score_val:.2f}%")
+
+                                # -- Optionally let user download the final QC report (PDF) & processed data --
+                                st.write("### Downloads")
+                                report_buffer = io.BytesIO()
+                                generate_qc_report(
+                                    validation_results=validation_res,
+                                    missing_data=result.get('missing_data', pd.Series()),
+                                    flagged_records_count=result.get('flagged_records_count', 0),
+                                    mapping_success_rates=result.get('mapping_success_rates', {}),
+                                    visualization_images=result.get('visualization_images', []),
+                                    impute_strategy=st.session_state.get('impute_strategy_value'),
+                                    quality_scores=quality_scores,
+                                    output_path_or_buffer=report_buffer,
+                                    report_format='pdf'
+                                )
+                                report_buffer.seek(0)
+
+                                st.download_button(
+                                    label=f"Download QC Report for {file_name} (PDF)",
+                                    data=report_buffer,
+                                    file_name=f"{os.path.splitext(file_name)[0]}_qc_report.pdf",
+                                    mime='application/pdf'
+                                )
+
+                                # Processed data
+                                st.download_button(
+                                    label=f"Download Processed Data for {file_name} (CSV)",
+                                    data=df.to_csv(index=False).encode('utf-8'),
+                                    file_name=f"processed_{file_name}",
+                                    mime='text/csv'
+                                )
+
+                            except Exception as ex:
+                                st.error(f"Failed to read processed data for {file_name}: {str(ex)}")
+                        else:
+                            st.error("Processed data file not found or no partial output available.")
+
             else:
                 st.info("No processing results available.")
 
