@@ -189,13 +189,27 @@ def process_file(
 
             pbar.update(5)  # Update remaining progress
 
+            # if not format_valid:
+            #     num_invalid = sum(len(df) for df in integrity_issues)  # or some aggregator
+            #     error_msg = (f"Format validation failed. Schema compliance issues detected. "
+            #                  f"{num_invalid} record(s) do not match the JSON schema.")
+            #     log_activity(f"{file_path}: {error_msg}", level='error')
+            #     pbar.close()
+            #     return {'file': file_path, 'status': 'Invalid', 'error': error_msg}
             if not format_valid:
-                num_invalid = sum(len(df) for df in integrity_issues)  # or some aggregator
-                error_msg = (f"Format validation failed. Schema compliance issues detected. "
-                             f"{num_invalid} record(s) do not match the JSON schema.")
-                log_activity(f"{file_path}: {error_msg}", level='error')
-                pbar.close()
-                return {'file': file_path, 'status': 'Invalid', 'error': error_msg}
+                # Count how many invalid rows (just combine all integrity_issues DataFrames)
+                num_invalid = sum(len(df_part) for df_part in integrity_issues) if integrity_issues else 0
+                error_msg = (
+                    "Format validation failed. "
+                    f"{num_invalid} record(s) do not match the JSON schema, but continuing..."
+                )
+                log_activity(f"{file_path}: {error_msg}", level='warning')
+                # We do NOT return here. We keep going to produce partial output & QC report.
+
+                # Optionally mark a partial status
+                final_status = 'ProcessedWithWarnings'
+            else:
+                final_status = 'Processed'
 
             # Aggregate validation results
             validation_results = {
@@ -285,15 +299,15 @@ def process_file(
 
             result = {
                 'file': file_path,
-                'status': 'Processed',
-                'error': None,
+                'status': final_status,
+                'error': error_msg if not format_valid else None,
                 'validation_results': validation_results,
                 'missing_data': missing_counts,
                 'flagged_records_count': flagged_records_count,
                 'processed_file_path': output_data_file,
                 'mapping_success_rates': mapping_success_rates,
                 'visualization_images': visualization_images,
-                'quality_scores': quality_scores  # Added parameter
+                'quality_scores': quality_scores
             }
 
             return result

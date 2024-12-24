@@ -39,33 +39,39 @@ class DataValidator:
 
     def validate_format(self) -> bool:
         """
-        Validates the DataFrame against the provided JSON schema.
-
-        :return: True if validation passes, False otherwise.
+        Validates each row against the JSON schema. We capture invalid rows 
+        in `self.integrity_issues`, but do NOT abort the entire chunk. 
+        Each invalid row gets flagged so the pipeline can continue.
         """
         valid = True
         records = self.df.to_dict(orient='records')
         invalid_indices = []
 
+        # Add a column to track row-level schema violations
+        # (we do it here so repeated calls won't re-add the column)
+        if 'SchemaViolationFlag' not in self.df.columns:
+            self.df['SchemaViolationFlag'] = False
+
         for idx, record in enumerate(records):
             try:
                 self.validate_record(record)
             except fastjsonschema.JsonSchemaException as e:
-                # Collect the index of invalid record
                 invalid_indices.append(idx)
+                # Log a warning but do NOT stop
+                from logging_module import log_activity
+                preview = str(record)[:300]  # truncated record
+                msg = f"[SchemaValidation] Row #{idx+1} failed: {e.message}. Record preview: {preview}"
+                log_activity(msg, level='warning')
                 valid = False
-                row_preview = str(record)[:300]  # truncated
-                log_activity(
-                    f"[SchemaValidation] Row #{idx+1} failed: {e.message}. "
-                    f"Problematic record preview: {row_preview}",
-                    level='warning'
-                )
 
+        # Flag invalid rows 
         if invalid_indices:
-            # Collect invalid records
+            self.df.loc[invalid_indices, 'SchemaViolationFlag'] = True
+            # We also store them in self.integrity_issues for reporting
             self.integrity_issues = self.df.iloc[invalid_indices]
 
         return valid
+
 
     def identify_duplicates(self) -> pd.DataFrame:
         """
