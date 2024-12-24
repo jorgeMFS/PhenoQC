@@ -190,7 +190,9 @@ def process_file(
             pbar.update(5)  # Update remaining progress
 
             if not format_valid:
-                error_msg = "Format validation failed. Schema compliance issues detected."
+                num_invalid = sum(len(df) for df in integrity_issues)  # or some aggregator
+                error_msg = (f"Format validation failed. Schema compliance issues detected. "
+                             f"{num_invalid} record(s) do not match the JSON schema.")
                 log_activity(f"{file_path}: {error_msg}", level='error')
                 pbar.close()
                 return {'file': file_path, 'status': 'Invalid', 'error': error_msg}

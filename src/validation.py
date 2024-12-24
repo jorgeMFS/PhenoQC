@@ -3,6 +3,7 @@ from typing import List, Dict, Any
 import fastjsonschema
 import re
 from datetime import datetime
+from logging_module import log_activity 
 
 class DataValidator:
     def __init__(
@@ -53,6 +54,12 @@ class DataValidator:
                 # Collect the index of invalid record
                 invalid_indices.append(idx)
                 valid = False
+                row_preview = str(record)[:300]  # truncated
+                log_activity(
+                    f"[SchemaValidation] Row #{idx+1} failed: {e.message}. "
+                    f"Problematic record preview: {row_preview}",
+                    level='warning'
+                )
 
         if invalid_indices:
             # Collect invalid records
