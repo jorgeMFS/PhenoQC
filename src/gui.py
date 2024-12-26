@@ -24,6 +24,13 @@ def extract_zip(zip_path, extract_to):
     except Exception as e:
         return False, f"An error occurred during ZIP extraction: {e}"
 
+def on_editor_change():
+    edited_df = st.session_state["editor_key"]
+    st.session_state["edited_duplicates"] = edited_df
+    # Here, you can add code to handle the edited DataFrame,
+    # such as updating a database or triggering further processing.
+
+
 def collect_supported_files(directory, supported_extensions):
     collected_files = []
     for root, dirs, files in os.walk(directory):
@@ -358,26 +365,33 @@ def main():
         st.markdown("---")
         if st.session_state.steps_completed["Select Ontologies & Impute"]:
             st.button("Proceed to Run QC and View Results", on_click=proceed_to_step, args=("Run QC and View Results",))
-
+  
     # Step 5: Run QC and View Results (merged step)
     elif st.session_state.current_step == "Run QC and View Results":
         st.header("Step 5: Run Quality Control and View Results")
+
+        # If not processed yet, show the "Start Processing" button
         if not st.session_state.steps_completed["Run QC and View Results"]:
-            # If processing not done, show the Start Processing button
             if st.button("Start Processing", key="start_processing_button"):
                 with st.spinner("Processing..."):
                     try:
                         # Create temporary directory if not already created
                         if 'tmpdirname' not in st.session_state:
                             st.session_state.tmpdirname = tempfile.mkdtemp()
+
                         tmpdirname = st.session_state.tmpdirname
                         input_paths = []
+
+                        # Save schema.json
                         schema_path = os.path.join(tmpdirname, "schema.json")
                         with open(schema_path, 'w') as f:
                             json.dump(st.session_state['schema'], f)
+
+                        # Save config.yaml
                         config_path = os.path.join(tmpdirname, "config.yaml")
                         with open(config_path, 'w') as f:
                             yaml.dump(st.session_state['config'], f)
+
                         # Save custom mappings if provided
                         if st.session_state['custom_mappings_data']:
                             custom_mappings_path = os.path.join(tmpdirname, "custom_mapping.json")
@@ -385,7 +399,8 @@ def main():
                                 json.dump(st.session_state['custom_mappings_data'], f)
                         else:
                             custom_mappings_path = None
-                        # Handle data files
+
+                        # Collect input file paths
                         if st.session_state['data_source'] == 'files':
                             uploaded_files = st.session_state.get('uploaded_files_list', [])
                             for uploaded_file in uploaded_files:
@@ -394,10 +409,9 @@ def main():
                                     f.write(uploaded_file.getbuffer())
                                 input_paths.append(file_path)
                         else:
-                            # Extract ZIP archive
+                            # For ZIP
                             uploaded_zip = st.session_state.get('uploaded_zip_file')
                             if uploaded_zip:
-                                # Save the uploaded ZIP to a temporary file
                                 tmp_zip_path = save_uploaded_file(uploaded_zip)
                                 extract_dir = os.path.join(tmpdirname, "extracted")
                                 os.makedirs(extract_dir, exist_ok=True)
@@ -407,31 +421,37 @@ def main():
                                     st.stop()
                                 # Collect supported files
                                 supported_extensions = {'.csv', '.tsv', '.json'}
-                                collected_files = []
-                                # Always use recursive scanning for better reliability
                                 collected_files = collect_supported_files(extract_dir, supported_extensions)
                                 st.info(f"Collected {len(collected_files)} files.")
                                 input_paths.extend(collected_files)
+
                         if not input_paths:
                             st.error("No data files found to process.")
                             st.stop()
-                       
-                        # Initialize OntologyMapper
+
+                        # Prepare to run for each file
+                        from mapping import OntologyMapper
                         ontology_mapper = OntologyMapper(config_path=config_path)
-                        # Load configuration
+
                         config = st.session_state['config']
                         field_strategies = config.get('imputation_strategies', {})
-                        # Define output directory
+
                         output_dir = os.path.join(tmpdirname, "reports")
                         os.makedirs(output_dir, exist_ok=True)
+
                         total_files = len(input_paths)
                         progress_bar = st.progress(0)
                         current_progress = 0
                         progress_increment = 100 / total_files if total_files > 0 else 0
+
+                        # Clear previous processing results
                         st.session_state['processing_results'] = []
+
+                        # Run QC on each file
                         for idx, file_path in enumerate(input_paths):
                             file_name = os.path.basename(file_path)
                             st.write(f"Processing {file_name}...")
+
                             try:
                                 result = process_file(
                                     file_path=file_path,
@@ -443,160 +463,217 @@ def main():
                                     field_strategies=field_strategies,
                                     output_dir=output_dir,
                                     target_ontologies=st.session_state.get('ontologies_selected_list', []),
-                                    phenotype_column=st.session_state.get('phenotype_column', 'Phenotype')  # Pass phenotype_column
+                                    phenotype_column=st.session_state.get('phenotype_column', 'Phenotype')
                                 )
-
-                                # Get the actual processed file path from result
-                                processed_data_path = result.get('processed_file_path')
-                                if processed_data_path and os.path.exists(processed_data_path):
-                                    st.success(f"{file_name} processed successfully.")
-                                else:
-                                    st.warning(f"Processed data file not found for {file_name}.")
                                 st.session_state['processing_results'].append((file_name, result, output_dir))
+
+                                # Show quick success/warning
+                                if result['status'] == 'Processed':
+                                    st.success(f"{file_name} processed successfully.")
+                                elif result['status'] == 'ProcessedWithWarnings':
+                                    st.warning(f"{file_name} processed with warnings.")
+                                elif result['status'] == 'Invalid':
+                                    st.warning(f"{file_name} validation failed: {result['error']}")
+                                else:
+                                    st.error(f"{file_name} error: {result['error']}")
+
                             except Exception as e:
-                                st.error(f"An error occurred while processing {file_name}: {e}")
-                                continue
+                                st.error(f"Error processing {file_name}: {e}")
+
                             current_progress += progress_increment
                             progress_bar.progress(int(current_progress))
+
                         st.success("Processing completed!")
                         st.session_state.steps_completed["Run QC and View Results"] = True
+
                     except Exception as e:
                         st.error(f"An error occurred during processing: {e}")
 
-
+        # -------------------------------------------------------------------
+        # If we *have* processed results, display them in tabs
+        # -------------------------------------------------------------------
         if st.session_state.steps_completed.get("Run QC and View Results", False):
             st.header("Results")
             if 'processing_results' in st.session_state and st.session_state['processing_results']:
-                # Create tabs for each file
-                tab_labels = [os.path.basename(file_name) for file_name, _, _ in st.session_state['processing_results']]
+                tab_labels = [os.path.basename(fname) for fname, _, _ in st.session_state['processing_results']]
                 tabs = st.tabs(tab_labels)
 
                 for (file_name, result, output_dir), tab in zip(st.session_state['processing_results'], tabs):
                     with tab:
                         st.subheader(f"Results for {file_name}")
 
-                        # --- Status checks ---
-                        if result['status'] == 'Processed':
+                        # ----- SHOW STATUS -----
+                        file_status = result['status']
+                        if file_status == 'Processed':
                             st.success("File processed successfully.")
-                        elif result['status'] == 'ProcessedWithWarnings':
+                        elif file_status == 'ProcessedWithWarnings':
                             st.warning(
-                                "File processed, but there were schema or integrity warnings. "
-                                "Please see details below."
+                                "File processed, but there were warnings or schema violations. "
+                                "See details below."
                             )
-                        elif result['status'] == 'Invalid':
+                        elif file_status == 'Invalid':
                             st.warning(f"File failed validation: {result['error']}")
                         else:
-                            st.error(f"An error occurred: {result['error']}")
+                            st.error(f"File encountered an error: {result['error']}")
 
-                        # --- If processed or partially processed, show details ---
                         processed_data_path = result.get('processed_file_path')
-                        if processed_data_path and os.path.exists(processed_data_path):
-                            try:
-                                df = pd.read_csv(processed_data_path)
-                                st.write("### Sample of Processed Data:")
-                                st.dataframe(df.head(5))
+                        if not processed_data_path or not os.path.exists(processed_data_path):
+                            st.error("Processed data file not found. No partial output available.")
+                            continue
 
-                                # -- Display validation summaries in collapsible sections --
-                                validation_res = result.get('validation_results', {})
+                        # Load the processed data
+                        try:
+                            df = pd.read_csv(processed_data_path)
+                        except Exception as ex:
+                            st.error(f"Failed to read processed data for {file_name}: {str(ex)}")
+                            continue
 
-                                # 1) Format Validation
-                                if validation_res.get('Format Validation') is False:
-                                    st.error(
-                                        "Some records do not match the JSON schema. "
-                                        "See 'Integrity Issues' section below."
-                                    )
+                        st.write("### Sample of Processed Data:")
+                        st.dataframe(df.head(5))
 
-                                # 2) Integrity Issues
-                                integrity_df = validation_res.get("Integrity Issues")
-                                if isinstance(integrity_df, pd.DataFrame) and not integrity_df.empty:
-                                    with st.expander("Integrity Issues", expanded=False):
-                                        st.error("Rows that failed validation or had data-type/constraint issues:")
-                                        st.dataframe(integrity_df.head(50))
+                        # --- Summaries / Validation Results ---
+                        validation_res = result.get('validation_results', {})
+                        summary_text = []
 
-                                # 3) Duplicate Records
-                                duplicates_df = validation_res.get("Duplicate Records")
-                                if isinstance(duplicates_df, pd.DataFrame) and not duplicates_df.empty:
-                                    with st.expander("Duplicate Records", expanded=False):
-                                        st.warning("The following rows appear more than once based on unique identifiers:")
-                                        st.dataframe(duplicates_df)
-
-                                # 4) Conflicting Records
-                                conflicts_df = validation_res.get("Conflicting Records")
-                                if isinstance(conflicts_df, pd.DataFrame) and not conflicts_df.empty:
-                                    with st.expander("Conflicting Records", expanded=False):
-                                        st.warning("Within duplicated rows, some columns have conflicting data:")
-                                        st.dataframe(conflicts_df)
-
-                                # 5) Anomalies Detected
-                                anomalies_df = validation_res.get("Anomalies Detected")
-                                if isinstance(anomalies_df, pd.DataFrame) and not anomalies_df.empty:
-                                    with st.expander("Anomalies Detected", expanded=False):
-                                        st.warning(
-                                            "Potential outliers based on a simple Z-score approach (|z|>3). "
-                                            "Rows listed here may need review."
-                                        )
-                                        st.dataframe(anomalies_df)
-
-                                # 6) Visualization
-                                st.write("### Visual Summaries")
-                                figs = create_visual_summary(
-                                    df,
-                                    phenotype_column=st.session_state.get('phenotype_column', 'Phenotype'),
-                                    output_image_path=None
-                                )
-                                num_figs = len(figs)
-                                if num_figs > 0:
-                                    # Arrange graphs in two columns
-                                    cols = st.columns(2)
-                                    for i, fig in enumerate(figs):
-                                        with cols[i % 2]:
-                                            st.plotly_chart(fig, use_container_width=True, key=f"{file_name}_plot_{i}")
-
-                                # 7) Quality Scores
-                                quality_scores = result.get('quality_scores', {})
-                                if quality_scores:
-                                    st.write("### Quality Scores")
-                                    for score_name, score_val in quality_scores.items():
-                                        st.write(f"- **{score_name}**: {score_val:.2f}%")
-
-                                # -- Optionally let user download the final QC report (PDF) & processed data --
-                                st.write("### Downloads")
-                                report_buffer = io.BytesIO()
-                                generate_qc_report(
-                                    validation_results=validation_res,
-                                    missing_data=result.get('missing_data', pd.Series()),
-                                    flagged_records_count=result.get('flagged_records_count', 0),
-                                    mapping_success_rates=result.get('mapping_success_rates', {}),
-                                    visualization_images=result.get('visualization_images', []),
-                                    impute_strategy=st.session_state.get('impute_strategy_value'),
-                                    quality_scores=quality_scores,
-                                    output_path_or_buffer=report_buffer,
-                                    report_format='pdf'
-                                )
-                                report_buffer.seek(0)
-
-                                st.download_button(
-                                    label=f"Download QC Report for {file_name} (PDF)",
-                                    data=report_buffer,
-                                    file_name=f"{os.path.splitext(file_name)[0]}_qc_report.pdf",
-                                    mime='application/pdf'
-                                )
-
-                                # Processed data
-                                st.download_button(
-                                    label=f"Download Processed Data for {file_name} (CSV)",
-                                    data=df.to_csv(index=False).encode('utf-8'),
-                                    file_name=f"processed_{file_name}",
-                                    mime='text/csv'
-                                )
-
-                            except Exception as ex:
-                                st.error(f"Failed to read processed data for {file_name}: {str(ex)}")
+                        # 1) Format Validation
+                        if validation_res.get('Format Validation') is False:
+                            summary_text.append("- Some rows did NOT match the JSON schema.")
                         else:
-                            st.error("Processed data file not found or no partial output available.")
+                            summary_text.append("- All rows appear to match the JSON schema (or partial).")
 
+                        # 2) Duplicate Records
+                        duplicates_df = validation_res.get("Duplicate Records")
+                        if isinstance(duplicates_df, pd.DataFrame) and not duplicates_df.empty:
+                            summary_text.append(
+                                f"- Found **{len(duplicates_df.drop_duplicates())}** duplicate rows."
+                            )
+                        else:
+                            summary_text.append("- No duplicates found.")
+
+                        # 3) Conflicting Records
+                        conflicts_df = validation_res.get("Conflicting Records")
+                        if isinstance(conflicts_df, pd.DataFrame) and not conflicts_df.empty:
+                            summary_text.append(
+                                f"- Found **{len(conflicts_df.drop_duplicates())}** rows with conflicting fields."
+                            )
+                        else:
+                            summary_text.append("- No conflicting records found.")
+
+                        # 4) Integrity Issues
+                        integrity_df = validation_res.get("Integrity Issues")
+                        if isinstance(integrity_df, pd.DataFrame) and not integrity_df.empty:
+                            summary_text.append(
+                                f"- Found **{len(integrity_df.drop_duplicates())}** rows with data-type or constraint violations."
+                            )
+                        else:
+                            summary_text.append("- No integrity issues found.")
+
+                        # 5) Anomalies Detected
+                        anomalies_df = validation_res.get("Anomalies Detected")
+                        if isinstance(anomalies_df, pd.DataFrame) and not anomalies_df.empty:
+                            summary_text.append(
+                                f"- Found **{len(anomalies_df.drop_duplicates())}** potential outliers."
+                            )
+                        else:
+                            summary_text.append("- No anomalies detected.")
+
+                        # Info box
+                        st.info("**Summary of Key Findings**\n\n" + "\n".join(summary_text))
+
+                        # -------------- Optional In-UI Editing (Duplicates) --------------
+                        st.write("#### Possible Actions")
+                        st.markdown(
+                            """
+                            1. **Download the CSV**, fix issues locally, then re-upload in Step 2 for re-processing.
+                            2. **Or** directly edit rows below (if you have a way to do in-place editing).
+                            3. After corrections, click **Re-run QC** to see if issues are resolved.
+                            """
+                        )
+                        
+                        if isinstance(duplicates_df, pd.DataFrame) and not duplicates_df.empty:
+                            st.write("**Editable Table for Duplicates** (experimental):")
+                            edited_dup_df = st.data_editor(duplicates_df, num_rows="dynamic")
+                            st.markdown(
+                                "You can modify these duplicates in the table above. "
+                                "When finished, click the button below to re-run QC with your changes."
+                            )
+                            if st.button(f"Re-run QC with edited duplicates? ({file_name})"):
+                                df_no_dup = df[~df.index.isin(duplicates_df.index)]
+                                updated_df = pd.concat([df_no_dup, edited_dup_df], ignore_index=True)
+                                st.success("Mock approach. You’d re-run the pipeline with updated_df here.")
+
+                        # -------------- Expanders for Detailed Views --------------
+                        st.write("### Detailed Results (Expand for More Info)")
+
+                        if isinstance(integrity_df, pd.DataFrame) and not integrity_df.empty:
+                            with st.expander("Integrity Issues", expanded=False):
+                                st.error("Rows that failed data-type or constraint checks:")
+                                st.dataframe(integrity_df.head(50))
+
+                        if isinstance(duplicates_df, pd.DataFrame) and not duplicates_df.empty:
+                            with st.expander("Duplicate Records", expanded=False):
+                                st.warning("These rows appear more than once based on unique identifiers:")
+                                st.dataframe(duplicates_df)
+
+                        if isinstance(conflicts_df, pd.DataFrame) and not conflicts_df.empty:
+                            with st.expander("Conflicting Records", expanded=False):
+                                st.warning("Within duplicated rows, some columns have conflicting data:")
+                                st.dataframe(conflicts_df)
+
+                        if isinstance(anomalies_df, pd.DataFrame) and not anomalies_df.empty:
+                            with st.expander("Anomalies Detected", expanded=False):
+                                st.warning("Potential outliers (Z-score>3). Check these numeric values carefully.")
+                                st.dataframe(anomalies_df)
+
+                        # -------------- Visual Summaries --------------
+                        st.write("### Visual Summaries")
+                        figs = create_visual_summary(
+                            df,
+                            phenotype_column=st.session_state.get('phenotype_column', 'Phenotype'),
+                            output_image_path=None
+                        )
+                        if figs:
+                            cols = st.columns(2)
+                            for i, fig in enumerate(figs):
+                                with cols[i % 2]:
+                                    st.plotly_chart(fig, use_container_width=True, key=f"{file_name}_plot_{i}")
+
+                        # -------------- Quality Scores + Downloads --------------
+                        st.write("### Quality Scores")
+                        q_scores = result.get('quality_scores', {})
+                        for score_name, score_val in q_scores.items():
+                            st.write(f"- **{score_name}**: {score_val:.2f}%")
+
+                        st.write("### Downloads")
+                        report_buffer = io.BytesIO()
+                        generate_qc_report(
+                            validation_results=validation_res,
+                            missing_data=result.get('missing_data', pd.Series()),
+                            flagged_records_count=result.get('flagged_records_count', 0),
+                            mapping_success_rates=result.get('mapping_success_rates', {}),
+                            visualization_images=result.get('visualization_images', []),
+                            impute_strategy=st.session_state.get('impute_strategy_value'),
+                            quality_scores=q_scores,
+                            output_path_or_buffer=report_buffer,
+                            report_format='pdf'
+                        )
+                        report_buffer.seek(0)
+                        st.download_button(
+                            label=f"Download QC Report for {file_name} (PDF)",
+                            data=report_buffer,
+                            file_name=f"{os.path.splitext(file_name)[0]}_qc_report.pdf",
+                            mime='application/pdf'
+                        )
+
+                        st.download_button(
+                            label=f"Download Processed Data for {file_name} (CSV)",
+                            data=df.to_csv(index=False).encode('utf-8'),
+                            file_name=f"processed_{file_name}",
+                            mime='text/csv'
+                        )
             else:
                 st.info("No processing results available.")
+
 
 if __name__ == '__main__':
     main()
