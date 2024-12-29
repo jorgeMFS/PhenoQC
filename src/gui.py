@@ -13,6 +13,8 @@ from batch_processing import process_file
 import shutil  # For deleting temporary directories
 import yaml  # Needed for saving config
 import warnings  # For suppressing warnings
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode, JsCode
+from validation import DataValidator  # or wherever your validation code is
 
 def extract_zip(zip_path, extract_to):
     try:
@@ -27,8 +29,92 @@ def extract_zip(zip_path, extract_to):
 def on_editor_change():
     edited_df = st.session_state["editor_key"]
     st.session_state["edited_duplicates"] = edited_df
-    # Here, you can add code to handle the edited DataFrame,
-    # such as updating a database or triggering further processing.
+    # (Optional hook) Here, you can add code to handle the edited DataFrame.
+
+
+def display_editable_grid_with_highlighting(df: pd.DataFrame,
+                                            invalid_mask: pd.DataFrame,
+                                            allow_edit: bool = True) -> pd.DataFrame:
+    """
+    Simple, functional editable grid with error highlighting and scrollable width.
+    Only editable if allow_edit=True.
+    """
+    df = df.reset_index(drop=True)  # ensure a clean, 0-based index
+
+    # Intersect the columns so we don’t get KeyErrors
+    common_cols = df.columns.intersection(invalid_mask.columns)
+    invalid_mask = invalid_mask[common_cols].reindex(df.index, fill_value=False)
+
+    # Create hidden "_isInvalid" columns
+    for col in common_cols:
+        is_invalid_col = f"{col}_isInvalid"
+        if is_invalid_col not in df.columns:
+            df[is_invalid_col] = invalid_mask[col].astype(bool)
+
+    # Build the AgGrid config
+    gb = GridOptionsBuilder.from_dataframe(df)
+
+    for col in df.columns:
+        if col.endswith("_isInvalid"):
+            # Hide the helper column
+            gb.configure_column(col, hide=True)
+        else:
+            # If we have a _isInvalid counterpart, set cellStyle
+            is_invalid_col = col + "_isInvalid"
+            if is_invalid_col in df.columns:
+                cell_style_jscode = JsCode(f"""
+                    function(params) {{
+                        if (params.data['{is_invalid_col}'] === true) {{
+                            return {{'backgroundColor': '#fff5f5'}};
+                        }}
+                        return null;
+                    }}
+                """)
+                gb.configure_column(col, 
+                                    editable=allow_edit, 
+                                    cellStyle=cell_style_jscode, 
+                                    minWidth=200)
+            else:
+                gb.configure_column(col, editable=allow_edit, minWidth=200)
+
+    grid_options = gb.build()
+    grid_options['defaultColDef'] = {
+        'resizable': True,
+        'sortable': True,
+        'minWidth': 200
+    }
+
+    # Render the grid
+    grid_response = AgGrid(
+        df,
+        gridOptions=grid_options,
+        data_return_mode='AS_INPUT',
+        update_mode='MODEL_CHANGED',
+        fit_columns_on_grid_load=False,
+        height=min(400, len(df) * 35 + 40),
+        allow_unsafe_jscode=True,
+        theme='streamlit',
+        custom_css={
+            ".ag-header-cell": {
+                "background-color": "#f0f0f0",
+                "font-weight": "500",
+                "padding": "8px",
+                "height": "48px !important",
+                "line-height": "1.2 !important",
+                "white-space": "normal !important"
+            },
+            ".ag-cell": {
+                "padding-left": "8px",
+                "padding-right": "8px"
+            }
+        }
+    )
+
+    edited_df = pd.DataFrame(grid_response['data'])
+    cols_to_drop = [c for c in edited_df.columns if c.endswith("_isInvalid")]
+    edited_df.drop(columns=cols_to_drop, inplace=True, errors='ignore')
+
+    return edited_df
 
 
 def collect_supported_files(directory, supported_extensions):
@@ -365,8 +451,9 @@ def main():
         st.markdown("---")
         if st.session_state.steps_completed["Select Ontologies & Impute"]:
             st.button("Proceed to Run QC and View Results", on_click=proceed_to_step, args=("Run QC and View Results",))
-  
-    # Step 5: Run QC and View Results (merged step)
+        # ----------------------------------------------------
+    # 5) Run QC and View Results (merged step)
+    # ----------------------------------------------------
     elif st.session_state.current_step == "Run QC and View Results":
         st.header("Step 5: Run Quality Control and View Results")
 
@@ -375,7 +462,6 @@ def main():
             if st.button("Start Processing", key="start_processing_button"):
                 with st.spinner("Processing..."):
                     try:
-                        # Create temporary directory if not already created
                         if 'tmpdirname' not in st.session_state:
                             st.session_state.tmpdirname = tempfile.mkdtemp()
 
@@ -419,7 +505,6 @@ def main():
                                 if not success:
                                     st.error(error)
                                     st.stop()
-                                # Collect supported files
                                 supported_extensions = {'.csv', '.tsv', '.json'}
                                 collected_files = collect_supported_files(extract_dir, supported_extensions)
                                 st.info(f"Collected {len(collected_files)} files.")
@@ -429,8 +514,7 @@ def main():
                             st.error("No data files found to process.")
                             st.stop()
 
-                        # Prepare to run for each file
-                        from mapping import OntologyMapper
+                        # Initialize OntologyMapper
                         ontology_mapper = OntologyMapper(config_path=config_path)
 
                         config = st.session_state['config']
@@ -444,7 +528,7 @@ def main():
                         current_progress = 0
                         progress_increment = 100 / total_files if total_files > 0 else 0
 
-                        # Clear previous processing results
+                        # Clear previous results
                         st.session_state['processing_results'] = []
 
                         # Run QC on each file
@@ -467,7 +551,7 @@ def main():
                                 )
                                 st.session_state['processing_results'].append((file_name, result, output_dir))
 
-                                # Show quick success/warning
+                                # Quick status
                                 if result['status'] == 'Processed':
                                     st.success(f"{file_name} processed successfully.")
                                 elif result['status'] == 'ProcessedWithWarnings':
@@ -489,9 +573,7 @@ def main():
                     except Exception as e:
                         st.error(f"An error occurred during processing: {e}")
 
-        # -------------------------------------------------------------------
-        # If we *have* processed results, display them in tabs
-        # -------------------------------------------------------------------
+        # If we have processed results, show them
         if st.session_state.steps_completed.get("Run QC and View Results", False):
             st.header("Results")
             if 'processing_results' in st.session_state and st.session_state['processing_results']:
@@ -502,15 +584,11 @@ def main():
                     with tab:
                         st.subheader(f"Results for {file_name}")
 
-                        # ----- SHOW STATUS -----
                         file_status = result['status']
                         if file_status == 'Processed':
                             st.success("File processed successfully.")
                         elif file_status == 'ProcessedWithWarnings':
-                            st.warning(
-                                "File processed, but there were warnings or schema violations. "
-                                "See details below."
-                            )
+                            st.warning("File processed with warnings or schema violations.")
                         elif file_status == 'Invalid':
                             st.warning(f"File failed validation: {result['error']}")
                         else:
@@ -521,111 +599,109 @@ def main():
                             st.error("Processed data file not found. No partial output available.")
                             continue
 
-                        # Load the processed data
                         try:
                             df = pd.read_csv(processed_data_path)
                         except Exception as ex:
-                            st.error(f"Failed to read processed data for {file_name}: {str(ex)}")
+                            st.error(f"Failed to read processed data: {str(ex)}")
                             continue
 
                         st.write("### Sample of Processed Data:")
                         st.dataframe(df.head(5))
 
-                        # --- Summaries / Validation Results ---
+                        # Build summary
                         validation_res = result.get('validation_results', {})
                         summary_text = []
 
-                        # 1) Format Validation
                         if validation_res.get('Format Validation') is False:
                             summary_text.append("- Some rows did NOT match the JSON schema.")
                         else:
                             summary_text.append("- All rows appear to match the JSON schema (or partial).")
 
-                        # 2) Duplicate Records
                         duplicates_df = validation_res.get("Duplicate Records")
                         if isinstance(duplicates_df, pd.DataFrame) and not duplicates_df.empty:
-                            summary_text.append(
-                                f"- Found **{len(duplicates_df.drop_duplicates())}** duplicate rows."
-                            )
+                            summary_text.append(f"- Found **{len(duplicates_df.drop_duplicates())}** duplicate rows.")
                         else:
                             summary_text.append("- No duplicates found.")
 
-                        # 3) Conflicting Records
                         conflicts_df = validation_res.get("Conflicting Records")
                         if isinstance(conflicts_df, pd.DataFrame) and not conflicts_df.empty:
-                            summary_text.append(
-                                f"- Found **{len(conflicts_df.drop_duplicates())}** rows with conflicting fields."
-                            )
+                            summary_text.append(f"- Found **{len(conflicts_df.drop_duplicates())}** conflicting records.")
                         else:
                             summary_text.append("- No conflicting records found.")
 
-                        # 4) Integrity Issues
                         integrity_df = validation_res.get("Integrity Issues")
                         if isinstance(integrity_df, pd.DataFrame) and not integrity_df.empty:
-                            summary_text.append(
-                                f"- Found **{len(integrity_df.drop_duplicates())}** rows with data-type or constraint violations."
-                            )
+                            summary_text.append(f"- Found **{len(integrity_df.drop_duplicates())}** integrity issues.")
                         else:
                             summary_text.append("- No integrity issues found.")
 
-                        # 5) Anomalies Detected
                         anomalies_df = validation_res.get("Anomalies Detected")
                         if isinstance(anomalies_df, pd.DataFrame) and not anomalies_df.empty:
-                            summary_text.append(
-                                f"- Found **{len(anomalies_df.drop_duplicates())}** potential outliers."
-                            )
+                            summary_text.append(f"- Found **{len(anomalies_df.drop_duplicates())}** anomalies.")
                         else:
                             summary_text.append("- No anomalies detected.")
 
-                        # Info box
                         st.info("**Summary of Key Findings**\n\n" + "\n".join(summary_text))
 
-                        # -------------- Optional In-UI Editing (Duplicates) --------------
-                        st.write("#### Possible Actions")
-                        st.markdown(
-                            """
-                            1. **Download the CSV**, fix issues locally, then re-upload in Step 2 for re-processing.
-                            2. **Or** directly edit rows below (if you have a way to do in-place editing).
-                            3. After corrections, click **Re-run QC** to see if issues are resolved.
-                            """
-                        )
-                        
-                        if isinstance(duplicates_df, pd.DataFrame) and not duplicates_df.empty:
-                            st.write("**Editable Table for Duplicates** (experimental):")
-                            edited_dup_df = st.data_editor(duplicates_df, num_rows="dynamic")
-                            st.markdown(
-                                "You can modify these duplicates in the table above. "
-                                "When finished, click the button below to re-run QC with your changes."
+                        # =======================
+                        #  ONLY if there's exactly one file
+                        #  AND if Format Validation = False
+                        #  => show in-place editing
+                        # =======================
+                        num_files_processed = len(st.session_state['processing_results'])
+                        format_valid = validation_res.get("Format Validation", True)
+
+                        if num_files_processed == 1 and not format_valid:
+                            st.write("### In-Place Editing & Re-validation")
+                            invalid_mask = validation_res.get("Invalid Mask", pd.DataFrame())
+                            if invalid_mask.empty:
+                                st.write("No invalid cells found (or no mask returned).")
+                                st.write("Feel free to edit the data below anyway.")
+                                invalid_mask = pd.DataFrame(False, index=df.index, columns=df.columns)
+
+                            key_prefix = file_name.replace('.', '_')
+                            if f"{key_prefix}_df" not in st.session_state:
+                                st.session_state[f"{key_prefix}_df"] = df.copy()
+                            if f"{key_prefix}_mask" not in st.session_state:
+                                st.session_state[f"{key_prefix}_mask"] = invalid_mask.copy()
+
+                            # We allow editing
+                            editable_df = display_editable_grid_with_highlighting(
+                                st.session_state[f"{key_prefix}_df"].copy(),
+                                st.session_state[f"{key_prefix}_mask"].copy(),
+                                allow_edit=True
                             )
-                            if st.button(f"Re-run QC with edited duplicates? ({file_name})"):
-                                df_no_dup = df[~df.index.isin(duplicates_df.index)]
-                                updated_df = pd.concat([df_no_dup, edited_dup_df], ignore_index=True)
-                                st.success("Mock approach. You’d re-run the pipeline with updated_df here.")
 
-                        # -------------- Expanders for Detailed Views --------------
-                        st.write("### Detailed Results (Expand for More Info)")
+                            # Button to re-validate
+                            if st.button(f"Re-Validate Data ({file_name})"):
+                                edited_df = editable_df.copy()
+                                edited_df.index = st.session_state[f"{key_prefix}_df"].index
+                                st.session_state[f"{key_prefix}_df"] = edited_df
 
-                        if isinstance(integrity_df, pd.DataFrame) and not integrity_df.empty:
-                            with st.expander("Integrity Issues", expanded=False):
-                                st.error("Rows that failed data-type or constraint checks:")
-                                st.dataframe(integrity_df.head(50))
+                                # Re-run validations on the edited data
+                                schema = st.session_state['schema']
+                                unique_ids = st.session_state.get('unique_identifiers_list', [])
+                                validator = DataValidator(edited_df, schema, unique_ids)
+                                results2 = validator.run_all_validations()
+                                new_mask = results2["Invalid Mask"]
+                                st.session_state[f"{key_prefix}_mask"] = new_mask
 
-                        if isinstance(duplicates_df, pd.DataFrame) and not duplicates_df.empty:
-                            with st.expander("Duplicate Records", expanded=False):
-                                st.warning("These rows appear more than once based on unique identifiers:")
-                                st.dataframe(duplicates_df)
+                                if not results2["Format Validation"]:
+                                    st.warning("Some rows do not match the schema after re-validation.")
+                                else:
+                                    st.success("All rows appear valid after re-validation!")
 
-                        if isinstance(conflicts_df, pd.DataFrame) and not conflicts_df.empty:
-                            with st.expander("Conflicting Records", expanded=False):
-                                st.warning("Within duplicated rows, some columns have conflicting data:")
-                                st.dataframe(conflicts_df)
-
-                        if isinstance(anomalies_df, pd.DataFrame) and not anomalies_df.empty:
-                            with st.expander("Anomalies Detected", expanded=False):
-                                st.warning("Potential outliers (Z-score>3). Check these numeric values carefully.")
-                                st.dataframe(anomalies_df)
-
-                        # -------------- Visual Summaries --------------
+                                st.experimental_rerun()
+                        else:
+                            # If multiple files or the validation didn't fail, we skip editing
+                            st.write("**No in-place editing is available** because either:")
+                            st.write("- Multiple files were processed, **OR**")
+                            st.write("- The data already passes validation.")
+                            st.write("You can still review the data above or re-run with a single file.")
+                        
+                        # ================
+                        # Visual Summaries
+                        # ================
                         st.write("### Visual Summaries")
                         figs = create_visual_summary(
                             df,
@@ -638,7 +714,9 @@ def main():
                                 with cols[i % 2]:
                                     st.plotly_chart(fig, use_container_width=True, key=f"{file_name}_plot_{i}")
 
-                        # -------------- Quality Scores + Downloads --------------
+                        # ======================
+                        # Quality Scores + Downloads
+                        # ======================
                         st.write("### Quality Scores")
                         q_scores = result.get('quality_scores', {})
                         for score_name, score_val in q_scores.items():
@@ -673,7 +751,6 @@ def main():
                         )
             else:
                 st.info("No processing results available.")
-
 
 if __name__ == '__main__':
     main()
