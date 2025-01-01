@@ -5,8 +5,8 @@ set -e
 # Adjust paths as necessary.
 
 DATASET_PATH="./study/synthetic_phenotypic_data.csv"
-SCHEMA_PATH="./sytheticDatasetConfig/schema.json"
-CONFIG_PATH="./sytheticDatasetConfig/config.yaml"
+SCHEMA_PATH="./scripts/config/schema.json"
+CONFIG_PATH="./scripts/config/config.yaml"
 OUTPUT_DIR="./reports/"
 CUSTOM_MAPPINGS=""
 
