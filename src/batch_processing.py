@@ -26,6 +26,7 @@ def get_file_type(file_path):
     else:
         raise ValueError(f"Unsupported file extension: {ext}")
 
+
 def process_file(
     file_path,
     schema,
@@ -40,44 +41,59 @@ def process_file(
     chunksize=10000,
     phenotype_columns=None
 ):
-    """
-    Processes a single file in chunks:
-      1. Loads data by chunk.
-      2. Validates (row-level + cell-level).
-      3. Checks duplicates, conflicts, anomalies, etc.
-      4. Imputes missing data.
-      5. Maps phenotypes to ontologies.
-      6. Writes processed chunk to CSV + accumulates stats.
-      7. Creates a final QC report and returns a result dict.
-
-    Returns:
-        dict with keys like 'file', 'status', 'validation_results', etc.
-    """
     file_type = get_file_type(file_path)
     log_activity(f"Processing file: {file_path}")
     print(f"Processing file: {file_path}")
 
     try:
-        # Prepare a progress bar for the entire file
         with tqdm(total=100, desc=f"Processing {os.path.basename(file_path)}") as pbar:
-            # 1) Load data chunk-by-chunk
             data_iterator = load_data(file_path, file_type, chunksize=chunksize)
             pbar.update(5)
             log_activity("Data loading initiated.")
+
+            # Attempt to grab the *first* chunk so we can see if it's empty
+            try:
+                first_chunk = next(data_iterator, None)
+            except StopIteration:
+                # Means the file yields no data
+                return {
+                    'file': file_path,
+                    'status': 'Error',
+                    'error': f"No data found in {file_path} (empty or unreadable)."
+                }
+            except Exception as e:
+                # JSON parse error or something else
+                return {
+                    'file': file_path,
+                    'status': 'Error',
+                    'error': str(e)
+                }
+
+            if first_chunk is None or first_chunk.empty:
+                # The file may be empty
+                return {
+                    'file': file_path,
+                    'status': 'Error',
+                    'error': f"{file_path} is empty or has no valid rows."
+                }
+
+            # Now we need to re-inject 'first_chunk' back into the iteration.
+            # Easiest is to wrap the chunk in a list:
+            all_chunks = [first_chunk]
+            # then gather the rest:
+            for c in data_iterator:
+                all_chunks.append(c)
+
+            # From here on, your existing logic is the same, except we loop over `all_chunks` instead of data_iterator
 
             # 2) Initialize accumulators
             total_records = 0
             flagged_records_count = 0
             phenotype_terms_set = set()
-
-            # We'll write processed data to output_data_file
             output_data_file = os.path.join(output_dir, os.path.basename(file_path))
             if os.path.exists(output_data_file):
                 os.remove(output_data_file)
-
             write_header = True
-
-            # Add default phenotype columns if none provided
             if phenotype_columns is None:
                 phenotype_columns = {
                     "PrimaryPhenotype": ["HPO"],
@@ -85,60 +101,49 @@ def process_file(
                     "TertiaryPhenotype": ["MPO"]
                 }
 
-            # Initialize cumulative_mapping_stats based on phenotype_columns
+            # Mapping stats, sample_df, etc, same as your original code
             cumulative_mapping_stats = {}
             for column, ontologies in phenotype_columns.items():
                 for onto_id in ontologies:
                     if onto_id not in cumulative_mapping_stats:
                         cumulative_mapping_stats[onto_id] = {'total_terms': 0, 'mapped_terms': 0}
 
-            # We'll sample up to 10k rows for visual summaries
             sample_df = pd.DataFrame()
             sample_size_per_chunk = 1000
             max_total_samples = 10000
-
-            # For final validation results
             format_valid = True
             duplicate_records = []
             conflicting_records = []
             integrity_issues = []
             anomalies_detected = pd.DataFrame()
             missing_counts = pd.Series(dtype=int)
-
-            # A set to track duplicates across chunks
             unique_id_set = set()
-
-            # NEW: We'll keep a global invalid_mask for cell-level validation across chunks
             global_invalid_mask = pd.DataFrame()
-            row_offset = 0  # to keep track of row indices across chunks
-
-            chunk_progress = 80  # portion of the progress bar for chunk processing
+            row_offset = 0
+            chunk_progress = 80
             total_chunks = 0
 
-            # 3) Process each chunk
-            for chunk in data_iterator:
+            # 3) Process each chunk in all_chunks
+            for chunk in all_chunks:
                 total_chunks += 1
                 nrows_chunk = len(chunk)
                 if nrows_chunk == 0:
                     continue
 
-                # Reindex the chunk so we can merge invalid_masks globally
                 chunk.index = range(row_offset, row_offset + nrows_chunk)
                 row_offset += nrows_chunk
-
                 total_records += nrows_chunk
 
-                # 3a) Validate (row-level + cell-level)
+                # The rest of your chunk-level code remains the same:
+                # (3a) Validate, duplicates, etc...
+
                 validator = DataValidator(chunk, schema, unique_identifiers)
                 chunk_results = validator.run_all_validations()
-
-                # Was row-level format valid?
                 if not chunk_results["Format Validation"]:
                     format_valid = False
                     if not chunk_results["Integrity Issues"].empty:
                         integrity_issues.append(chunk_results["Integrity Issues"])
 
-                # Collect duplicates, conflicts, anomalies, etc.
                 if not chunk_results["Duplicate Records"].empty:
                     duplicate_records.append(chunk_results["Duplicate Records"])
                 if not chunk_results["Conflicting Records"].empty:
@@ -146,83 +151,55 @@ def process_file(
                 if not chunk_results["Anomalies Detected"].empty:
                     anomalies_detected = pd.concat([anomalies_detected, chunk_results["Anomalies Detected"]])
 
-                # Merge chunk-level Integrity Issues
                 if not chunk_results["Integrity Issues"].empty:
                     integrity_issues.append(chunk_results["Integrity Issues"])
 
-                # Merge the invalid_mask from this chunk
                 chunk_invalid_mask = chunk_results["Invalid Mask"]
-                # Merge into global
                 global_invalid_mask = pd.concat([global_invalid_mask, chunk_invalid_mask], axis=0)
 
-                # 3b) Cross-chunk duplicates: check unique IDs
-                # ids_in_chunk = set(map(tuple, chunk[unique_identifiers].drop_duplicates().values.tolist()))
-                # duplicates_in_ids = unique_id_set.intersection(ids_in_chunk)
-                # if duplicates_in_ids:
-                #     # these are cross-chunk duplicates
-                #     cross_dup = chunk[chunk[unique_identifiers].apply(tuple, axis=1).isin(duplicates_in_ids)]
-                #     duplicate_records.append(cross_dup)
-                # unique_id_set.update(ids_in_chunk)
                 if unique_identifiers:
-                    # Only do duplicate-check logic if user actually picked columns
                     ids_in_chunk = set(map(tuple, chunk[unique_identifiers].drop_duplicates().values.tolist()))
                     duplicates_in_ids = unique_id_set.intersection(ids_in_chunk)
                     if duplicates_in_ids:
                         cross_dup = chunk[chunk[unique_identifiers].apply(tuple, axis=1).isin(duplicates_in_ids)]
                         duplicate_records.append(cross_dup)
                     unique_id_set.update(ids_in_chunk)
-                else:
-                    # If no unique IDs chosen, skip duplicates logic:
-                    pass
-                # 3c) Missing data detection
+
+                from missing_data import detect_missing_data, flag_missing_data_records, impute_missing_data
                 missing = detect_missing_data(chunk)
                 missing_counts = missing_counts.add(missing, fill_value=0)
-
-                # 3d) Flag missing data
                 chunk = flag_missing_data_records(chunk)
                 chunk_flagged_count = chunk['MissingDataFlag'].sum()
                 flagged_records_count += chunk_flagged_count
 
-                # 3e) Impute
                 chunk = impute_missing_data(chunk, strategy=impute_strategy, field_strategies=field_strategies)
-                # Re-flag after imputation
                 chunk = flag_missing_data_records(chunk)
 
-                # 3g) Ontology mapping
                 for column, ontologies in phenotype_columns.items():
                     if column not in chunk.columns:
                         log_activity(f"'{column}' column not found in chunk.", level='warning')
                         continue
-                        
+
                     terms_in_chunk = chunk[column].dropna().unique()
                     if len(terms_in_chunk) == 0:
-                        continue  # Skip empty columns
-                        
-                    # Map the terms to all specified ontologies
+                        continue
+
                     mappings = ontology_mapper.map_terms(terms_in_chunk, ontologies, custom_mappings)
-                    
-                    # Create the mapped columns
+
                     for onto_id in ontologies:
                         col_name = f"{onto_id}_ID"
-                        
-                        # Map each term to its ontology ID
                         chunk[col_name] = chunk[column].map(
                             lambda x: mappings.get(str(x), {}).get(onto_id) if pd.notnull(x) else None
                         )
-                        
-                        # Initialize stats if needed
                         if onto_id not in cumulative_mapping_stats:
                             cumulative_mapping_stats[onto_id] = {'total_terms': 0, 'mapped_terms': 0}
-                        
-                        # Update mapping statistics
                         valid_terms = [t for t in terms_in_chunk if pd.notnull(t)]
                         cumulative_mapping_stats[onto_id]['total_terms'] += len(valid_terms)
                         cumulative_mapping_stats[onto_id]['mapped_terms'] += sum(
-                            1 for t in valid_terms 
+                            1 for t in valid_terms
                             if mappings.get(str(t), {}).get(onto_id) is not None
                         )
 
-                # 3g) Collect sample rows for visualization
                 if len(sample_df) < max_total_samples:
                     remaining = max_total_samples - len(sample_df)
                     chunk_sample_size = min(sample_size_per_chunk, remaining)
@@ -232,21 +209,15 @@ def process_file(
                         sample_chunk = chunk.copy()
                     sample_df = pd.concat([sample_df, sample_chunk], ignore_index=True)
 
-                # 3i) Write processed chunk to disk
                 chunk.to_csv(output_data_file, mode='a', index=False, header=write_header)
                 if write_header:
                     write_header = False
-
-                # Update the progress bar proportionally to how many rows processed
                 pbar.update(chunk_progress / max(1, total_records / chunksize))
 
-            # end of for chunk in data_iterator
+            # Once done with the chunks, finalize the same way as your code
 
-            pbar.update(5)  # partial progress update
-
-            # 4) Summarize validation results
+            # Summarize validation
             if not format_valid:
-                # combine all integrity_issues dataframes
                 num_invalid = sum(len(df_part) for df_part in integrity_issues) if integrity_issues else 0
                 error_msg = (
                     "Format validation failed. "
@@ -258,7 +229,6 @@ def process_file(
                 error_msg = None
                 final_status = 'Processed'
 
-            # Combine duplicates, conflicts, etc.
             all_duplicates = pd.concat(duplicate_records).drop_duplicates() if duplicate_records else pd.DataFrame()
             all_conflicts = pd.concat(conflicting_records).drop_duplicates() if conflicting_records else pd.DataFrame()
             all_integrity = pd.concat(integrity_issues).drop_duplicates() if integrity_issues else pd.DataFrame()
@@ -269,13 +239,12 @@ def process_file(
                 "Duplicate Records": all_duplicates,
                 "Conflicting Records": all_conflicts,
                 "Integrity Issues": all_integrity,
-                "Referential Integrity Issues": pd.DataFrame(),  # placeholder
+                "Referential Integrity Issues": pd.DataFrame(),
                 "Anomalies Detected": anomalies_detected,
-                # KEY: store the global invalid_mask
                 "Invalid Mask": global_invalid_mask.sort_index()
             }
 
-            # 5) Calculate ontology mapping success rates
+            # Ontology mapping success
             mapping_success_rates = {}
             for onto_id, stats in cumulative_mapping_stats.items():
                 total_terms = stats['total_terms']
@@ -287,24 +256,18 @@ def process_file(
                     'success_rate': success_rate
                 }
 
-            # 6) Compute quality scores
             total_records = total_records or 1
             valid_records = total_records - len(all_integrity)
             schema_validation_score = (valid_records / total_records) * 100
-
             total_cells = total_records * len(sample_df.columns)
             total_missing = missing_counts.sum()
-            # if sample_df has no columns, avoid zero-division
             if len(sample_df.columns) == 0:
-                missing_data_score = 100.0  # trivially no columns
+                missing_data_score = 100.0
             else:
                 missing_data_score = ((total_cells - total_missing) / total_cells) * 100 if total_cells > 0 else 100.0
-
-            # average the mapping success rates
             success_rates_list = [d['success_rate'] for d in mapping_success_rates.values()]
-            mapping_success_score = sum(success_rates_list) / len(success_rates_list) if success_rates_list else 0
-
-            overall_quality_score = (schema_validation_score + missing_data_score + mapping_success_score) / 3.0
+            mapping_success_score = sum(success_rates_list)/len(success_rates_list) if success_rates_list else 0
+            overall_quality_score = (schema_validation_score + missing_data_score + mapping_success_score)/3.0
 
             quality_scores = {
                 'Schema Validation Score': schema_validation_score,
@@ -313,13 +276,11 @@ def process_file(
                 'Overall Quality Score': overall_quality_score
             }
 
-            # 7) Generate the QC report
             report_path = os.path.join(
                 output_dir, f"{os.path.splitext(os.path.basename(file_path))[0]}_report.{report_format}"
             )
 
             figs = create_visual_summary(sample_df, phenotype_columns=phenotype_columns, output_image_path=None)
-
             visualization_images = []
             for idx, fig in enumerate(figs):
                 image_filename = f"{os.path.splitext(os.path.basename(file_path))[0]}_visual_{idx}.png"
@@ -330,7 +291,7 @@ def process_file(
                 except Exception as e:
                     log_activity(f"Error saving image {image_filename}: {e}", level='error')
 
-            # build final report
+            from reporting import generate_qc_report
             generate_qc_report(
                 validation_results=validation_results,
                 missing_data=missing_counts,
@@ -344,13 +305,12 @@ def process_file(
             )
             log_activity(f"{file_path}: QC report generated at {report_path}.")
             pbar.update(5)
-
             log_activity(f"{file_path}: Processed data saved at {output_data_file}")
             pbar.update(5)
             pbar.close()
 
-            # 8) Build final result object
-            result = {
+            # Return final result
+            return {
                 'file': file_path,
                 'status': final_status,
                 'error': error_msg,
@@ -363,8 +323,6 @@ def process_file(
                 'quality_scores': quality_scores
             }
 
-            return result
-
     except Exception as e:
         log_activity(f"Error processing file {file_path}: {str(e)}", level='error')
         return {
@@ -372,6 +330,7 @@ def process_file(
             'status': 'Error',
             'error': str(e)
         }
+
 
 def batch_process(
     files,

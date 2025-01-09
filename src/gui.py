@@ -19,6 +19,31 @@ from utils.ontology_utils import suggest_ontologies
 import glob
 import numpy as np
 
+def preserve_original_format_and_save(df_in_memory, original_filename, out_dir):
+    base, ext = os.path.splitext(original_filename)
+    ext = ext.lower()
+
+    out_path = os.path.join(out_dir, original_filename)  # Keep original name
+
+    if ext == '.csv':
+        # save as CSV
+        df_in_memory.to_csv(out_path, index=False)
+
+    elif ext == '.tsv':
+        # save as tab-delimited
+        df_in_memory.to_csv(out_path, sep='\t', index=False)
+
+    elif ext == '.json':
+        # JSON can be tricky: if you know it was array-of-objects, use lines=False
+        # if you know it was NDJSON, use lines=True. Adjust orient as needed.
+        df_in_memory.to_json(out_path, orient='records', lines=False, indent=2)
+
+    else:
+        # fallback or skip
+        raise ValueError(f"Unsupported extension: {ext}")
+
+    return out_path
+
 def extract_zip(zip_path, extract_to):
     try:
         with zipfile.ZipFile(zip_path, 'r') as zip_file:
@@ -270,7 +295,9 @@ def main():
         else:
             st.session_state.steps_completed["Upload Config Files"] = False
 
+    ##############################################################
     # Step 2: Upload Data Files
+    ##############################################################
     elif st.session_state.current_step == "Upload Data Files":
         st.header("Step 2: Upload Data Files")
         data_source_option = st.radio(
@@ -279,6 +306,8 @@ def main():
             key="data_source_option",
             on_change=lambda: st.session_state.pop('uploaded_files_list', None)
         )
+
+        # 1) If user chooses to upload individual files
         if data_source_option == 'Upload Files':
             st.session_state['data_source'] = 'files'
             uploaded_files = st.file_uploader(
@@ -291,15 +320,47 @@ def main():
                 st.session_state['uploaded_files_list'] = uploaded_files
                 st.session_state.steps_completed["Upload Data Files"] = True
 
+            # Once user is done uploading, read them all into st.session_state["multi_dfs"]
+            if st.session_state.steps_completed["Upload Data Files"]:
+                st.session_state["multi_dfs"] = {}
+                union_cols = set()
+
+                # Read each file
+                uploaded_files = st.session_state.get('uploaded_files_list', [])
+                for uploaded_file in uploaded_files:
+                    file_content = uploaded_file.getvalue()
+                    ext = os.path.splitext(uploaded_file.name)[1].lower()
+                    df = None
+                    try:
+                        if ext == '.csv':
+                            df = pd.read_csv(io.StringIO(file_content.decode('utf-8','ignore')))
+                        elif ext == '.tsv':
+                            df = pd.read_csv(io.StringIO(file_content.decode('utf-8','ignore')), sep='\t')
+                        elif ext == '.json':
+                            try:
+                                df = pd.read_json(io.StringIO(file_content.decode('utf-8','ignore')), lines=True)
+                            except ValueError:
+                                df = pd.read_json(io.StringIO(file_content.decode('utf-8','ignore')), lines=False)
+                        else:
+                            st.warning(f"Skipped unsupported extension for {uploaded_file.name}")
+
+                        if df is not None and not df.empty:
+                            st.session_state["multi_dfs"][uploaded_file.name] = df
+                            union_cols.update(df.columns)
+                    except Exception as e:
+                        st.error(f"Could not read {uploaded_file.name}: {e}")
+
+                # Store the union of columns
+                st.session_state["union_of_columns"] = list(union_cols)
+
+        # 2) If user chooses to upload a ZIP
         else:
-            # data_source_option == 'Upload Directory (ZIP)'
             st.session_state['data_source'] = 'zip'
             uploaded_zip = st.file_uploader(
                 "Upload Data Directory (ZIP Archive)",
                 type=["zip"],
                 key="uploaded_zip_widget"
             )
-            # Checkbox for recursion
             enable_recursive = st.checkbox(
                 "Enable Recursive Directory Scanning",
                 value=True,
@@ -307,15 +368,14 @@ def main():
             )
 
             if uploaded_zip:
-                # create tmpdirname if missing
+                # Create a temp directory (if not already present)
                 if 'tmpdirname' not in st.session_state:
                     st.session_state.tmpdirname = tempfile.mkdtemp()
 
-                # Save the uploaded file to disk
                 zip_path = save_uploaded_file(uploaded_zip)
                 extract_dir = os.path.join(st.session_state.tmpdirname, "extracted")
 
-                # Clear out any old extraction
+                # Clear old extractions
                 if os.path.exists(extract_dir):
                     shutil.rmtree(extract_dir)
                 os.makedirs(extract_dir, exist_ok=True)
@@ -325,26 +385,20 @@ def main():
                     st.error(error)
                     st.stop()
 
-                # Now collect .csv, .tsv, .json from that folder
-                # If recursion => we walk entire tree, else top-level only
                 st.session_state['extracted_files_list'] = []
                 if enable_recursive:
                     for root, dirs, files in os.walk(extract_dir):
                         for f in files:
                             ext = os.path.splitext(f)[1].lower()
                             if ext in {'.csv', '.tsv', '.json'}:
-                                st.session_state['extracted_files_list'].append(
-                                    os.path.join(root, f)
-                                )
+                                st.session_state['extracted_files_list'].append(os.path.join(root, f))
                 else:
-                    # Non-recursive => only top-level
+                    # Just top-level
                     top_files = os.listdir(extract_dir)
                     for f in top_files:
                         ext = os.path.splitext(f)[1].lower()
                         if ext in {'.csv', '.tsv', '.json'}:
-                            st.session_state['extracted_files_list'].append(
-                                os.path.join(extract_dir, f)
-                            )
+                            st.session_state['extracted_files_list'].append(os.path.join(extract_dir, f))
 
                 if st.session_state['extracted_files_list']:
                     st.success(f"ZIP extracted. Found {len(st.session_state['extracted_files_list'])} supported files.")
@@ -353,25 +407,60 @@ def main():
 
                 st.session_state['uploaded_zip_file'] = uploaded_zip
                 st.session_state.steps_completed["Upload Data Files"] = True
-        
+
+                # Now read them all into multi_dfs
+                st.session_state["multi_dfs"] = {}
+                union_cols = set()
+
+                extracted_files = st.session_state.get('extracted_files_list', [])
+                for fpath in extracted_files:
+                    ext = os.path.splitext(fpath)[1].lower()
+                    df = None
+                    try:
+                        with open(fpath, 'rb') as f:
+                            content = f.read()
+                        if ext == '.csv':
+                            df = pd.read_csv(io.StringIO(content.decode('utf-8','ignore')))
+                        elif ext == '.tsv':
+                            df = pd.read_csv(io.StringIO(content.decode('utf-8','ignore')), sep='\t')
+                        elif ext == '.json':
+                            try:
+                                df = pd.read_json(io.StringIO(content.decode('utf-8','ignore')), lines=True)
+                            except ValueError:
+                                df = pd.read_json(io.StringIO(content.decode('utf-8','ignore')), lines=False)
+                        if df is not None and not df.empty:
+                            fname = os.path.basename(fpath)
+                            st.session_state["multi_dfs"][fname] = df
+                            union_cols.update(df.columns)
+                    except Exception as e:
+                        st.error(f"Error reading {os.path.basename(fpath)}: {e}")
+
+                st.session_state["union_of_columns"] = list(union_cols)
+
+                if st.session_state["multi_dfs"]:
+                    st.info(f"Loaded {len(st.session_state['multi_dfs'])} valid data files from ZIP.")
+                    st.info(f"Union of columns: {len(st.session_state['union_of_columns'])} total columns found.")
+                else:
+                    st.warning("No valid data loaded from ZIP.")
+
         st.markdown("---")
         if st.session_state.steps_completed["Upload Data Files"]:
             st.button("Proceed to Select Unique Identifier", on_click=proceed_to_step, args=("Select Unique Identifier",))
 
-    # Step 3: Column Mapping and Ontology Configuration
+    ######################################################################
+    # Step 3: Column Mapping and Ontology Configuration — COMPLETE REPLACEMENT
+    ######################################################################
     elif st.session_state.current_step == "Select Unique Identifier":
         st.header("Step 3: Configure Data Mapping")
-        
+
         # ----------------------------------------------------------------
         # 1) If 'sample_df' not in session, attempt to load the first valid
-        #    CSV/TSV/JSON from either 'files' or 'zip' mode.
-        #    Also define sample_df_loaded = False before the loop,
-        #    so we don't get an UnboundLocalError in the except block.
+        #    CSV/TSV/JSON from either 'files' or 'zip' mode, for preview only.
         # ----------------------------------------------------------------
         if 'sample_df' not in st.session_state:
             sample_df_loaded = False
-            # If no data loaded in session, try reading from uploads (CSV/TSV/JSON or ZIP).
             if st.session_state['data_source'] == 'files':
+                # If user uploaded files individually
                 uploaded_files = st.session_state.get('uploaded_files_list', [])
                 for uploaded_file in uploaded_files:
                     try:
@@ -386,11 +475,9 @@ def main():
                             sample_df_loaded = True
                             break
                         elif ext == '.json':
-                            # Attempt line-based first, fallback if fails
                             try:
                                 st.session_state['sample_df'] = pd.read_json(io.StringIO(file_content.decode('utf-8', 'ignore')), lines=True)
                             except ValueError:
-                                # fallback single-object or array
                                 st.session_state['sample_df'] = pd.read_json(io.StringIO(file_content.decode('utf-8', 'ignore')), lines=False)
                             sample_df_loaded = True
                             break
@@ -399,9 +486,10 @@ def main():
 
                 if not sample_df_loaded:
                     st.warning("No valid CSV/TSV/JSON file could be loaded from the uploaded files.")
+
             else:
                 # data_source == 'zip'
-                # We rely on st.session_state['extracted_files_list'], which we built in Step 2
+                # We rely on st.session_state['extracted_files_list'], built in Step 2
                 extracted_files = st.session_state.get('extracted_files_list', [])
                 if not extracted_files:
                     st.warning("No extracted .csv/.tsv/.json files to load. Please re-check your ZIP.")
@@ -427,40 +515,45 @@ def main():
                                 sample_df_loaded = True
                                 break
                         except Exception as e3:
-                            st.error(f"Error reading extracted file {fpath}: {str(e3)}")
+                            st.error(f"Error reading extracted file {os.path.basename(fpath)}: {str(e3)}")
+
                     if not sample_df_loaded:
                         st.warning("No valid CSV/TSV/JSON found among extracted ZIP files.")
- 
+
         sample_df = st.session_state.get('sample_df')
         if sample_df is None or sample_df.empty:
             st.error("Could not load sample data. Please try uploading your files again.")
             st.stop()
 
         # -------------------------------------------------------------------------
-        # 2) Ask user which columns should be mapped to ontologies
+        # 2) For mapping: show the UNION of columns from all dataframes,
+        #    so user sees ALL possible columns from all uploaded files.
         # -------------------------------------------------------------------------
-        st.subheader("A) Select Columns for Ontology Mapping")
-        st.info("Pick the **data columns** that you want to associate with ontology terms (e.g., phenotypes, diseases).")
+        if "union_of_columns" in st.session_state and st.session_state["union_of_columns"]:
+            all_columns = st.session_state["union_of_columns"]
+        else:
+            # fallback if union_of_columns not set
+            all_columns = list(sample_df.columns)
 
-        all_columns = list(sample_df.columns)
-        # Let the user choose which columns to map
+        st.subheader("A) Select Columns for Ontology Mapping")
+        st.info("Pick the **data columns** you want to associate with ontology terms (e.g., phenotypes, diseases).")
+
         columns_to_map = st.multiselect(
             "Columns to Map to Ontologies",
             options=all_columns,
-            default=[],  # You can choose to provide a default or leave empty
-            help="Select one or more columns for which you want to perform ontology mapping."
+            default=[],  # you can choose a default or keep it empty
+            help="Select one or more columns to perform ontology mapping."
         )
 
         # -------------------------------------------------------------------------
-        # 3) For each chosen column, show suggestions and let user override
+        # 3) For each chosen column, show suggestions & let user override
         # -------------------------------------------------------------------------
         st.subheader("B) Review & Edit Ontology Suggestions")
 
         config = st.session_state['config']
         available_ontologies = config.get('ontologies', {})    # e.g. {'HPO': {...}, 'DO': {...}, ...}
-        available_ontology_ids = list(available_ontologies.keys())  # e.g. ['HPO', 'DO', 'MPO', ...]
+        available_ontology_ids = list(available_ontologies.keys())
 
-        # If we haven't stored any prior mappings in session state, initialize
         if 'phenotype_columns' not in st.session_state:
             st.session_state['phenotype_columns'] = {}
 
@@ -468,34 +561,39 @@ def main():
 
         for col in columns_to_map:
             with st.expander(f"Configure Mapping for Column: {col}", expanded=False):
-                # Show some quick stats about the column
-                st.write(f"**Data type**: {sample_df[col].dtype}")
-                missing_count = sample_df[col].isna().sum()
-                st.write(f"**Missing values**: {missing_count} ({missing_count/len(sample_df)*100:.1f}%)")
+                if col in sample_df.columns:
+                    # show some quick stats
+                    st.write(f"**Data type**: {sample_df[col].dtype}")
+                    missing_count = sample_df[col].isna().sum()
+                    st.write(f"**Missing values**: {missing_count} ({missing_count / len(sample_df) * 100:.1f}%)")
 
-                sample_vals = sample_df[col].dropna().unique()[:5]
-                if len(sample_vals) > 0:
-                    st.write("**Sample values**:", ", ".join(map(str, sample_vals)))
+                    sample_vals = sample_df[col].dropna().unique()[:5]
+                    if len(sample_vals) > 0:
+                        st.write("**Sample values**:", ", ".join(map(str, sample_vals)))
 
-                # Use your existing "suggest_ontologies" function
-                suggested_onts = suggest_ontologies(col, sample_df[col], available_ontologies)
-                if suggested_onts:
-                    st.info(f"**Suggested ontologies** for '{col}': {', '.join(suggested_onts)}")
+                    # Ontology suggestions
+                    suggested_onts = suggest_ontologies(col, sample_df[col], available_ontologies)
+                    if suggested_onts:
+                        st.info(f"**Suggested ontologies** for '{col}': {', '.join(suggested_onts)}")
+                    else:
+                        st.info("No specific ontology suggestions found for this column.")
                 else:
-                    st.info("No specific ontology suggestions found for this column.")
+                    # If col not in preview df at all, skip sample stats but user can still map it
+                    st.write("Column not present in preview, but you can still map it if it exists in other files.")
 
-                # Let the user pick the final ontologies (override suggestions)
+                    # We won't do 'suggest_ontologies' because we have no data for that col in sample_df
+                    suggested_onts = []
+
                 selected_for_col = st.multiselect(
                     f"Map column '{col}' to these ontologies:",
                     options=available_ontology_ids,
                     default=suggested_onts,
-                    format_func=lambda x: f"{x} - {available_ontologies[x]['name']}"
-                                        if x in available_ontologies else x
+                    format_func=lambda x: f"{x} - {available_ontologies[x]['name']}" if x in available_ontologies else x
                 )
                 if selected_for_col:
                     col_mappings[col] = selected_for_col
 
-        # Save the final column->ontologies mapping in session state
+        # save the final column->ontologies mapping in session
         st.session_state['phenotype_columns'] = col_mappings
 
         # -------------------------------------------------------------------------
@@ -528,59 +626,53 @@ def main():
             }
             st.json(mapping_summary)
         else:
-            st.write("No columns mapped. (You haven't selected columns to map.)")
+            st.write("No columns mapped yet.")
 
         st.write(f"**Unique IDs chosen**: {chosen_ids}")
 
-        # Proceed if we have at least one mapping
+        # proceed if we have at least one mapping
         if st.session_state['phenotype_columns']:
             st.success("Mapping configuration complete!")
             st.session_state.steps_completed["Select Unique Identifier"] = True
             if st.button("Proceed to Select Ontologies & Impute"):
                 proceed_to_step("Select Ontologies & Impute")
         else:
-            st.warning("Please map at least one column to continue (or skip mapping if you don't need it).")
+            st.warning("Please map at least one column to continue.")
 
 
+
+    ##########################################################
     # Step 4: Imputation Configuration
+    ##########################################################
     elif st.session_state.current_step == "Select Ontologies & Impute":
         st.header("Step 4: Select Ontologies & Impute")
-        # Make sure we actually have data loaded
-        if "sample_df" not in st.session_state or st.session_state["sample_df"] is None:
-            st.error("No data loaded. Please go back and upload your dataset first.")
+
+        # Make sure we have a union_of_columns
+        if "union_of_columns" not in st.session_state or not st.session_state["union_of_columns"]:
+            st.error("No columns found. Please go back and upload your data first.")
             st.stop()
 
-        sample_df = st.session_state["sample_df"]
-        
-        # Load imputation strategies from config
+        all_columns = st.session_state["union_of_columns"]
         config = st.session_state['config']
         default_strategies = config.get('imputation_strategies', {})
         advanced_methods = config.get('advanced_imputation_methods', [])
-        
+
         st.subheader("Configure Imputation Strategy")
-        
-        # Global strategy
         global_strategy = st.selectbox(
             "Default Imputation Strategy",
             options=['none', 'mean', 'median', 'mode'] + advanced_methods,
             index=0,
-            help="This strategy will be used for columns without specific settings"
+            help="Used for columns without specific overrides"
         )
-        
-        # Per-column configuration
-        st.subheader("Column-Specific Settings")
-        st.info("Override imputation strategy for specific columns")
-        
+
+        st.subheader("Column-Specific Overrides")
         column_strategies = {}
-        for col in sample_df.columns:
+
+        for col in all_columns:
             with st.expander(f"Column: {col}", expanded=False):
-                # Show column statistics
-                st.write("Missing values:", sample_df[col].isna().sum())
-                st.write("Data type:", sample_df[col].dtype)
-                
-                # Suggest strategy based on data type and config
+                # We'll guess from config or fallback to global
                 suggested = default_strategies.get(col, global_strategy)
-                
+
                 strategy_options = ['Use Default', 'none', 'mean', 'median', 'mode'] + advanced_methods
                 default_index = 0
                 if suggested in strategy_options:
@@ -594,8 +686,7 @@ def main():
                 )
                 if strategy != 'Use Default':
                     column_strategies[col] = strategy
-        
-        # Save configuration
+
         st.session_state['imputation_config'] = {
             'global_strategy': global_strategy,
             'column_strategies': column_strategies
@@ -603,14 +694,14 @@ def main():
 
         st.markdown("---")
         st.success("Imputation configuration complete!")
-        # Mark this step as completed
         st.session_state.steps_completed["Select Ontologies & Impute"] = True
 
-        # Provide a button to proceed
         if st.button("Proceed to Run QC and View Results"):
             proceed_to_step("Run QC and View Results")
 
-    # Step 5) Run QC and View Results (merged step)
+    ###############################################################################
+    # Step 5) Run QC and View Results (merged step) - REPLACE ONLY THIS BLOCK
+    ###############################################################################
     elif st.session_state.current_step == "Run QC and View Results":
         st.header("Step 5: Run Quality Control and View Results")
 
@@ -625,17 +716,17 @@ def main():
                         tmpdirname = st.session_state.tmpdirname
                         input_paths = []
 
-                        # Save schema.json
+                        # 1) Save schema.json
                         schema_path = os.path.join(tmpdirname, "schema.json")
                         with open(schema_path, 'w') as f:
                             json.dump(st.session_state['schema'], f)
 
-                        # Save config.yaml
+                        # 2) Save config.yaml
                         config_path = os.path.join(tmpdirname, "config.yaml")
                         with open(config_path, 'w') as f:
                             yaml.dump(st.session_state['config'], f)
 
-                        # Save custom mappings if provided
+                        # 3) Save custom mappings if provided
                         if st.session_state['custom_mappings_data']:
                             custom_mappings_path = os.path.join(tmpdirname, "custom_mapping.json")
                             with open(custom_mappings_path, 'w') as f:
@@ -643,52 +734,59 @@ def main():
                         else:
                             custom_mappings_path = None
 
-                        # Collect input file paths
-                        if st.session_state['data_source'] == 'files':
-                            uploaded_files = st.session_state.get('uploaded_files_list', [])
-                            for uploaded_file in uploaded_files:
-                                file_path = os.path.join(tmpdirname, uploaded_file.name)
-                                with open(file_path, 'wb') as f:
-                                    f.write(uploaded_file.getbuffer())
-                                input_paths.append(file_path)
-                        else:
-                            # For ZIP
-                            uploaded_zip = st.session_state.get('uploaded_zip_file')
-                            if uploaded_zip:
-                                tmp_zip_path = save_uploaded_file(uploaded_zip)
-                                extract_dir = os.path.join(tmpdirname, "extracted")
-                                os.makedirs(extract_dir, exist_ok=True)
-                                success, error = extract_zip(tmp_zip_path, extract_dir)
-                                if not success:
-                                    st.error(error)
-                                    st.stop()
-                                supported_extensions = {'.csv', '.tsv', '.json'}
-                                collected_files = collect_supported_files(extract_dir, supported_extensions)
-                                st.info(f"Collected {len(collected_files)} files.")
-                                input_paths.extend(collected_files)
+                        # 4) Convert each in-memory DataFrame (multi_dfs) into local CSV paths,
+                        #    then collect those paths in input_paths.
+                        # st.session_state["multi_dfs"] = st.session_state.get("multi_dfs", {})
+                        # if not st.session_state["multi_dfs"]:
+                        #     st.error("No in-memory dataframes found to process.")
+                        #     st.stop()
 
+                        # for fname, df_in_memory in st.session_state["multi_dfs"].items():
+                        #     orig_ext = os.path.splitext(fname)[1].lower()
+                        #     if orig_ext in ('.csv', '.tsv'):
+                        #         # keep as is or rename to .csv if it's really CSV
+                        #         local_name = f"{os.path.basename(fname)}.csv"
+                        #     else:
+                        #         # if .json, rename to something CSV
+                        #         local_name = f"{os.path.basename(fname)}_converted.csv"
+
+                        #     local_csv_path = os.path.join(tmpdirname, local_name)
+                        #     df_in_memory.to_csv(local_csv_path, index=False)
+                        #     input_paths.append(local_csv_path)
+                        input_paths = []
+                        for fname, df_in_memory in st.session_state["multi_dfs"].items():
+                            local_path = preserve_original_format_and_save(
+                                df_in_memory, 
+                                original_filename=fname, 
+                                out_dir=tmpdirname
+                            )
+                            input_paths.append(local_path)                            
+                        
                         if not input_paths:
-                            st.error("No data files found to process.")
+                            st.error("No input files found to process.")
                             st.stop()
 
-                        # Initialize OntologyMapper
+                        # 5) Initialize OntologyMapper
                         ontology_mapper = OntologyMapper(config_path=config_path)
 
-                        config = st.session_state['config']
-                        field_strategies = config.get('imputation_strategies', {})
+                        # 6) Grab user’s imputation settings from session
+                        impute_config = st.session_state.get('imputation_config', {})
+                        impute_strategy_value = impute_config.get('global_strategy', 'none')
+                        field_strategies = impute_config.get('column_strategies', {})
 
+                        # 7) Prepare output directory
                         output_dir = os.path.join(tmpdirname, "reports")
                         os.makedirs(output_dir, exist_ok=True)
 
+                        # 8) Clear previous results
+                        st.session_state['processing_results'] = []
+
+                        # 9) Process each local CSV with process_file
                         total_files = len(input_paths)
                         progress_bar = st.progress(0)
                         current_progress = 0
                         progress_increment = 100 / total_files if total_files > 0 else 0
 
-                        # Clear previous results
-                        st.session_state['processing_results'] = []
-
-                        # Run QC on each file
                         for idx, file_path in enumerate(input_paths):
                             file_name = os.path.basename(file_path)
                             st.write(f"Processing {file_name}...")
@@ -700,12 +798,13 @@ def main():
                                     ontology_mapper=ontology_mapper,
                                     unique_identifiers=st.session_state.get('unique_identifiers_list', []),
                                     custom_mappings=st.session_state.get('custom_mappings_data'),
-                                    impute_strategy=st.session_state.get('impute_strategy_value'),
+                                    impute_strategy=impute_strategy_value,
                                     field_strategies=field_strategies,
                                     output_dir=output_dir,
                                     target_ontologies=st.session_state.get('ontologies_selected_list', []),
                                     phenotype_columns=st.session_state.get('phenotype_columns')
                                 )
+                                # Store the result
                                 st.session_state['processing_results'].append((file_name, result, output_dir))
 
                                 # Quick status
@@ -730,7 +829,7 @@ def main():
                     except Exception as e:
                         st.error(f"An error occurred during processing: {e}")
 
-        # If we have processed results, show them
+        # Once processing is done, show results in tabs
         if st.session_state.steps_completed.get("Run QC and View Results", False):
             st.header("Results")
             if 'processing_results' in st.session_state and st.session_state['processing_results']:
@@ -751,7 +850,6 @@ def main():
                             st.error(f"File encountered an error: {result_dict['error']}")
 
                         processed_data_path = result_dict.get('processed_file_path')
-
                         if not processed_data_path or not os.path.exists(processed_data_path):
                             st.error("Processed data file not found. No partial output available.")
                             continue
@@ -814,36 +912,22 @@ def main():
                             
                             key_prefix = file_name.replace('.', '_')
 
-                            # We store the invalid-mask-based "editable" DataFrame in session,
-                            # but we do NOT re-validate afterwards. It's read-only if you prefer,
-                            # or you can keep it editable. We'll keep it editable here for demonstration.
+                            # Keep an in-memory editable copy, but no re-validation
                             if f"{key_prefix}_df" not in st.session_state:
                                 st.session_state[f"{key_prefix}_df"] = df.copy()
                             if f"{key_prefix}_mask" not in st.session_state:
                                 st.session_state[f"{key_prefix}_mask"] = invalid_mask.copy()
 
-                            # Display the DataFrame with invalid cells highlighted
                             editable_df = display_editable_grid_with_highlighting(
                                 st.session_state[f"{key_prefix}_df"].copy(),
                                 st.session_state[f"{key_prefix}_mask"].copy(),
-                                allow_edit=True  # or False, if you want it read-only
+                                allow_edit=True
                             )
 
-                            # We remove the re-validation button. 
-                            # No "st.button('Re-Validate...')" here.
+                            st.write("Edits here do NOT trigger re-validation; this is just for reference.")
 
-                            st.write("You can see the invalid cells (highlighted in pink). "
-                                    "Edits here **will not** trigger any re-validation. "
-                                    "This is just for your reference.")
-
-                            # ---------------------------------------------
-                            # Optional: Let the user download the invalid cells info
-                            # ---------------------------------------------
+                            # Optional CSV download of invalid highlights
                             st.write("#### Download Invalid-Cell Highlights")
-                            # We'll build a CSV that merges the invalid mask with the data
-                            # so that each column col becomes two columns: col + col_isInvalid
-                            # Or you can do something simpler.
-
                             merged_df = df.copy()
                             invalid_cols = invalid_mask.columns.intersection(df.columns)
                             for col in invalid_cols:
@@ -889,7 +973,7 @@ def main():
                             flagged_records_count=result_dict.get('flagged_records_count', 0),
                             mapping_success_rates=result_dict.get('mapping_success_rates', {}),
                             visualization_images=result_dict.get('visualization_images', []),
-                            impute_strategy=st.session_state.get('impute_strategy_value'),
+                            impute_strategy=impute_strategy_value,
                             quality_scores=q_scores,
                             output_path_or_buffer=report_buffer,
                             report_format='pdf'
@@ -908,8 +992,8 @@ def main():
                             file_name=f"processed_{file_name}",
                             mime='text/csv'
                         )
-            else:
-                st.info("No processing results available.")
+                else:
+                    st.info("No processing results available.")
 
 
 if __name__ == '__main__':
