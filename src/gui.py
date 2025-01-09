@@ -1009,7 +1009,7 @@ def main():
                         # Display the invalid cells (highlighting), but remove re-validate
                         # ----------------------------------------------------------------
                         invalid_mask = validation_res.get("Invalid Mask", pd.DataFrame())
-                        if invalid_mask.empty:
+                        if invalid_mask.empty or not invalid_mask.any().any():
                             st.write("No invalid cells found or no mask returned.")
                         else:
                             st.write("### Highlighting Invalid Cells (read-only)")
