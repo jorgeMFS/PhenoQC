@@ -304,9 +304,11 @@ def main():
     elif st.session_state.current_step == "Select Unique Identifier":
         st.header("Step 3: Configure Data Mapping")
         
-        # Store sample_df in session state to preserve it across reruns
+        # -------------------------------------------------------------------------
+        # 1) Load or retrieve the sample_df from session state
+        # -------------------------------------------------------------------------
         if 'sample_df' not in st.session_state:
-            # Load sample data only if not already in session state
+            # If no data loaded in session, try reading from uploads (CSV/TSV/JSON or ZIP).
             if st.session_state['data_source'] == 'files':
                 uploaded_files = st.session_state.get('uploaded_files_list', [])
                 for uploaded_file in uploaded_files:
@@ -319,119 +321,129 @@ def main():
                             st.session_state['sample_df'] = pd.read_csv(io.StringIO(file_content.decode('utf-8', 'ignore')), sep='\t')
                         elif ext == '.json':
                             st.session_state['sample_df'] = pd.read_json(io.StringIO(file_content.decode('utf-8', 'ignore')), lines=True)
-                        break
+                        break  # Stop after successfully loading the first valid file
                     except Exception as e:
                         st.error(f"Error reading file {uploaded_file.name}: {str(e)}")
             else:
-                # Handle ZIP file case similarly...
+                # Handle ZIP file case similarly if needed
                 pass
 
-        # Use the stored sample_df
         sample_df = st.session_state.get('sample_df')
-        if sample_df is None:
+        if sample_df is None or sample_df.empty:
             st.error("Could not load sample data. Please try uploading your files again.")
             st.stop()
 
-        # Load configuration
-        config = st.session_state['config']
-        available_ontologies = config.get('ontologies', {})
-        default_ontologies = config.get('default_ontologies', [])
+        # -------------------------------------------------------------------------
+        # 2) Ask user which columns should be mapped to ontologies
+        # -------------------------------------------------------------------------
+        st.subheader("A) Select Columns for Ontology Mapping")
+        st.info("Pick the **data columns** that you want to associate with ontology terms (e.g., phenotypes, diseases).")
 
-        # 1. First, select which ontologies to use
-        st.subheader("1. Select Target Ontologies")
-        st.info("Choose which ontologies you want to use for mapping your data")
-        
-        selected_ontologies = st.multiselect(
-            "Target Ontologies",
-            options=[(ont_id, details['name']) for ont_id, details in available_ontologies.items()],
-            default=[(ont_id, available_ontologies[ont_id]['name']) for ont_id in default_ontologies],
-            format_func=lambda x: f"{x[0]} - {x[1]}",
-            key="ontology_selector"
+        all_columns = list(sample_df.columns)
+        # Let the user choose which columns to map
+        columns_to_map = st.multiselect(
+            "Columns to Map to Ontologies",
+            options=all_columns,
+            default=[],  # You can choose to provide a default or leave empty
+            help="Select one or more columns for which you want to perform ontology mapping."
         )
-        selected_ontology_ids = [ont[0] for ont in selected_ontologies]
-        
-        if not selected_ontology_ids:
-            st.warning("Please select at least one ontology")
-            st.stop()
-        
-        # 2. Then map columns to the selected ontologies
-        st.subheader("2. Map Data Columns")
-        st.info("Map your data columns to appropriate ontologies. The system will suggest relevant ontologies based on column content.")
-        
+
+        # -------------------------------------------------------------------------
+        # 3) For each chosen column, show suggestions and let user override
+        # -------------------------------------------------------------------------
+        st.subheader("B) Review & Edit Ontology Suggestions")
+
+        config = st.session_state['config']
+        available_ontologies = config.get('ontologies', {})    # e.g. {'HPO': {...}, 'DO': {...}, ...}
+        available_ontology_ids = list(available_ontologies.keys())  # e.g. ['HPO', 'DO', 'MPO', ...]
+
+        # If we haven't stored any prior mappings in session state, initialize
         if 'phenotype_columns' not in st.session_state:
             st.session_state['phenotype_columns'] = {}
-        
+
         col_mappings = {}
-        for col in sample_df.columns:
-            # Skip obvious non-phenotype columns
-            if col.lower() in {'sampleid', 'patientid', 'date', 'age', 'sex', 'weight', 'height'}:
-                continue
-            
-            with st.expander(f"Column: {col}", expanded=False):
-                # Show column metadata
-                st.write("Data type:", sample_df[col].dtype)
-                st.write("Missing values:", f"{sample_df[col].isna().sum()} ({sample_df[col].isna().mean():.1%})")
-                
-                # Show sample values
-                unique_values = sample_df[col].dropna().unique()[:5]
-                if len(unique_values) > 0:
-                    st.write("Sample values:", ", ".join(unique_values.astype(str)))
-                
-                # Get and show ontology suggestions
+
+        for col in columns_to_map:
+            with st.expander(f"Configure Mapping for Column: {col}", expanded=False):
+                # Show some quick stats about the column
+                st.write(f"**Data type**: {sample_df[col].dtype}")
+                missing_count = sample_df[col].isna().sum()
+                st.write(f"**Missing values**: {missing_count} ({missing_count/len(sample_df)*100:.1f}%)")
+
+                sample_vals = sample_df[col].dropna().unique()[:5]
+                if len(sample_vals) > 0:
+                    st.write("**Sample values**:", ", ".join(map(str, sample_vals)))
+
+                # Use your existing "suggest_ontologies" function
                 suggested_onts = suggest_ontologies(col, sample_df[col], available_ontologies)
                 if suggested_onts:
-                    st.info(f"Suggested ontologies: {', '.join(suggested_onts)}")
-                
-                # Allow ontology mapping
-                mapped_onts = st.multiselect(
-                    "Map to ontologies",
-                    options=selected_ontology_ids,
-                    default=suggested_onts,
-                    format_func=lambda x: f"{x} - {available_ontologies[x]['name']}",
-                    key=f"map_{col}"
-                )
-                
-                if mapped_onts:
-                    col_mappings[col] = mapped_onts
-        
-        # Update session state
-        st.session_state['phenotype_columns'] = col_mappings
-        st.session_state['selected_ontologies'] = selected_ontology_ids
+                    st.info(f"**Suggested ontologies** for '{col}': {', '.join(suggested_onts)}")
+                else:
+                    st.info("No specific ontology suggestions found for this column.")
 
-        # 3. Review and Confirm
-        st.subheader("3. Review Mapping Configuration")
-        st.write("**Required: Select Unique Identifier Columns**")
-        all_columns = list(sample_df.columns)
+                # Let the user pick the final ontologies (override suggestions)
+                selected_for_col = st.multiselect(
+                    f"Map column '{col}' to these ontologies:",
+                    options=available_ontology_ids,
+                    default=suggested_onts,
+                    format_func=lambda x: f"{x} - {available_ontologies[x]['name']}"
+                                        if x in available_ontologies else x
+                )
+                if selected_for_col:
+                    col_mappings[col] = selected_for_col
+
+        # Save the final column->ontologies mapping in session state
+        st.session_state['phenotype_columns'] = col_mappings
+
+        # -------------------------------------------------------------------------
+        # 4) Select Unique Identifier columns
+        # -------------------------------------------------------------------------
+        st.subheader("C) Select Unique Identifier Columns")
+        st.info("Choose one or more columns that uniquely identify each record (e.g. 'PatientID').")
+
         chosen_ids = st.multiselect(
-            "Pick one or more columns to serve as unique identifiers.",
+            "Unique Identifier Columns",
             options=all_columns,
             default=[],
-            help="At least one column must be selected to uniquely identify each record."
+            help="These columns together should form a unique key for each row."
         )
 
-        # Stop if no unique IDs selected
         if not chosen_ids:
             st.error("You must select at least one column as a unique identifier before proceeding.")
             st.stop()
 
         st.session_state['unique_identifiers_list'] = chosen_ids
-        st.write(f"Unique IDs chosen: {chosen_ids}")
 
-        # Show mapping summary  
-        summary = {}
-        for col, onts in col_mappings.items():
-            summary[col] = [f"{ont} ({available_ontologies[ont]['name']})" for ont in onts]
-        
-        st.json(summary)
-        
-        # Proceed if we have valid mappings
-        if col_mappings:
+        # -------------------------------------------------------------------------
+        # 5) Summary of mappings & Next steps
+        # -------------------------------------------------------------------------
+        st.subheader("D) Summary of Mappings")
+        if st.session_state['phenotype_columns']:
+            st.write("**Final Column → Ontologies Mappings**")
+            mapping_summary = {
+                col: onts for col, onts in st.session_state['phenotype_columns'].items()
+            }
+            st.json(mapping_summary)
+        else:
+            st.write("No columns mapped. (You haven't selected columns to map.)")
+
+        st.write(f"**Unique IDs chosen**: {chosen_ids}")
+
+        # Proceed if we have at least one mapping
+        if st.session_state['phenotype_columns']:
             st.success("Mapping configuration complete!")
             st.session_state.steps_completed["Select Unique Identifier"] = True
             if st.button("Proceed to Select Ontologies & Impute"):
                 proceed_to_step("Select Ontologies & Impute")
         else:
-            st.warning("Please map at least one column to continue")
+            st.warning("Please map at least one column to continue (or skip mapping if you don't need it).")
+
+
+
+
+
+
+
 
     # Step 4: Imputation Configuration
     elif st.session_state.current_step == "Select Ontologies & Impute":
@@ -502,6 +514,305 @@ def main():
             proceed_to_step("Run QC and View Results")
 
     # 5) Run QC and View Results (merged step)
+    # elif st.session_state.current_step == "Run QC and View Results":
+    #     st.header("Step 5: Run Quality Control and View Results")
+
+    #     # If not processed yet, show the "Start Processing" button
+    #     if not st.session_state.steps_completed["Run QC and View Results"]:
+    #         if st.button("Start Processing", key="start_processing_button"):
+    #             with st.spinner("Processing..."):
+    #                 try:
+    #                     if 'tmpdirname' not in st.session_state:
+    #                         st.session_state.tmpdirname = tempfile.mkdtemp()
+
+    #                     tmpdirname = st.session_state.tmpdirname
+    #                     input_paths = []
+
+    #                     # Save schema.json
+    #                     schema_path = os.path.join(tmpdirname, "schema.json")
+    #                     with open(schema_path, 'w') as f:
+    #                         json.dump(st.session_state['schema'], f)
+
+    #                     # Save config.yaml
+    #                     config_path = os.path.join(tmpdirname, "config.yaml")
+    #                     with open(config_path, 'w') as f:
+    #                         yaml.dump(st.session_state['config'], f)
+
+    #                     # Save custom mappings if provided
+    #                     if st.session_state['custom_mappings_data']:
+    #                         custom_mappings_path = os.path.join(tmpdirname, "custom_mapping.json")
+    #                         with open(custom_mappings_path, 'w') as f:
+    #                             json.dump(st.session_state['custom_mappings_data'], f)
+    #                     else:
+    #                         custom_mappings_path = None
+
+    #                     # Collect input file paths
+    #                     if st.session_state['data_source'] == 'files':
+    #                         uploaded_files = st.session_state.get('uploaded_files_list', [])
+    #                         for uploaded_file in uploaded_files:
+    #                             file_path = os.path.join(tmpdirname, uploaded_file.name)
+    #                             with open(file_path, 'wb') as f:
+    #                                 f.write(uploaded_file.getbuffer())
+    #                             input_paths.append(file_path)
+    #                     else:
+    #                         # For ZIP
+    #                         uploaded_zip = st.session_state.get('uploaded_zip_file')
+    #                         if uploaded_zip:
+    #                             tmp_zip_path = save_uploaded_file(uploaded_zip)
+    #                             extract_dir = os.path.join(tmpdirname, "extracted")
+    #                             os.makedirs(extract_dir, exist_ok=True)
+    #                             success, error = extract_zip(tmp_zip_path, extract_dir)
+    #                             if not success:
+    #                                 st.error(error)
+    #                                 st.stop()
+    #                             supported_extensions = {'.csv', '.tsv', '.json'}
+    #                             collected_files = collect_supported_files(extract_dir, supported_extensions)
+    #                             st.info(f"Collected {len(collected_files)} files.")
+    #                             input_paths.extend(collected_files)
+
+    #                     if not input_paths:
+    #                         st.error("No data files found to process.")
+    #                         st.stop()
+
+    #                     # Initialize OntologyMapper
+    #                     ontology_mapper = OntologyMapper(config_path=config_path)
+
+    #                     config = st.session_state['config']
+    #                     field_strategies = config.get('imputation_strategies', {})
+
+    #                     output_dir = os.path.join(tmpdirname, "reports")
+    #                     os.makedirs(output_dir, exist_ok=True)
+
+    #                     total_files = len(input_paths)
+    #                     progress_bar = st.progress(0)
+    #                     current_progress = 0
+    #                     progress_increment = 100 / total_files if total_files > 0 else 0
+
+    #                     # Clear previous results
+    #                     st.session_state['processing_results'] = []
+
+    #                     # Run QC on each file
+    #                     for idx, file_path in enumerate(input_paths):
+    #                         file_name = os.path.basename(file_path)
+    #                         st.write(f"Processing {file_name}...")
+
+    #                         try:
+    #                             result = process_file(
+    #                                 file_path=file_path,
+    #                                 schema=st.session_state['schema'],
+    #                                 ontology_mapper=ontology_mapper,
+    #                                 unique_identifiers=st.session_state.get('unique_identifiers_list', []),
+    #                                 custom_mappings=st.session_state.get('custom_mappings_data'),
+    #                                 impute_strategy=st.session_state.get('impute_strategy_value'),
+    #                                 field_strategies=field_strategies,
+    #                                 output_dir=output_dir,
+    #                                 target_ontologies=st.session_state.get('ontologies_selected_list', []),
+    #                                 phenotype_columns=st.session_state.get('phenotype_columns')
+    #                             )
+    #                             st.session_state['processing_results'].append((file_name, result, output_dir))
+
+    #                             # Quick status
+    #                             if result['status'] == 'Processed':
+    #                                 st.success(f"{file_name} processed successfully.")
+    #                             elif result['status'] == 'ProcessedWithWarnings':
+    #                                 st.warning(f"{file_name} processed with warnings.")
+    #                             elif result['status'] == 'Invalid':
+    #                                 st.warning(f"{file_name} validation failed: {result['error']}")
+    #                             else:
+    #                                 st.error(f"{file_name} error: {result['error']}")
+
+    #                         except Exception as e:
+    #                             st.error(f"Error processing {file_name}: {e}")
+
+    #                         current_progress += progress_increment
+    #                         progress_bar.progress(int(current_progress))
+
+    #                     st.success("Processing completed!")
+    #                     st.session_state.steps_completed["Run QC and View Results"] = True
+
+    #                 except Exception as e:
+    #                     st.error(f"An error occurred during processing: {e}")
+
+    #     # If we have processed results, show them
+    #     if st.session_state.steps_completed.get("Run QC and View Results", False):
+    #         st.header("Results")
+    #         if 'processing_results' in st.session_state and st.session_state['processing_results']:
+    #             tab_labels = [os.path.basename(fname) for fname, _, _ in st.session_state['processing_results']]
+    #             tabs = st.tabs(tab_labels)
+
+    #             for (file_name, result_dict, output_dir), tab in zip(st.session_state['processing_results'], tabs):
+    #                 with tab:
+    #                     st.subheader(f"Results for {file_name}")
+    #                     file_status = result_dict['status']
+    #                     if file_status == 'Processed':
+    #                         st.success("File processed successfully.")
+    #                     elif file_status == 'ProcessedWithWarnings':
+    #                         st.warning("File processed with warnings or schema violations.")
+    #                     elif file_status == 'Invalid':
+    #                         st.warning(f"File failed validation: {result_dict['error']}")
+    #                     else:
+    #                         st.error(f"File encountered an error: {result_dict['error']}")  
+
+    #                     processed_data_path = result_dict.get('processed_file_path')
+
+    #                     if not processed_data_path or not os.path.exists(processed_data_path):
+    #                         st.error("Processed data file not found. No partial output available.")
+    #                         continue
+
+    #                     try:
+    #                         df = pd.read_csv(processed_data_path)
+    #                     except Exception as ex:
+    #                         st.error(f"Failed to read processed data: {str(ex)}")
+    #                         continue
+
+    #                     st.write("### Sample of Processed Data:")
+    #                     st.dataframe(df.head(5))
+
+    #                     # Build summary
+    #                     validation_res = result_dict.get('validation_results', {})
+    #                     summary_text = []
+
+    #                     if validation_res.get('Format Validation') is False:
+    #                         summary_text.append("- Some rows did NOT match the JSON schema.")
+    #                     else:
+    #                         summary_text.append("- All rows appear to match the JSON schema (or partial).")
+
+    #                     duplicates_df = validation_res.get("Duplicate Records")
+    #                     if isinstance(duplicates_df, pd.DataFrame) and not duplicates_df.empty:
+    #                         summary_text.append(f"- Found **{len(duplicates_df.drop_duplicates())}** duplicate rows.")
+    #                     else:
+    #                         summary_text.append("- No duplicates found.")
+
+    #                     conflicts_df = validation_res.get("Conflicting Records")
+    #                     if isinstance(conflicts_df, pd.DataFrame) and not conflicts_df.empty:
+    #                         summary_text.append(f"- Found **{len(conflicts_df.drop_duplicates())}** conflicting records.")
+    #                     else:
+    #                         summary_text.append("- No conflicting records found.")
+
+    #                     integrity_df = validation_res.get("Integrity Issues")
+    #                     if isinstance(integrity_df, pd.DataFrame) and not integrity_df.empty:
+    #                         summary_text.append(f"- Found **{len(integrity_df.drop_duplicates())}** integrity issues.")
+    #                     else:
+    #                         summary_text.append("- No integrity issues found.")
+
+    #                     anomalies_df = validation_res.get("Anomalies Detected")
+    #                     if isinstance(anomalies_df, pd.DataFrame) and not anomalies_df.empty:
+    #                         summary_text.append(f"- Found **{len(anomalies_df.drop_duplicates())}** anomalies.")
+    #                     else:
+    #                         summary_text.append("- No anomalies detected.")
+
+    #                     st.info("**Summary of Key Findings**\n\n" + "\n".join(summary_text))
+
+    #                     # =======================
+    #                     #  ONLY if there's exactly one file
+    #                     #  AND if Format Validation = False
+    #                     #  => show in-place editing
+    #                     # =======================
+    #                     num_files_processed = len(st.session_state['processing_results'])
+    #                     format_valid = validation_res.get("Format Validation", True)
+
+    #                     if num_files_processed == 1 and not format_valid:
+    #                         st.write("### In-Place Editing & Re-validation")
+    #                         invalid_mask = validation_res.get("Invalid Mask", pd.DataFrame())
+    #                         if invalid_mask.empty:
+    #                             st.write("No invalid cells found (or no mask returned).")
+    #                             st.write("Feel free to edit the data below anyway.")
+    #                             invalid_mask = pd.DataFrame(False, index=df.index, columns=df.columns)
+
+    #                         key_prefix = file_name.replace('.', '_')
+    #                         if f"{key_prefix}_df" not in st.session_state:
+    #                             st.session_state[f"{key_prefix}_df"] = df.copy()
+    #                         if f"{key_prefix}_mask" not in st.session_state:
+    #                             st.session_state[f"{key_prefix}_mask"] = invalid_mask.copy()
+
+    #                         # We allow editing
+    #                         editable_df = display_editable_grid_with_highlighting(
+    #                             st.session_state[f"{key_prefix}_df"].copy(),
+    #                             st.session_state[f"{key_prefix}_mask"].copy(),
+    #                             allow_edit=True
+    #                         )
+
+    #                         # Button to re-validate
+    #                         if st.button(f"Re-Validate Data ({file_name})"):
+    #                             edited_df = editable_df.copy()
+    #                             edited_df.index = st.session_state[f"{key_prefix}_df"].index
+    #                             st.session_state[f"{key_prefix}_df"] = edited_df
+
+    #                             # Re-run validations on the edited data
+    #                             schema = st.session_state['schema']
+    #                             unique_ids = st.session_state.get('unique_identifiers_list', [])
+    #                             validator = DataValidator(edited_df, schema, unique_ids)
+    #                             results2 = validator.run_all_validations()
+    #                             new_mask = results2["Invalid Mask"]
+    #                             st.session_state[f"{key_prefix}_mask"] = new_mask
+
+    #                             if not results2["Format Validation"]:
+    #                                 st.warning("Some rows do not match the schema after re-validation.")
+    #                             else:
+    #                                 st.success("All rows appear valid after re-validation!")
+
+    #                             st.experimental_rerun()
+    #                     else:
+    #                         # If multiple files or the validation didn't fail, we skip editing
+    #                         st.write("**No in-place editing is available** because either:")
+    #                         st.write("- Multiple files were processed, **OR**")
+    #                         st.write("- The data already passes validation.")
+    #                         st.write("You can still review the data above or re-run with a single file.")
+                        
+    #                     # ================
+    #                     # Visual Summaries
+    #                     # ================
+    #                     st.write("### Visual Summaries")
+    #                     figs = create_visual_summary(
+    #                         df=df,
+    #                         phenotype_columns=st.session_state.get('phenotype_columns'),
+    #                         output_image_path=None
+    #                     )
+    #                     if figs:
+    #                         cols = st.columns(2)
+    #                         for i, fig in enumerate(figs):
+    #                             with cols[i % 2]:
+    #                                 st.plotly_chart(fig, use_container_width=True, key=f"{file_name}_plot_{i}")
+
+    #                     # ======================
+    #                     # Quality Scores + Downloads
+    #                     # ======================
+    #                     st.write("### Quality Scores")
+    #                     q_scores = result.get('quality_scores', {})
+    #                     for score_name, score_val in q_scores.items():
+    #                         st.write(f"- **{score_name}**: {score_val:.2f}%")
+
+    #                     st.write("### Downloads")
+    #                     report_buffer = io.BytesIO()
+    #                     generate_qc_report(
+    #                         validation_results=validation_res,
+    #                         missing_data=result.get('missing_data', pd.Series()),
+    #                         flagged_records_count=result.get('flagged_records_count', 0),
+    #                         mapping_success_rates=result.get('mapping_success_rates', {}),
+    #                         visualization_images=result.get('visualization_images', []),
+    #                         impute_strategy=st.session_state.get('impute_strategy_value'),
+    #                         quality_scores=q_scores,
+    #                         output_path_or_buffer=report_buffer,
+    #                         report_format='pdf'
+    #                     )
+    #                     report_buffer.seek(0)
+    #                     st.download_button(
+    #                         label=f"Download QC Report for {file_name} (PDF)",
+    #                         data=report_buffer,
+    #                         file_name=f"{os.path.splitext(file_name)[0]}_qc_report.pdf",
+    #                         mime='application/pdf'
+    #                     )
+
+    #                     st.download_button(
+    #                         label=f"Download Processed Data for {file_name} (CSV)",
+    #                         data=df.to_csv(index=False).encode('utf-8'),
+    #                         file_name=f"processed_{file_name}",
+    #                         mime='text/csv'
+    #                     )
+    #         else:
+    #             st.info("No processing results available.")
+
+    # Step 5) Run QC and View Results (merged step)
     elif st.session_state.current_step == "Run QC and View Results":
         st.header("Step 5: Run Quality Control and View Results")
 
@@ -639,7 +950,7 @@ def main():
                         elif file_status == 'Invalid':
                             st.warning(f"File failed validation: {result_dict['error']}")
                         else:
-                            st.error(f"File encountered an error: {result_dict['error']}")  
+                            st.error(f"File encountered an error: {result_dict['error']}")
 
                         processed_data_path = result_dict.get('processed_file_path')
 
@@ -647,6 +958,9 @@ def main():
                             st.error("Processed data file not found. No partial output available.")
                             continue
 
+                        # ---------------------------------------------------------
+                        # Read the processed CSV
+                        # ---------------------------------------------------------
                         try:
                             df = pd.read_csv(processed_data_path)
                         except Exception as ex:
@@ -691,62 +1005,61 @@ def main():
 
                         st.info("**Summary of Key Findings**\n\n" + "\n".join(summary_text))
 
-                        # =======================
-                        #  ONLY if there's exactly one file
-                        #  AND if Format Validation = False
-                        #  => show in-place editing
-                        # =======================
-                        num_files_processed = len(st.session_state['processing_results'])
-                        format_valid = validation_res.get("Format Validation", True)
-
-                        if num_files_processed == 1 and not format_valid:
-                            st.write("### In-Place Editing & Re-validation")
-                            invalid_mask = validation_res.get("Invalid Mask", pd.DataFrame())
-                            if invalid_mask.empty:
-                                st.write("No invalid cells found (or no mask returned).")
-                                st.write("Feel free to edit the data below anyway.")
-                                invalid_mask = pd.DataFrame(False, index=df.index, columns=df.columns)
-
+                        # ----------------------------------------------------------------
+                        # Display the invalid cells (highlighting), but remove re-validate
+                        # ----------------------------------------------------------------
+                        invalid_mask = validation_res.get("Invalid Mask", pd.DataFrame())
+                        if invalid_mask.empty:
+                            st.write("No invalid cells found or no mask returned.")
+                        else:
+                            st.write("### Highlighting Invalid Cells (read-only)")
+                            
                             key_prefix = file_name.replace('.', '_')
+
+                            # We store the invalid-mask-based "editable" DataFrame in session,
+                            # but we do NOT re-validate afterwards. It's read-only if you prefer,
+                            # or you can keep it editable. We'll keep it editable here for demonstration.
                             if f"{key_prefix}_df" not in st.session_state:
                                 st.session_state[f"{key_prefix}_df"] = df.copy()
                             if f"{key_prefix}_mask" not in st.session_state:
                                 st.session_state[f"{key_prefix}_mask"] = invalid_mask.copy()
 
-                            # We allow editing
+                            # Display the DataFrame with invalid cells highlighted
                             editable_df = display_editable_grid_with_highlighting(
                                 st.session_state[f"{key_prefix}_df"].copy(),
                                 st.session_state[f"{key_prefix}_mask"].copy(),
-                                allow_edit=True
+                                allow_edit=True  # or False, if you want it read-only
                             )
 
-                            # Button to re-validate
-                            if st.button(f"Re-Validate Data ({file_name})"):
-                                edited_df = editable_df.copy()
-                                edited_df.index = st.session_state[f"{key_prefix}_df"].index
-                                st.session_state[f"{key_prefix}_df"] = edited_df
+                            # We remove the re-validation button. 
+                            # No "st.button('Re-Validate...')" here.
 
-                                # Re-run validations on the edited data
-                                schema = st.session_state['schema']
-                                unique_ids = st.session_state.get('unique_identifiers_list', [])
-                                validator = DataValidator(edited_df, schema, unique_ids)
-                                results2 = validator.run_all_validations()
-                                new_mask = results2["Invalid Mask"]
-                                st.session_state[f"{key_prefix}_mask"] = new_mask
+                            st.write("You can see the invalid cells (highlighted in pink). "
+                                    "Edits here **will not** trigger any re-validation. "
+                                    "This is just for your reference.")
 
-                                if not results2["Format Validation"]:
-                                    st.warning("Some rows do not match the schema after re-validation.")
-                                else:
-                                    st.success("All rows appear valid after re-validation!")
+                            # ---------------------------------------------
+                            # Optional: Let the user download the invalid cells info
+                            # ---------------------------------------------
+                            st.write("#### Download Invalid-Cell Highlights")
+                            # We'll build a CSV that merges the invalid mask with the data
+                            # so that each column col becomes two columns: col + col_isInvalid
+                            # Or you can do something simpler.
 
-                                st.experimental_rerun()
-                        else:
-                            # If multiple files or the validation didn't fail, we skip editing
-                            st.write("**No in-place editing is available** because either:")
-                            st.write("- Multiple files were processed, **OR**")
-                            st.write("- The data already passes validation.")
-                            st.write("You can still review the data above or re-run with a single file.")
-                        
+                            merged_df = df.copy()
+                            invalid_cols = invalid_mask.columns.intersection(df.columns)
+                            for col in invalid_cols:
+                                newcol = f"{col}_isInvalid"
+                                merged_df[newcol] = invalid_mask[col].astype(bool)
+
+                            csv_data = merged_df.to_csv(index=False).encode('utf-8')
+                            st.download_button(
+                                label="Download CSV with Invalid Highlights",
+                                data=csv_data,
+                                file_name=f"{os.path.splitext(file_name)[0]}_invalid_highlights.csv",
+                                mime='text/csv'
+                            )
+
                         # ================
                         # Visual Summaries
                         # ================
@@ -766,7 +1079,7 @@ def main():
                         # Quality Scores + Downloads
                         # ======================
                         st.write("### Quality Scores")
-                        q_scores = result.get('quality_scores', {})
+                        q_scores = result_dict.get('quality_scores', {})
                         for score_name, score_val in q_scores.items():
                             st.write(f"- **{score_name}**: {score_val:.2f}%")
 
@@ -774,10 +1087,10 @@ def main():
                         report_buffer = io.BytesIO()
                         generate_qc_report(
                             validation_results=validation_res,
-                            missing_data=result.get('missing_data', pd.Series()),
-                            flagged_records_count=result.get('flagged_records_count', 0),
-                            mapping_success_rates=result.get('mapping_success_rates', {}),
-                            visualization_images=result.get('visualization_images', []),
+                            missing_data=result_dict.get('missing_data', pd.Series()),
+                            flagged_records_count=result_dict.get('flagged_records_count', 0),
+                            mapping_success_rates=result_dict.get('mapping_success_rates', {}),
+                            visualization_images=result_dict.get('visualization_images', []),
                             impute_strategy=st.session_state.get('impute_strategy_value'),
                             quality_scores=q_scores,
                             output_path_or_buffer=report_buffer,
@@ -799,6 +1112,7 @@ def main():
                         )
             else:
                 st.info("No processing results available.")
+
 
 if __name__ == '__main__':
     main()
