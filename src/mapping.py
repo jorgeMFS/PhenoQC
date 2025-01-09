@@ -170,9 +170,11 @@ class OntologyMapper:
                 match = None
                 score = 0
                 if ontology_mapping:
-                    match, score, _ = process.extractOne(
+                    extracted = process.extractOne(
                         term_lower, ontology_mapping.keys(), scorer=fuzz.token_sort_ratio
                     )
+                    if extracted is not None:
+                        match, score, _ = extracted
                 if score >= self.fuzzy_threshold:
                     mapped_id = ontology_mapping[match]
                 else:

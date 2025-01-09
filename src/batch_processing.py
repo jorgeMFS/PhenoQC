@@ -38,7 +38,7 @@ def process_file(
     target_ontologies=None,
     report_format='pdf',
     chunksize=10000,
-    phenotype_column='Phenotype'
+    phenotype_columns=None
 ):
     """
     Processes a single file in chunks:
@@ -77,11 +77,20 @@ def process_file(
 
             write_header = True
 
-            # For ontology mapping stats
-            target_ontologies = target_ontologies or ontology_mapper.default_ontologies
+            # Add default phenotype columns if none provided
+            if phenotype_columns is None:
+                phenotype_columns = {
+                    "PrimaryPhenotype": ["HPO"],
+                    "DiseaseCode": ["DO"],
+                    "TertiaryPhenotype": ["MPO"]
+                }
+
+            # Initialize cumulative_mapping_stats based on phenotype_columns
             cumulative_mapping_stats = {}
-            for onto_id in target_ontologies:
-                cumulative_mapping_stats[onto_id] = {'total_terms': 0, 'mapped_terms': 0}
+            for column, ontologies in phenotype_columns.items():
+                for onto_id in ontologies:
+                    if onto_id not in cumulative_mapping_stats:
+                        cumulative_mapping_stats[onto_id] = {'total_terms': 0, 'mapped_terms': 0}
 
             # We'll sample up to 10k rows for visual summaries
             sample_df = pd.DataFrame()
@@ -147,14 +156,24 @@ def process_file(
                 global_invalid_mask = pd.concat([global_invalid_mask, chunk_invalid_mask], axis=0)
 
                 # 3b) Cross-chunk duplicates: check unique IDs
-                ids_in_chunk = set(map(tuple, chunk[unique_identifiers].drop_duplicates().values.tolist()))
-                duplicates_in_ids = unique_id_set.intersection(ids_in_chunk)
-                if duplicates_in_ids:
-                    # these are cross-chunk duplicates
-                    cross_dup = chunk[chunk[unique_identifiers].apply(tuple, axis=1).isin(duplicates_in_ids)]
-                    duplicate_records.append(cross_dup)
-                unique_id_set.update(ids_in_chunk)
-
+                # ids_in_chunk = set(map(tuple, chunk[unique_identifiers].drop_duplicates().values.tolist()))
+                # duplicates_in_ids = unique_id_set.intersection(ids_in_chunk)
+                # if duplicates_in_ids:
+                #     # these are cross-chunk duplicates
+                #     cross_dup = chunk[chunk[unique_identifiers].apply(tuple, axis=1).isin(duplicates_in_ids)]
+                #     duplicate_records.append(cross_dup)
+                # unique_id_set.update(ids_in_chunk)
+                if unique_identifiers:
+                    # Only do duplicate-check logic if user actually picked columns
+                    ids_in_chunk = set(map(tuple, chunk[unique_identifiers].drop_duplicates().values.tolist()))
+                    duplicates_in_ids = unique_id_set.intersection(ids_in_chunk)
+                    if duplicates_in_ids:
+                        cross_dup = chunk[chunk[unique_identifiers].apply(tuple, axis=1).isin(duplicates_in_ids)]
+                        duplicate_records.append(cross_dup)
+                    unique_id_set.update(ids_in_chunk)
+                else:
+                    # If no unique IDs chosen, skip duplicates logic:
+                    pass
                 # 3c) Missing data detection
                 missing = detect_missing_data(chunk)
                 missing_counts = missing_counts.add(missing, fill_value=0)
@@ -169,29 +188,41 @@ def process_file(
                 # Re-flag after imputation
                 chunk = flag_missing_data_records(chunk)
 
-                # 3f) Collect phenotype terms
-                if phenotype_column not in chunk.columns:
-                    msg = f"'{phenotype_column}' column not found in chunk."
-                    log_activity(f"{file_path}: {msg}", level='error')
-                    pbar.close()
-                    return {'file': file_path, 'status': 'Invalid', 'error': msg}
-                phenotype_terms_set.update(chunk[phenotype_column].unique())
-
                 # 3g) Ontology mapping
-                terms_in_chunk = chunk[phenotype_column].unique()
-                mappings = ontology_mapper.map_terms(terms_in_chunk, target_ontologies, custom_mappings)
+                for column, ontologies in phenotype_columns.items():
+                    if column not in chunk.columns:
+                        log_activity(f"'{column}' column not found in chunk.", level='warning')
+                        continue
+                        
+                    terms_in_chunk = chunk[column].dropna().unique()
+                    if len(terms_in_chunk) == 0:
+                        continue  # Skip empty columns
+                        
+                    # Map the terms to all specified ontologies
+                    mappings = ontology_mapper.map_terms(terms_in_chunk, ontologies, custom_mappings)
+                    
+                    # Create the mapped columns
+                    for onto_id in ontologies:
+                        col_name = f"{onto_id}_ID"
+                        
+                        # Map each term to its ontology ID
+                        chunk[col_name] = chunk[column].map(
+                            lambda x: mappings.get(str(x), {}).get(onto_id) if pd.notnull(x) else None
+                        )
+                        
+                        # Initialize stats if needed
+                        if onto_id not in cumulative_mapping_stats:
+                            cumulative_mapping_stats[onto_id] = {'total_terms': 0, 'mapped_terms': 0}
+                        
+                        # Update mapping statistics
+                        valid_terms = [t for t in terms_in_chunk if pd.notnull(t)]
+                        cumulative_mapping_stats[onto_id]['total_terms'] += len(valid_terms)
+                        cumulative_mapping_stats[onto_id]['mapped_terms'] += sum(
+                            1 for t in valid_terms 
+                            if mappings.get(str(t), {}).get(onto_id) is not None
+                        )
 
-                for onto_id in target_ontologies:
-                    col_name = f"{onto_id}_ID"
-                    chunk[col_name] = chunk[phenotype_column].apply(
-                        lambda x: mappings.get(x, {}).get(onto_id)
-                    )
-                    # stats
-                    mapped_count = chunk[col_name].notnull().sum()
-                    cumulative_mapping_stats[onto_id]['total_terms'] += len(chunk)
-                    cumulative_mapping_stats[onto_id]['mapped_terms'] += mapped_count
-
-                # 3h) Collect sample rows for visualization
+                # 3g) Collect sample rows for visualization
                 if len(sample_df) < max_total_samples:
                     remaining = max_total_samples - len(sample_df)
                     chunk_sample_size = min(sample_size_per_chunk, remaining)
@@ -287,7 +318,7 @@ def process_file(
                 output_dir, f"{os.path.splitext(os.path.basename(file_path))[0]}_report.{report_format}"
             )
 
-            figs = create_visual_summary(sample_df, phenotype_column=phenotype_column, output_image_path=None)
+            figs = create_visual_summary(sample_df, phenotype_columns=phenotype_columns, output_image_path=None)
 
             visualization_images = []
             for idx, fig in enumerate(figs):
@@ -353,73 +384,65 @@ def batch_process(
     target_ontologies=None,
     report_format='pdf',
     chunksize=10000,
-    phenotype_column='Phenotype'
+    phenotype_columns=None,
+    phenotype_column=None
 ):
     """
     Main entry point to process multiple files in parallel. 
     Spawns concurrent processes for each input file.
     """
     # 1) Load the schema
-    with open(schema_path, 'r') as f:
+    with open(schema_path) as f:
         schema = json.load(f)
 
-    # 2) Load the config
+    # 2) Load config and initialize ontology mapper
     config = load_config(config_path)
+    ontology_mapper = OntologyMapper(config)
 
-    # 3) Field-specific strategies from config
-    field_strategies = config.get('imputation_strategies', {})
-
-    # 4) Initialize the OntologyMapper
-    ontology_mapper = OntologyMapper(config_path=config_path)
-
-    # 5) Custom mappings (if any)
+    # 3) Load custom mappings if provided
     custom_mappings = None
-    if custom_mappings_path and os.path.exists(custom_mappings_path):
-        with open(custom_mappings_path, 'r') as f:
+    if custom_mappings_path:
+        with open(custom_mappings_path) as f:
             custom_mappings = json.load(f)
 
-    # 6) Ensure output dir
-    os.makedirs(output_dir, exist_ok=True)
+    # Convert old style to new style if needed
+    if phenotype_column and not phenotype_columns:
+        phenotype_columns = {phenotype_column: ["HPO"]}
 
+    # 4) Process each file
     results = []
-    # 7) Launch parallel jobs
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        futures = {
-            executor.submit(
+        futures = []
+        for file_path in files:
+            future = executor.submit(
                 process_file,
-                file_path,
-                schema,
-                ontology_mapper,
-                unique_identifiers,
-                custom_mappings,
-                impute_strategy,
-                field_strategies,
-                output_dir,
-                target_ontologies,
-                report_format,
-                chunksize,
-                phenotype_column
-            ): file_path for file_path in files
-        }
-
-        # 8) Collect results as each future completes
-        for future in tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Batch Processing"):
-            file_path = futures[future]
+                file_path=file_path,
+                schema=schema,
+                ontology_mapper=ontology_mapper,
+                unique_identifiers=unique_identifiers,
+                custom_mappings=custom_mappings,
+                impute_strategy=impute_strategy,
+                output_dir=output_dir,
+                target_ontologies=target_ontologies,
+                report_format=report_format,
+                chunksize=chunksize,
+                phenotype_columns=phenotype_columns
+            )
+            futures.append(future)
+       
+        for future in concurrent.futures.as_completed(futures):
             try:
                 result = future.result()
                 results.append(result)
-                # Print a quick summary
-                status = result['status']
-                if status == 'Processed':
-                    print(f"✅ {os.path.basename(file_path)} processed successfully.")
-                elif status == 'Invalid':
-                    print(f"⚠️ {os.path.basename(file_path)} failed validation: {result['error']}")
-                else:
-                    print(f"❌ {os.path.basename(file_path)} encountered an error: {result['error']}")
             except Exception as e:
-                log_activity(f"Error in processing {file_path}: {str(e)}", level='error')
-                print(f"❌ Error in processing {os.path.basename(file_path)}: {str(e)}")
-
+                log_activity(f"Error in batch processing: {str(e)}", level='error')
+                # Return a DICT, same shape as success
+                dummy_result = {
+                    'file': file_path,
+                    'status': 'Error',
+                    'error': str(e)
+                }
+                results.append(dummy_result)
     return results
 
 def collect_files(inputs, recursive=True):

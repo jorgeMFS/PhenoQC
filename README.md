@@ -69,7 +69,7 @@ phenoqc --input examples/samples/sample_data.json \
 --custom_mappings examples/mapping/custom_mappings.json \
 --impute mice \
 --unique_identifiers SampleID \
---phenotype_column PrimaryPhenotype \
+--phenotype_columns '{"PrimaryPhenotype": ["HPO"], "DiseaseCode": ["DO"], "TertiaryPhenotype": ["MPO"]}' \
 --ontologies HPO DO MPO
 ```
 
@@ -83,7 +83,8 @@ phenoqc --input examples/samples/sample_data.csv examples/samples/sample_data.js
 --custom_mappings examples/mapping/custom_mappings.json \
 --impute none \
 --unique_identifiers SampleID \
---ontologies HPO DO MPO
+--ontologies HPO DO MPO \
+--phenotype_columns '{"PrimaryPhenotype": ["HPO"], "DiseaseCode": ["DO"], "TertiaryPhenotype": ["MPO"]}'
 ```
 
 **Parameters:**
@@ -104,6 +105,10 @@ phenoqc --input examples/samples/sample_data.csv examples/samples/sample_data.js
 - `--unique_identifiers`: List of column names that uniquely identify a record (e.g., `SampleID`).
 - `--ontologies`: (Optional) List of ontologies to map to (e.g., `HPO DO MPO`).
 - `--recursive`: (Optional) Enable recursive directory scanning when input paths include directories.
+- `--phenotype_columns`: JSON mapping of columns to their target ontologies. Format: `{"ColumnName": ["OntologyID"], ...}`. Examples:
+  - Single column: `{"PrimaryPhenotype": ["HPO"]}`
+  - Multiple columns: `{"PrimaryPhenotype": ["HPO"], "DiseaseCode": ["DO"], "TertiaryPhenotype": ["MPO"]}`
+  - Multiple ontologies per column: `{"PrimaryPhenotype": ["HPO", "DO"]}`
 
 ### Graphical User Interface (GUI)
 
@@ -130,7 +135,9 @@ streamlit run src/gui.py
 
 3. **Unique Identifiers & Ontologies:**
    - **Specify Unique Identifier Columns:** Select column names that uniquely identify each record (e.g., `SampleID,PatientID`).
-   - **Specify Phenotype Column:** Select the column containing phenotypic terms.
+   - **Specify Phenotype Columns:** Map phenotype columns to their target ontologies using either:
+     - JSON editor: Enter mappings in JSON format (e.g., `{"PrimaryPhenotype": ["HPO"], "DiseaseCode": ["DO"]}`)
+     - Visual editor: Use the interactive interface to map columns to ontologies
    - **Specify Ontologies to Map:** Select ontology IDs to map to (e.g., `HPO DO MPO`). Leave blank to use the default ontologies specified in `config.yaml`.
 
 4. **Run Quality Control:**

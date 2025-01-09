@@ -1,5 +1,6 @@
 import argparse
 import os
+import json
 from batch_processing import batch_process
 from logging_module import setup_logging, log_activity
 
@@ -28,11 +29,23 @@ def parse_arguments():
     parser.add_argument('--unique_identifiers', nargs='+', required=True, help='List of column names that uniquely identify a record')
     parser.add_argument('--ontologies', nargs='+', help='List of ontologies to map to (e.g., HPO DO MPO)', default=None)
     parser.add_argument(
-        '--phenotype_column',
-        default='Phenotype',
-        help='Column name that holds the primary phenotypic descriptor (default: Phenotype)'
+        '--phenotype_columns',
+        type=lambda x: {x: ["HPO"]} if '{' not in x else json.loads(x),
+        help='Either a single column name or a JSON mapping of columns to ontologies (e.g., \'{"PrimaryPhenotype": ["HPO"]}\')'
     )
-    return parser.parse_args()
+    parser.add_argument(
+        '--phenotype_column',
+        help='[Deprecated] Use --phenotype_columns instead'
+    )
+    args = parser.parse_args()
+    
+    # Convert old phenotype_column to new format if specified
+    if args.phenotype_column:
+        if not args.phenotype_columns:  # Only use if phenotype_columns not specified
+            args.phenotype_columns = {args.phenotype_column: ["HPO"]}
+        args.phenotype_column = None  # Clear the old argument
+    
+    return args
 
 def collect_files(input_paths, recursive=False):
     """
@@ -102,7 +115,7 @@ def main():
         impute_strategy=args.impute,
         output_dir=args.output,
         target_ontologies=args.ontologies,
-        phenotype_column=args.phenotype_column  
+        phenotype_columns=args.phenotype_columns  
     )
 
     # Summary of results
