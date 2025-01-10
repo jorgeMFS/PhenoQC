@@ -734,25 +734,6 @@ def main():
                         else:
                             custom_mappings_path = None
 
-                        # 4) Convert each in-memory DataFrame (multi_dfs) into local CSV paths,
-                        #    then collect those paths in input_paths.
-                        # st.session_state["multi_dfs"] = st.session_state.get("multi_dfs", {})
-                        # if not st.session_state["multi_dfs"]:
-                        #     st.error("No in-memory dataframes found to process.")
-                        #     st.stop()
-
-                        # for fname, df_in_memory in st.session_state["multi_dfs"].items():
-                        #     orig_ext = os.path.splitext(fname)[1].lower()
-                        #     if orig_ext in ('.csv', '.tsv'):
-                        #         # keep as is or rename to .csv if it's really CSV
-                        #         local_name = f"{os.path.basename(fname)}.csv"
-                        #     else:
-                        #         # if .json, rename to something CSV
-                        #         local_name = f"{os.path.basename(fname)}_converted.csv"
-
-                        #     local_csv_path = os.path.join(tmpdirname, local_name)
-                        #     df_in_memory.to_csv(local_csv_path, index=False)
-                        #     input_paths.append(local_csv_path)
                         input_paths = []
                         for fname, df_in_memory in st.session_state["multi_dfs"].items():
                             local_path = preserve_original_format_and_save(

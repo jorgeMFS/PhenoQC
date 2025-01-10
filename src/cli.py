@@ -3,8 +3,9 @@ import os
 import json
 from batch_processing import batch_process
 from logging_module import setup_logging, log_activity
+from utils.zip_utils import extract_zip
 
-SUPPORTED_EXTENSIONS = {'.csv', '.tsv', '.json'}
+SUPPORTED_EXTENSIONS = {'.csv', '.tsv', '.json', '.zip'}
 
 def parse_arguments():
     """
@@ -49,41 +50,74 @@ def parse_arguments():
 
 def collect_files(input_paths, recursive=False):
     """
-    Collects all supported files from the input paths.
-
-    Args:
-        input_paths (list): List of file or directory paths.
-        recursive (bool): Whether to scan directories recursively.
-
-    Returns:
-        list: List of file paths to process.
+    Collects all supported files (.csv, .tsv, .json) from the input paths.
+    If a ZIP is found, it is extracted to a temp dir, then we apply the same logic.
+    If not recursive, we only do a top-level or a single subfolder pass.
     """
     collected_files = []
+    print(f"[DEBUG] Starting collect_files with input_paths={input_paths}, recursive={recursive}")
+
     for path in input_paths:
+        print(f"[DEBUG] Checking path: {path}")
         if os.path.isfile(path):
             ext = os.path.splitext(path)[1].lower()
-            if ext in SUPPORTED_EXTENSIONS:
+
+            if ext == '.zip':
+                log_activity(f"Detected ZIP file: {path}", level='info')
+                extracted_dir, err = extract_zip(path)
+                print(f"[DEBUG] Extracted_dir = {extracted_dir}, err={err}")
+                if err:
+                    print(f"❌ Failed to extract ZIP '{path}': {err}")
+                    continue
+
+                if recursive:
+                    # full recursive
+                    for root, dirs, files in os.walk(extracted_dir):
+                        for file_name in files:
+                            ext2 = os.path.splitext(file_name)[1].lower()
+                            print(f"[DEBUG] Found extracted file: {os.path.join(root, file_name)} with ext={ext2}")
+                            if ext2 in {'.csv', '.tsv', '.json'}:
+                                collected_files.append(os.path.join(root, file_name))
+                else:
+                    # non-recursive: let's do top-level + 1 layer
+                    for idx, (root, dirs, files) in enumerate(os.walk(extracted_dir)):
+                        for file_name in files:
+                            ext2 = os.path.splitext(file_name)[1].lower()
+                            print(f"[DEBUG] Found extracted file: {os.path.join(root, file_name)} with ext={ext2}")
+                            if ext2 in {'.csv', '.tsv', '.json'}:
+                                collected_files.append(os.path.join(root, file_name))
+                        # break after scanning the top-level (idx=0) + direct subdirectories (idx=1).
+                        # If you want only the top-level, do if idx == 0: break
+                        if idx >= 1:
+                            break
+
+            elif ext in {'.csv', '.tsv', '.json'}:
                 collected_files.append(os.path.abspath(path))
             else:
                 print(f"❌ Unsupported file type skipped: {path}")
+
         elif os.path.isdir(path):
+            # if user passes a directory instead of a zip
             if recursive:
-                for root, _, files in os.walk(path):
-                    for file in files:
-                        file_path = os.path.join(root, file)
-                        ext = os.path.splitext(file_path)[1].lower()
-                        if ext in SUPPORTED_EXTENSIONS:
-                            collected_files.append(os.path.abspath(file_path))
+                for root, dirs, files in os.walk(path):
+                    for file_name in files:
+                        ext2 = os.path.splitext(file_name)[1].lower()
+                        if ext2 in {'.csv', '.tsv', '.json'}:
+                            collected_files.append(os.path.abspath(os.path.join(root, file_name)))
             else:
-                for file in os.listdir(path):
-                    file_path = os.path.join(path, file)
+                # just top-level
+                for file_name in os.listdir(path):
+                    file_path = os.path.join(path, file_name)
                     if os.path.isfile(file_path):
-                        ext = os.path.splitext(file_path)[1].lower()
-                        if ext in SUPPORTED_EXTENSIONS:
+                        ext2 = os.path.splitext(file_name)[1].lower()
+                        if ext2 in {'.csv', '.tsv', '.json'}:
                             collected_files.append(os.path.abspath(file_path))
         else:
             print(f"❌ Invalid path skipped: {path}")
+
+    print(f"[DEBUG] collect_files returning {collected_files}")
     return collected_files
+
 
 def main():
     # Setup logging
@@ -117,17 +151,39 @@ def main():
         target_ontologies=args.ontologies,
         phenotype_columns=args.phenotype_columns  
     )
-
-    # Summary of results
+    
     for result in results:
-        status = result['status']
-        file = result['file']
+        status = result.get('status')
+        file_path = result.get('file')
+        err_msg = result.get('error', '')
+
+        base_name = os.path.basename(file_path) if file_path else "<Unknown>"
+
         if status == 'Processed':
-            log_activity(f"{os.path.basename(file)} processed successfully.", level='info')
+            log_activity(f"{base_name} processed successfully.", level='info')
+        elif status == 'ProcessedWithWarnings':
+            log_activity(
+                f"{base_name} completed with warnings. {err_msg}",
+                level='warning'
+            )
         elif status == 'Invalid':
-            log_activity(f"{os.path.basename(file)} failed validation: {result['error']}", level='warning')
+            log_activity(
+                f"{base_name} failed validation: {err_msg}",
+                level='warning'
+            )
+        elif status == 'Error':
+            log_activity(
+                f"{base_name} encountered an error: {err_msg}",
+                level='error'
+            )
         else:
-            log_activity(f"{os.path.basename(file)} encountered an error: {result['error']}", level='error')
+            # fallback
+            log_activity(
+                f"{base_name} finished with unrecognized status '{status}': {err_msg}",
+                level='warning'
+            )
+    
+
 
 if __name__ == "__main__":
     main()

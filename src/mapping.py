@@ -5,24 +5,40 @@ import pronto
 from rapidfuzz import fuzz, process
 import requests
 from datetime import datetime, timedelta
+from configuration import load_config
 
 class OntologyMapper:
     CACHE_DIR = os.path.expanduser("~/.phenoqc/ontologies")
 
-    def __init__(self, config_path: str = 'config.yaml'):
+    def __init__(self, config_source):
         """
-        Initializes the OntologyMapper by loading ontologies from the configuration file.
+        Initializes the OntologyMapper by loading ontologies from a config source.
 
         Args:
-            config_path (str): Path to the configuration YAML file.
+            config_source (Union[str, dict]): Either:
+                - A string path to the configuration file (YAML/JSON)
+                - An already-loaded dict with configuration data
         """
-        self.config = self.load_config(config_path)
+        if isinstance(config_source, dict):
+            # We got a dict directly (e.g., from load_config in the GUI or CLI)
+            self.config = config_source
+        elif isinstance(config_source, str):
+            # We got a path to a config file. Let's load it ourselves:
+            self.config = load_config(config_source)
+        else:
+            raise ValueError(
+                "OntologyMapper expects config_source to be either a dict or a path (str). "
+                f"Got: {type(config_source)}"
+            )
+
         self.cache_expiry_days = self.config.get('cache_expiry_days', 30)
         self.ontologies = self.load_ontologies()
         self.default_ontologies = self.config.get('default_ontologies', [])
         if not self.default_ontologies:
             raise ValueError("No default ontologies specified in the configuration.")
         self.fuzzy_threshold = self.config.get('fuzzy_threshold', 80)
+    
+    
 
     def load_config(self, config_path: str) -> Dict[str, Any]:
         """
