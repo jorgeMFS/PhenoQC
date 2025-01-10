@@ -16,7 +16,8 @@ def generate_qc_report(
     impute_strategy,
     quality_scores,
     output_path_or_buffer,
-    report_format='pdf'
+    report_format='pdf',
+    file_identifier=None
 ):
     """
     Generates a quality control report.
@@ -36,11 +37,15 @@ def generate_qc_report(
         # Generate PDF report using ReportLab Platypus
         styles = getSampleStyleSheet()
         story = []
-
+        
         # Title
         story.append(Paragraph("PhenoQC Quality Control Report", styles['Title']))
         story.append(Spacer(1, 12))
 
+        if file_identifier:
+            story.append(Paragraph(f"<b>Source file:</b> {file_identifier}", styles['Normal']))
+            story.append(Spacer(1, 12))
+        
         # Imputation Strategy
         story.append(Paragraph("Imputation Strategy Used:", styles['Heading2']))
         if impute_strategy is None:
@@ -55,35 +60,35 @@ def generate_qc_report(
         # Data Quality Scores
         story.append(Paragraph("Data Quality Scores:", styles['Heading2']))
         for score_name, score_value in quality_scores.items():
-            story.append(Paragraph(f"{score_name}: {score_value:.2f}%", styles['Normal']))
+            story.append(Paragraph(f"<b>{score_name}:</b> {score_value:.2f}%", styles['Normal']))
         story.append(Spacer(1, 12))
 
         # Schema Validation Results
         story.append(Paragraph("Schema Validation Results:", styles['Heading2']))
         for key, value in validation_results.items():
             if isinstance(value, pd.DataFrame) and not value.empty:
-                story.append(Paragraph(f"{key}: {len(value)} issues found.", styles['Normal']))
+                story.append(Paragraph(f"<b>{key}:</b> {len(value)} issues found.", styles['Normal']))
             else:
-                story.append(Paragraph(f"{key}: {value}", styles['Normal']))
+                story.append(Paragraph(f"<b>{key}:</b> {value}", styles['Normal']))
         story.append(Spacer(1, 12))
 
         # Missing Data Summary
         story.append(Paragraph("Missing Data Summary:", styles['Heading2']))
         for column, count in missing_data.items():
-            story.append(Paragraph(f"{column}: {count} missing values", styles['Normal']))
+            story.append(Paragraph(f"<b>{column}:</b> {count} missing values", styles['Normal']))
         story.append(Spacer(1, 12))
 
         # Records Flagged for Missing Data
-        story.append(Paragraph(f"Records Flagged for Missing Data: {flagged_records_count}", styles['Normal']))
+        story.append(Paragraph(f"<b>Records Flagged for Missing Data:</b> {flagged_records_count}", styles['Normal']))
         story.append(Spacer(1, 12))
 
         # Ontology Mapping Success Rates
         story.append(Paragraph("Ontology Mapping Success Rates:", styles['Heading2']))
         for ontology_id, stats in mapping_success_rates.items():
             story.append(Paragraph(f"{ontology_id}:", styles['Heading3']))
-            story.append(Paragraph(f"Total Terms: {stats['total_terms']}", styles['Normal']))
-            story.append(Paragraph(f"Mapped Terms: {stats['mapped_terms']}", styles['Normal']))
-            story.append(Paragraph(f"Success Rate: {stats['success_rate']:.2f}%", styles['Normal']))
+            story.append(Paragraph(f"<b>Total Terms:</b> {stats['total_terms']}", styles['Normal']))
+            story.append(Paragraph(f"<b>Mapped Terms:</b> {stats['mapped_terms']}", styles['Normal']))
+            story.append(Paragraph(f"<b>Success Rate:</b> {stats['success_rate']:.2f}%", styles['Normal']))
             story.append(Spacer(1, 12))
 
         # Visualizations

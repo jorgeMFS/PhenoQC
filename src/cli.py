@@ -4,6 +4,7 @@ import json
 from batch_processing import batch_process
 from logging_module import setup_logging, log_activity
 from utils.zip_utils import extract_zip
+import datetime
 
 SUPPORTED_EXTENSIONS = {'.csv', '.tsv', '.json', '.zip'}
 
@@ -121,7 +122,9 @@ def collect_files(input_paths, recursive=False):
 
 def main():
     # Setup logging
-    setup_logging()
+    now_str = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    single_log_filename = f"phenoqc_{now_str}.log"
+    setup_logging(log_file=single_log_filename, mode='w')
 
     args = parse_arguments()
 
@@ -149,7 +152,8 @@ def main():
         impute_strategy=args.impute,
         output_dir=args.output,
         target_ontologies=args.ontologies,
-        phenotype_columns=args.phenotype_columns  
+        phenotype_columns=args.phenotype_columns,
+        log_file_for_children=single_log_filename
     )
     
     for result in results:
@@ -182,8 +186,7 @@ def main():
                 f"{base_name} finished with unrecognized status '{status}': {err_msg}",
                 level='warning'
             )
-    
 
-
+    print(f"✅ Finished processing {len(results)} files.")
 if __name__ == "__main__":
     main()
