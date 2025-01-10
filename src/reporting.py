@@ -54,7 +54,6 @@ def generate_qc_report(
             strategy_display = impute_strategy.capitalize()
         story.append(Paragraph(strategy_display, styles['Normal']))
 
-
         story.append(Spacer(1, 12))
 
         # Data Quality Scores
@@ -65,10 +64,23 @@ def generate_qc_report(
 
         # Schema Validation Results
         story.append(Paragraph("Schema Validation Results:", styles['Heading2']))
+        # --------------------------------------------------------------------
+        # CHANGED: Use a small if-else to avoid showing "Empty DataFrame..."
+        # --------------------------------------------------------------------
         for key, value in validation_results.items():
-            if isinstance(value, pd.DataFrame) and not value.empty:
-                story.append(Paragraph(f"<b>{key}:</b> {len(value)} issues found.", styles['Normal']))
+            if isinstance(value, pd.DataFrame):
+                if not value.empty:
+                    story.append(Paragraph(
+                        f"<b>{key}:</b> {len(value)} issues found.",
+                        styles['Normal']
+                    ))
+                else:
+                    story.append(Paragraph(
+                        f"<b>{key}:</b> No issues found.",
+                        styles['Normal']
+                    ))
             else:
+                # If it's not a DataFrame at all, keep the original logic
                 story.append(Paragraph(f"<b>{key}:</b> {value}", styles['Normal']))
         story.append(Spacer(1, 12))
 
@@ -108,6 +120,7 @@ def generate_qc_report(
         else:
             doc = SimpleDocTemplate(output_path_or_buffer, pagesize=letter)
         doc.build(story)
+
     elif report_format == 'md':
         # Generate Markdown report
         md_lines = []
@@ -126,9 +139,15 @@ def generate_qc_report(
 
         # Schema Validation Results
         md_lines.append("## Schema Validation Results")
+        # --------------------------------------------------------------------
+        # CHANGED: Same skip-logic for empty DataFrames in MD version
+        # --------------------------------------------------------------------
         for key, value in validation_results.items():
-            if isinstance(value, pd.DataFrame) and not value.empty:
-                md_lines.append(f"- **{key}**: {len(value)} issues found.")
+            if isinstance(value, pd.DataFrame):
+                if not value.empty:
+                    md_lines.append(f"- **{key}**: {len(value)} issues found.")
+                else:
+                    md_lines.append(f"- **{key}**: No issues found.")
             else:
                 md_lines.append(f"- **{key}**: {value}")
         md_lines.append("")
@@ -164,6 +183,7 @@ def generate_qc_report(
                 f.write('\n'.join(md_lines))
         else:
             output_path_or_buffer.write('\n'.join(md_lines).encode('utf-8'))
+
     else:
         raise ValueError("Unsupported report format. Use 'pdf' or 'md'.")
 
