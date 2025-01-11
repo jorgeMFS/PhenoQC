@@ -1,12 +1,9 @@
-# validation.py
-
 import pandas as pd
 from typing import List, Dict, Any
 import fastjsonschema
 import re
 from datetime import datetime
 from logging_module import log_activity
-
 
 class DataValidator:
     """
@@ -56,28 +53,33 @@ class DataValidator:
 
     def validate_format_rowwise(self) -> bool:
         """
-        Checks each row as a whole against the JSON schema. 
-        If a row fails, we note it in `self.integrity_issues` 
+        Checks each row as a whole against the JSON schema.
+        If a row fails, we note it in `self.integrity_issues`
         and mark a 'SchemaViolationFlag' in self.df.
-        
+
         Returns:
             bool: True if all rows pass, False if any row fails.
         """
         valid = True
-        records = self.df.to_dict(orient='records')
-        invalid_indices = []
+        # Instead of orient='records', use 'index' so keys = actual row indices
+        records = self.df.to_dict(orient='index')
 
         # If not present, add a column to mark row-level violations
         if 'SchemaViolationFlag' not in self.df.columns:
             self.df['SchemaViolationFlag'] = False
 
-        for idx, record in enumerate(records):
+        invalid_indices = []
+
+        for row_idx, record in records.items():
             try:
-                self.validate_record(record)  # raises fastjsonschema.JsonSchemaException if invalid
+                self.validate_record(record)  # raises if invalid
             except fastjsonschema.JsonSchemaException as e:
-                invalid_indices.append(idx)
-                preview = str(record)[:300]  # optional for logging
-                msg = f"[SchemaValidation] Row #{idx+1} failed: {e.message}. Record snippet: {preview}"
+                invalid_indices.append(row_idx)
+                preview = str(record)[:300]
+                msg = (
+                    f"[SchemaValidation] Row #{row_idx} failed: {e.message}. "
+                    f"Record snippet: {preview}"
+                )
                 log_activity(msg, level='warning')
                 valid = False
 
@@ -85,7 +87,7 @@ class DataValidator:
             # Mark those rows as having schema violations
             self.df.loc[invalid_indices, 'SchemaViolationFlag'] = True
             # Store them for reporting
-            violators = self.df.iloc[invalid_indices]
+            violators = self.df.loc[invalid_indices]
             self.integrity_issues = pd.concat([self.integrity_issues, violators]).drop_duplicates()
 
         return valid
@@ -96,7 +98,7 @@ class DataValidator:
 
     def validate_cells(self):
         """
-        Checks each cell in self.df against the schema's "properties" constraints 
+        Checks each cell in self.df against the schema's "properties" constraints
         such as: type, minimum, format, etc.
 
         We store True in `self.invalid_mask[row, col]` if that cell fails.
@@ -148,13 +150,6 @@ class DataValidator:
     def _single_type_check(self, value, t) -> bool:
         """
         Check if a value matches a single JSON schema type.
-        
-        Args:
-            value: The value to check
-            t (str): JSON schema type ('null', 'string', 'number', 'integer', 'boolean', 'array', 'object')
-        
-        Returns:
-            bool: True if value matches the type, False otherwise
         """
         if t == 'null':
             return value is None
@@ -167,21 +162,24 @@ class DataValidator:
         elif t == 'boolean':
             return isinstance(value, bool) or value is None
         elif t == 'array':
-            # Check if value is a list, tuple, numpy array, or pandas Series
-            return (isinstance(value, (list, tuple, np.ndarray, pd.Series)) or 
-                    value is None)
+            return (
+                isinstance(value, (list, tuple, pd.Series))
+                or hasattr(value, '__iter__')  # or any other check you want
+                or value is None
+            )
         elif t == 'object':
-            # Check if value is a dict or pandas DataFrame
-            return (isinstance(value, (dict, pd.DataFrame)) or 
-                    (hasattr(value, '__dict__') and not isinstance(value, type)) or
-                    value is None)
+            return (
+                isinstance(value, (dict, pd.DataFrame))
+                or (hasattr(value, '__dict__') and not isinstance(value, type))
+                or value is None
+            )
         elif t == 'date':
             if value is None:
                 return True
             try:
                 if isinstance(value, str):
                     datetime.strptime(value, '%Y-%m-%d')
-                elif isinstance(value, (datetime, date)):
+                elif isinstance(value, datetime):
                     return True
                 return False
             except ValueError:
@@ -192,12 +190,12 @@ class DataValidator:
             try:
                 if isinstance(value, str):
                     pd.to_datetime(value)
-                elif isinstance(value, (datetime, pd.Timestamp)):
+                elif isinstance(value, datetime):
                     return True
                 return False
             except (ValueError, TypeError):
                 return False
-        
+
         # Unknown type - log warning and pass
         log_activity(f"Unknown type '{t}' in schema. Allowing value.", level='warning')
         return True
@@ -205,14 +203,8 @@ class DataValidator:
     def _check_format(self, value, fmt) -> bool:
         """
         Check special format constraints from JSON Schema.
-        
-        Args:
-            value: The value to check
-            fmt (str): Format type ('date', 'date-time', 'time', 'email', 'uri', 'uuid', etc.)
-        
-        Returns:
-            bool: True if value matches the format, False otherwise
         """
+        import re
         if value is None:
             return True
 
@@ -226,23 +218,20 @@ class DataValidator:
             except (ValueError, TypeError):
                 return False
         elif fmt == 'time':
-            pattern = re.compile(r'^([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$')
+            pattern = re.compile(r'^([01]\d|2[0-3]):([0-5]\d):([0-5]\d)')
             return bool(pattern.match(str(value)))
         elif fmt == 'email':
-            pattern = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+            pattern = re.compile(r'^[^@]+@[^@]+\.[^@]+$')
             return bool(pattern.match(str(value)))
         elif fmt == 'uri':
-            try:
-                from urllib.parse import urlparse
-                result = urlparse(str(value))
-                return all([result.scheme, result.netloc])
-            except:
-                return False
+            from urllib.parse import urlparse
+            result = urlparse(str(value))
+            return all([result.scheme, result.netloc])
         elif fmt == 'uuid':
             pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I)
             return bool(pattern.match(str(value)))
         elif fmt == 'identifier':
-            # Custom format for phenotype identifiers (e.g., "HP:0000822")
+            # E.g. "HP:0000822"
             pattern = re.compile(r'^[A-Z]+:\d+$')
             return bool(pattern.match(str(value)))
         elif fmt == 'percentage':
@@ -252,13 +241,12 @@ class DataValidator:
             except (ValueError, TypeError):
                 return False
         elif fmt == 'phone':
-            # Basic international phone format
             pattern = re.compile(r'^\+?[\d\s-]{10,}$')
             return bool(pattern.match(str(value)))
 
-        # Log warning for unknown formats but don't fail validation
         log_activity(f"Unknown format '{fmt}' requested. Allowing value.", level='warning')
         return True
+
     # -------------------------------------------------------------------------
     # 3. Duplicate and Conflict Detection
     # -------------------------------------------------------------------------
@@ -273,7 +261,7 @@ class DataValidator:
 
     def detect_conflicts(self) -> pd.DataFrame:
         """
-        Among the identified duplicates, detects rows that have conflicting info 
+        Among the identified duplicates, detects rows that have conflicting info
         in columns other than unique_identifiers.
         """
         if self.duplicate_records.empty:
@@ -281,10 +269,9 @@ class DataValidator:
 
         conflict_rows = []
         grouped = self.duplicate_records.groupby(self.unique_identifiers)
-
         for _, group in grouped:
-            # If any non-identifier column has more than 1 unique value => conflict
             non_id_cols = [c for c in group.columns if c not in self.unique_identifiers]
+            # If any non-ID column has >1 unique value => conflict
             if (group[non_id_cols].nunique(dropna=False) > 1).any():
                 conflict_rows.append(group)
 
@@ -298,40 +285,36 @@ class DataValidator:
 
     def verify_integrity(self) -> pd.DataFrame:
         """
-        Checks for required fields, type constraints, and referential integrity.
-        Accumulates any records that fail in `self.integrity_issues`.
+        Checks for required fields, typed constraints, referential integrity, etc.
         """
-        # local aggregator
         integrity_issues_local = pd.DataFrame()
 
         # A) Check for missing required fields
         required_fields = self.schema.get('required', [])
-        missing_required = self.df[self.df[required_fields].isnull().any(axis=1)]
-        if not missing_required.empty:
-            integrity_issues_local = pd.concat([integrity_issues_local, missing_required])
+        if required_fields:
+            missing_required = self.df[self.df[required_fields].isnull().any(axis=1)]
+            if not missing_required.empty:
+                integrity_issues_local = pd.concat([integrity_issues_local, missing_required])
 
-        # B) Additional typed constraints, e.g. 'minimum'
-        #    (We can do a simplified approach, or rely on row/cell validation above.)
-        #    This example just merges row-level approach:
-        #    If you want more detailed typed checks, do them here.
-        
+        # B) Additional checks (or rely on row/cell logic)
+        # ...
 
         # C) Check referential integrity if reference_data is provided
         if self.reference_data is not None and self.reference_columns is not None:
             self.check_referential_integrity()
 
-        # Merge local
         if not integrity_issues_local.empty:
-            self.integrity_issues = pd.concat([self.integrity_issues, integrity_issues_local]).drop_duplicates()
+            self.integrity_issues = pd.concat(
+                [self.integrity_issues, integrity_issues_local]
+            ).drop_duplicates()
 
         return self.integrity_issues
 
     def check_referential_integrity(self):
         """
         Ensures that values in self.reference_columns exist in self.reference_data.
-        Accumulates missing references in self.referential_integrity_issues.
         """
-        if self.reference_data is None or not self.reference_columns:
+        if not self.reference_data or not self.reference_columns:
             log_activity("No reference data/columns, skipping referential checks.", level='info')
             return
 
@@ -348,7 +331,7 @@ class DataValidator:
                 ]).drop_duplicates()
 
     # -------------------------------------------------------------------------
-    # 5. Anomaly Detection (e.g., Outliers)
+    # 5. Anomaly Detection (Outliers)
     # -------------------------------------------------------------------------
 
     def detect_anomalies(self):
@@ -372,49 +355,31 @@ class DataValidator:
         self.anomalies.drop_duplicates(inplace=True)
 
     # -------------------------------------------------------------------------
-    # 6. Orchestrator: run all validations
+    # 6. Orchestrator
     # -------------------------------------------------------------------------
 
     def run_all_validations(self) -> Dict[str, Any]:
         """
-        Runs row-level validation, cell-level validation, duplicates, conflicts,
+        Runs row-level validation, cell-level checks, duplicates, conflicts,
         referential checks, and anomaly detection.
-
-        Returns:
-            dict: Dictionary summarizing all results.
         """
-        # 1) row-level JSON schema
         format_valid = self.validate_format_rowwise()
-
-        # 2) cell-level checks
         self.validate_cells()
-
-        # 3) duplicates & conflicts
         dups = self.identify_duplicates()
         conflicts = self.detect_conflicts()
-
-        # 4) referential integrity & other data checks
         self.verify_integrity()
-
-        # 5) anomalies
         self.detect_anomalies()
 
-        # Merge all integrity issues
-        # self.integrity_issues was already updated
-        # self.referential_integrity_issues is separate, but we can combine them if needed
-        # For reporting convenience, you can do:
-        combined_issues = pd.concat([self.integrity_issues, self.referential_integrity_issues]).drop_duplicates()
+        combined_issues = pd.concat([
+            self.integrity_issues, self.referential_integrity_issues
+        ]).drop_duplicates()
 
-        results = {
+        return {
             "Format Validation": format_valid,
             "Duplicate Records": dups,
             "Conflicting Records": conflicts,
             "Integrity Issues": combined_issues,
             "Referential Integrity Issues": self.referential_integrity_issues,
             "Anomalies Detected": self.anomalies,
-            # Additionally, we can return the cell-level invalid mask:
             "Invalid Mask": self.invalid_mask,
-            
         }
-        return results
-

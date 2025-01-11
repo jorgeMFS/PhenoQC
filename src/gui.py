@@ -748,7 +748,7 @@ def main():
                             st.stop()
 
                         # 5) Initialize OntologyMapper
-                        ontology_mapper = OntologyMapper(config_path=config_path)
+                        ontology_mapper = OntologyMapper(config_path)
 
                         # 6) Grab user’s imputation settings from session
                         impute_config = st.session_state.get('imputation_config', {})
