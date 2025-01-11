@@ -156,7 +156,7 @@ def process_file(
             sample_size_per_chunk = 1000
             max_total_samples = 10000
 
-            # Build final CSV path using the new unique_output_name logic
+            # Build final CSV path
             output_data_file = unique_output_name(file_path, output_dir, suffix='.csv')
             if os.path.exists(output_data_file):
                 os.remove(output_data_file)
@@ -187,6 +187,9 @@ def process_file(
             global_invalid_mask = pd.DataFrame()
             row_offset = 0
             chunk_progress = 80
+
+            # NEW aggregator: track row indices that fail JSON schema
+            schema_fail_indices_global = set()
 
             # 3) Process each chunk
             for chunk in all_chunks:
@@ -232,7 +235,15 @@ def process_file(
                         "Invalid Mask": pd.DataFrame(False, index=chunk.index, columns=chunk.columns)
                     }
 
-                # Format validation?
+                # Keep track of row-level schema fails if 'SchemaViolationFlag' is set
+                # Only if chunk isn't empty and the 'SchemaViolationFlag' column exists
+                if 'SchemaViolationFlag' in chunk.columns:
+                    fails_in_chunk = chunk.index[chunk['SchemaViolationFlag'] == True]
+                    # Add them to the global set
+                    for row_id in fails_in_chunk:
+                        schema_fail_indices_global.add(row_id)
+
+                # (B) Format validation?
                 if not chunk_results["Format Validation"]:
                     format_valid = False
                     if not chunk_results["Integrity Issues"].empty:
@@ -248,10 +259,11 @@ def process_file(
                 if not chunk_results["Integrity Issues"].empty:
                     integrity_issues.append(chunk_results["Integrity Issues"])
 
+                # Merge invalid mask
                 chunk_invalid_mask = chunk_results["Invalid Mask"]
                 global_invalid_mask = pd.concat([global_invalid_mask, chunk_invalid_mask], axis=0)
 
-                # (B) Duplicates across chunks
+                # (C) Duplicates across chunks
                 if unique_identifiers:
                     ids_in_chunk = set(map(tuple, chunk[unique_identifiers].drop_duplicates().values.tolist()))
                     duplicates_in_ids = unique_id_set.intersection(ids_in_chunk)
@@ -260,14 +272,14 @@ def process_file(
                         duplicate_records.append(cross_dup)
                     unique_id_set.update(ids_in_chunk)
 
-                # (C) Missing data
+                # (D) Missing data
                 from missing_data import detect_missing_data, flag_missing_data_records, impute_missing_data
                 missing = detect_missing_data(chunk)
                 missing_counts = missing_counts.add(missing, fill_value=0)
                 chunk = flag_missing_data_records(chunk)
                 flagged_records_count += chunk['MissingDataFlag'].sum()
 
-                # (D) Impute
+                # Impute
                 try:
                     chunk = impute_missing_data(chunk, strategy=impute_strategy, field_strategies=field_strategies)
                 except Exception as ex_impute:
@@ -293,7 +305,6 @@ def process_file(
                         chunk[col_name] = chunk[column].map(
                             lambda x: mappings.get(str(x), {}).get(onto_id) if pd.notnull(x) else None
                         )
-                        # stats
                         if onto_id not in cumulative_mapping_stats:
                             cumulative_mapping_stats[onto_id] = {'total_terms': 0, 'mapped_terms': 0}
                         valid_terms = [t for t in terms_in_chunk if pd.notnull(t)]
@@ -328,8 +339,8 @@ def process_file(
 
             # 4) Summarize
             if not format_valid:
-                num_invalid = sum(len(df_part) for df_part in integrity_issues) if integrity_issues else 0
-                msg4 = f"Format validation failed. {num_invalid} record(s) do not match the JSON schema."
+                num_invalid_integrity = sum(len(df_part) for df_part in integrity_issues) if integrity_issues else 0
+                msg4 = f"Format validation failed. {num_invalid_integrity} record(s) do not match the JSON schema."
                 log_activity(f"{file_path}: {msg4}", level='warning')
                 if error_msg:
                     error_msg += f" | {msg4}"
@@ -337,6 +348,7 @@ def process_file(
                     error_msg = msg4
                 final_status = 'ProcessedWithWarnings'
 
+            # Combine duplicates/conflicts
             all_duplicates = pd.concat(duplicate_records).drop_duplicates() if duplicate_records else pd.DataFrame()
             all_conflicts = pd.concat(conflicting_records).drop_duplicates() if conflicting_records else pd.DataFrame()
             all_integrity = pd.concat(integrity_issues).drop_duplicates() if integrity_issues else pd.DataFrame()
@@ -352,7 +364,7 @@ def process_file(
                 "Invalid Mask": global_invalid_mask.sort_index()
             }
 
-            # Mapping stats
+            # 5) Mapping stats
             mapping_success_rates = {}
             for onto_id, stats in cumulative_mapping_stats.items():
                 total_terms = stats['total_terms']
@@ -365,9 +377,13 @@ def process_file(
                 }
 
             total_records = total_records or 1
-            valid_records = total_records - len(all_integrity)
-            schema_validation_score = (valid_records / total_records) * 100
 
+            # *** Only count the unique row indices that had SchemaViolationFlag == True
+            num_schema_fails = len(schema_fail_indices_global)
+            valid_records_for_schema = total_records - num_schema_fails
+            schema_validation_score = (valid_records_for_schema / total_records) * 100
+
+            # Missing data score
             total_cells = total_records * len(sample_df.columns)
             total_missing = missing_counts.sum()
             if len(sample_df.columns) == 0:
@@ -375,8 +391,11 @@ def process_file(
             else:
                 missing_data_score = ((total_cells - total_missing) / total_cells) * 100 if total_cells > 0 else 100.0
 
-            success_rates_list = [d['success_rate'] for d in mapping_success_rates.values()]
+            # Mapping success
+            success_rates_list = [v['success_rate'] for v in mapping_success_rates.values()]
             mapping_success_score = sum(success_rates_list)/len(success_rates_list) if success_rates_list else 0
+
+            # Overall
             overall_quality_score = (schema_validation_score + missing_data_score + mapping_success_score) / 3.0
 
             quality_scores = {
@@ -386,7 +405,7 @@ def process_file(
                 'Overall Quality Score': overall_quality_score
             }
 
-            # 5) Generate final report
+            # 6) Generate final report
             report_path = unique_output_name(file_path, output_dir, suffix='_report.pdf')
 
             figs = create_visual_summary(sample_df, phenotype_columns=phenotype_columns, output_image_path=None)
@@ -400,7 +419,6 @@ def process_file(
                 except Exception as e:
                     log_activity(f"Error saving image {image_filename}: {e}", level='error')
 
-            # Notice we pass only the base name to the PDF’s “Source file”:
             base_display_name = os.path.basename(file_path)
 
             generate_qc_report(
@@ -413,7 +431,7 @@ def process_file(
                 quality_scores=quality_scores,
                 output_path_or_buffer=report_path,
                 report_format=report_format,
-                file_identifier=base_display_name  # <--- simpler name in PDF
+                file_identifier=base_display_name
             )
             log_activity(f"{file_path}: QC report generated at {report_path}.")
             pbar.update(5)
@@ -443,7 +461,6 @@ def process_file(
             'status': 'Error',
             'error': str(e)
         }
-
 
 def batch_process(
     files,
