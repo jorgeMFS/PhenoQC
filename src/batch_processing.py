@@ -209,18 +209,38 @@ def process_file(
                     validator = DataValidator(chunk, schema, unique_identifiers)
                     chunk_results = validator.run_all_validations()
                 except KeyError as e:
-                    final_status = 'ProcessedWithWarnings'
-                    msg = f"Missing columns in chunk: {str(e)}"
-                    log_activity(f"{file_path}: {msg}", level='warning')
-                    chunk_results = {
-                        "Format Validation": False,
-                        "Duplicate Records": pd.DataFrame(),
-                        "Conflicting Records": pd.DataFrame(),
-                        "Integrity Issues": pd.DataFrame(),
-                        "Referential Integrity Issues": pd.DataFrame(),
-                        "Anomalies Detected": pd.DataFrame(),
-                        "Invalid Mask": pd.DataFrame(False, index=chunk.index, columns=chunk.columns)
-                    }
+                    missing_col = str(e).strip("'")
+
+                    # Check if missing_col is truly required or in unique_identifiers
+                    required_cols = schema.get("required", [])
+                    if (missing_col in required_cols) or (missing_col in unique_identifiers):
+                        # Real problem
+                        final_status = 'ProcessedWithWarnings'
+                        msg = (f"Missing *required* or unique-id column '{missing_col}' "
+                            f"in chunk => warnings.")
+                        log_activity(f"{file_path}: {msg}", level='warning')
+                        chunk_results = {
+                            "Format Validation": False,
+                            "Duplicate Records": pd.DataFrame(),
+                            "Conflicting Records": pd.DataFrame(),
+                            "Integrity Issues": pd.DataFrame(),
+                            "Referential Integrity Issues": pd.DataFrame(),
+                            "Anomalies Detected": pd.DataFrame(),
+                            "Invalid Mask": pd.DataFrame(False, index=chunk.index, columns=chunk.columns)
+                        }
+                    else:
+                        # It's an optional column => skip it silently
+                        log_activity(
+                            f"Skipping optional column '{missing_col}' for chunk, not raising warnings.",
+                            level='info'
+                        )
+                        # Rebuild unique_identifiers minus missing_col if needed
+                        new_id_list = [col for col in unique_identifiers if col != missing_col]
+
+                        # Re-init the validator with the "safe" columns
+                        validator = DataValidator(chunk, schema, new_id_list)
+                        chunk_results = validator.run_all_validations()
+
                 except Exception as ex:
                     final_status = 'ProcessedWithWarnings'
                     msg2 = f"Error during validation: {str(ex)}"
@@ -301,8 +321,8 @@ def process_file(
                 # (E) Ontology mapping
                 for column, ontologies in phenotype_columns.items():
                     if column not in chunk.columns:
-                        log_activity(f"'{column}' column not found in chunk.", level='warning')
-                        final_status = 'ProcessedWithWarnings'
+                        # If missing, treat it as an optional column and skip.
+                        log_activity(f"Skipping optional column '{column}' (not present).", level='info')
                         continue
 
                     terms_in_chunk = chunk[column].dropna().unique()

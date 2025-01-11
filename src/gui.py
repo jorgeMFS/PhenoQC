@@ -752,7 +752,8 @@ def main():
 
                         # 6) Grab user’s imputation settings from session
                         impute_config = st.session_state.get('imputation_config', {})
-                        impute_strategy_value = impute_config.get('global_strategy', 'none')
+                        impute_strategy_value = impute_config.get('global_strategy', 'none') 
+                        st.session_state['impute_strategy_value'] = impute_strategy_value #check if this is correct
                         field_strategies = impute_config.get('column_strategies', {})
 
                         # 7) Prepare output directory
@@ -813,6 +814,7 @@ def main():
         # Once processing is done, show results in tabs
         if st.session_state.steps_completed.get("Run QC and View Results", False):
             st.header("Results")
+            impute_strategy_value = st.session_state.get('impute_strategy_value', 'none')
             if 'processing_results' in st.session_state and st.session_state['processing_results']:
                 tab_labels = [os.path.basename(fname) for fname, _, _ in st.session_state['processing_results']]
                 tabs = st.tabs(tab_labels)
