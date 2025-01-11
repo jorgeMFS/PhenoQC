@@ -261,7 +261,17 @@ def process_file(
 
                 # Merge invalid mask
                 chunk_invalid_mask = chunk_results["Invalid Mask"]
+
+                # 1) Gather the union of columns from global_invalid_mask and chunk_invalid_mask
+                all_cols = sorted(set(global_invalid_mask.columns) | set(chunk_invalid_mask.columns))
+                
+                # 2) Reindex both so they have the same columns, filling missing cells with False
+                global_invalid_mask = global_invalid_mask.reindex(columns=all_cols, fill_value=False)
+                chunk_invalid_mask = chunk_invalid_mask.reindex(columns=all_cols, fill_value=False)
+                
+                # 3) Now safely concatenate row-wise
                 global_invalid_mask = pd.concat([global_invalid_mask, chunk_invalid_mask], axis=0)
+
 
                 # (C) Duplicates across chunks
                 if unique_identifiers:
