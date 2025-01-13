@@ -22,6 +22,7 @@ setup(
         'fastjsonschema',
         'pronto',
         'rapidfuzz',
+        'psutil',
     ],
     extras_require={
         'test': [
