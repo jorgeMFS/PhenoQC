@@ -18,7 +18,7 @@ Example usage:
 
   # 2) Multi-ontology
   python check_ontology_accuracy.py \
-    --processed_csv ./output/reports/synthetic_multi_data.csv \
+    --processed_csv ./output/reports/synthetic_multi_data_fa507_csv.csv \
     --ground_truth  ./output/synthetic_multi_ground_truth.csv \
     --id_column SampleID \
     --hpo_column HPO_ID \
