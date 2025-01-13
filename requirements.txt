@@ -14,3 +14,4 @@ fancyimpute
 fastjsonschema
 pronto
 rapidfuzz
+streamlit-aggrid

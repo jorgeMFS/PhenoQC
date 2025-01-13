@@ -40,6 +40,7 @@ class TestReportingModule(unittest.TestCase):
         self._create_dummy_image(self.temp_image1.name, color='red')
         self._create_dummy_image(self.temp_image2.name, color='blue')
         self.visualization_images.extend([self.temp_image1.name, self.temp_image2.name])
+
         # Paths for the output report
         self.output_report_pdf = tempfile.mktemp(suffix='.pdf')
         self.output_report_md = tempfile.mktemp(suffix='.md')
@@ -67,6 +68,7 @@ class TestReportingModule(unittest.TestCase):
 
     def _create_dummy_image(self, path, color='white'):
         """Creates a simple 10x10 PNG image and saves it to the specified path."""
+        from PIL import Image
         img = Image.new('RGB', (10, 10), color=color)
         img.save(path, 'PNG')
 
@@ -79,12 +81,11 @@ class TestReportingModule(unittest.TestCase):
             self.mapping_success_rates,
             self.visualization_images,
             self.impute_strategy,
-            self.quality_scores,  # Added quality_scores
+            self.quality_scores,
             self.output_report_pdf,
             report_format='pdf'
         )
         self.assertTrue(os.path.exists(self.output_report_pdf), "PDF QC report was not created.")
-        # Optionally, add more assertions to verify PDF content
 
     def test_generate_qc_report_md(self):
         """Test generating a Markdown QC report."""
@@ -95,50 +96,52 @@ class TestReportingModule(unittest.TestCase):
             self.mapping_success_rates,
             self.visualization_images,
             self.impute_strategy,
-            self.quality_scores,  # Added quality_scores
+            self.quality_scores,
             self.output_report_md,
             report_format='md'
         )
         self.assertTrue(os.path.exists(self.output_report_md), "Markdown QC report was not created.")
-        # Optionally, add more assertions to verify Markdown content
 
     def test_create_visual_summary_with_missing_data(self):
         """Test creating visual summaries with missing data."""
-        # Create a DataFrame with missing data
+        # Provide a df with missing data
         df_with_missing = pd.DataFrame({
             "Age": [34, None, 45],
             "Measurement": [120, 85, None],
             "Phenotype": ["Hypertension", "Diabetes", "Asthma"]
         })
-        figs = create_visual_summary(df_with_missing, output_image_path=None)
+        # Provide a minimal phenotype_columns so we do get a bar chart
+        phenotype_cols = {"Phenotype": ["HPO"]}
+
+        figs = create_visual_summary(df_with_missing, phenotype_columns=phenotype_cols, output_image_path=None)
         self.assertIsInstance(figs, list, "Visual summaries should return a list of figures.")
         self.assertGreater(len(figs), 0, "There should be at least one visual summary created.")
 
     def test_create_visual_summary_no_missing_data(self):
         """Test creating visual summaries with no missing data."""
-        # Create a DataFrame with no missing data
-        no_missing_data = pd.DataFrame({
+        df_no_missing = pd.DataFrame({
             "Age": [34, 28, 45],
             "Measurement": [120, 85, 95],
             "Phenotype": ["Hypertension", "Diabetes", "Asthma"]
         })
-        figs = create_visual_summary(no_missing_data, output_image_path=None)
+        # Again, supply phenotype_columns
+        phenotype_cols = {"Phenotype": ["HPO"]}
+
+        figs = create_visual_summary(df_no_missing, phenotype_columns=phenotype_cols, output_image_path=None)
         self.assertIsInstance(figs, list, "Visual summaries should return a list of figures.")
         self.assertGreater(len(figs), 0, "There should be at least one visual summary created.")
 
     def test_create_visual_summary_invalid_input(self):
         """Test creating visual summaries with invalid input type."""
+        # This requires that create_visual_summary does a type check at the start.
         with self.assertRaises(TypeError):
-            # Passing an integer instead of DataFrame
             create_visual_summary(42, output_image_path=None)
         
         with self.assertRaises(TypeError):
-            # Passing a list instead of DataFrame
             create_visual_summary(["Age", "Measurement"], output_image_path=None)
         
         with self.assertRaises(TypeError):
-            # Passing a pandas Series instead of DataFrame
-            create_visual_summary(self.missing_data, output_image_path=None)
+            create_visual_summary(pd.Series([1,2,3]), output_image_path=None)
 
     def test_generate_qc_report_with_no_issues_pdf(self):
         """Test generating a PDF QC report with no validation issues."""
@@ -157,7 +160,7 @@ class TestReportingModule(unittest.TestCase):
             self.mapping_success_rates,
             self.visualization_images,
             self.impute_strategy,
-            self.quality_scores,  # Added quality_scores
+            self.quality_scores,
             self.output_report_pdf,
             report_format='pdf'
         )
@@ -180,7 +183,7 @@ class TestReportingModule(unittest.TestCase):
             self.mapping_success_rates,
             self.visualization_images,
             self.impute_strategy,
-            self.quality_scores,  # Added quality_scores
+            self.quality_scores,
             self.output_report_md,
             report_format='md'
         )

@@ -95,8 +95,8 @@ synonym: "Lack of red blood cells" EXACT []
                 'default_ontologies': ['HPO', 'DO']
             }, f)
 
-        # Initialize OntologyMapper
-        self.mapper = OntologyMapper(config_path=self.config_file)
+        # Initialize OntologyMapper with the path as a single argument
+        self.mapper = OntologyMapper(self.config_file)
 
     def tearDown(self):
         # Clean up temporary directories and files
@@ -116,10 +116,8 @@ synonym: "Lack of red blood cells" EXACT []
     def test_map_terms_default_ontology(self):
         # Define terms to map
         terms = ["Hypertension", "Asthma", "Unknown Term"]
-
         # Perform mapping using default ontologies (HPO and DO)
         mappings = self.mapper.map_terms(terms)
-
         # Define expected mappings
         expected = {
             "Hypertension": {
@@ -135,16 +133,13 @@ synonym: "Lack of red blood cells" EXACT []
                 "DO": None
             }
         }
-
         self.assertEqual(mappings, expected, "Default term mappings do not match expected values.")
 
     def test_map_terms_with_synonyms(self):
         # Define terms with synonyms
         terms = ["High blood pressure", "Sugar diabetes", "Reactive airway disease"]
-
         # Perform mapping using default ontologies (HPO and DO)
         mappings = self.mapper.map_terms(terms)
-
         # Define expected mappings
         expected = {
             "High blood pressure": {
@@ -160,7 +155,6 @@ synonym: "Lack of red blood cells" EXACT []
                 "DO": "DOID:9352"
             }
         }
-
         self.assertEqual(mappings, expected, "Synonym term mappings do not match expected values.")
 
     def test_map_terms_with_custom_mappings(self):
@@ -180,7 +174,6 @@ id: MP:0001902
 name: Abnormal behavior
 synonym: "Behaviors differing from the norm" EXACT []
 """
-
         # Create temporary MPO ontology file
         mpo_file = os.path.join(self.temp_dir.name, "MPO.obo")
         with open(mpo_file, 'w') as f:
@@ -189,7 +182,6 @@ synonym: "Behaviors differing from the norm" EXACT []
         # Update the configuration to include MPO
         with open(self.config_file, 'r') as f:
             config_data = yaml.safe_load(f)
-
         config_data['ontologies']['MPO'] = {
             'name': 'Mammalian Phenotype Ontology',
             'file': mpo_file
@@ -200,7 +192,7 @@ synonym: "Behaviors differing from the norm" EXACT []
             yaml.dump(config_data, f)
 
         # Reload OntologyMapper with updated config
-        self.mapper = OntologyMapper(config_path=self.config_file)
+        self.mapper = OntologyMapper(self.config_file)
 
         # Verify that MPO is now supported
         supported = self.mapper.get_supported_ontologies()
@@ -208,24 +200,21 @@ synonym: "Behaviors differing from the norm" EXACT []
 
         # Define terms to map, including ones from MPO
         terms = ["Obesity", "Abnormal behavior"]
-
         # Perform mapping using all default ontologies (HPO, DO, MPO)
         mappings = self.mapper.map_terms(terms)
-
         # Define expected mappings
         expected = {
             "Obesity": {
-                "HPO": None,           # No HPO term defined for Obesity in sample HPO.obo
+                "HPO": None,
                 "DO": "DOID:9351",
                 "MPO": "MP:0001943"
             },
             "Abnormal behavior": {
-                "HPO": None,           # No HPO term defined for Abnormal behavior
-                "DO": None,            # No DO term defined for Abnormal behavior
+                "HPO": None,
+                "DO": None,
                 "MPO": "MP:0001902"
             }
         }
-
         self.assertEqual(mappings, expected, "Custom term mappings do not match expected values.")
 
     def test_add_new_ontology(self):
@@ -245,7 +234,6 @@ id: MP:0001902
 name: Abnormal behavior
 synonym: "Behaviors differing from the norm" EXACT []
 """
-
         # Create temporary MPO ontology file
         mpo_file = os.path.join(self.temp_dir.name, "MPO.obo")
         with open(mpo_file, 'w') as f:
@@ -266,7 +254,7 @@ synonym: "Behaviors differing from the norm" EXACT []
             yaml.dump(config_data, f)
         
         # Reload OntologyMapper
-        self.mapper = OntologyMapper(config_path=self.config_file)
+        self.mapper = OntologyMapper(self.config_file)
         
         # Verify that MPO is now supported
         supported = self.mapper.get_supported_ontologies()
@@ -274,7 +262,6 @@ synonym: "Behaviors differing from the norm" EXACT []
         
         # Define terms to map
         terms = ["Obesity", "Abnormal behavior"]
-
         # Perform mapping using MPO only
         mappings = self.mapper.map_terms(terms, target_ontologies=["MPO"])
         
@@ -292,7 +279,7 @@ synonym: "Behaviors differing from the norm" EXACT []
             f.write("invalid_yaml: [unbalanced brackets")
 
         with self.assertRaises(Exception):
-            OntologyMapper(config_path=invalid_config_path)
+            OntologyMapper(invalid_config_path)
 
     def test_missing_ontology_file(self):
         # Test initialization with a missing ontology file
@@ -318,7 +305,7 @@ default_ontologies: [HPO]
             f.write(yaml_dump)
         
         with self.assertRaises(FileNotFoundError):
-            OntologyMapper(config_path=missing_config_file)
+            OntologyMapper(missing_config_file)
 
 if __name__ == '__main__':
     unittest.main()
