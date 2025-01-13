@@ -198,6 +198,9 @@ def create_visual_summary(df, phenotype_columns=None, output_image_path=None):
         'background': '#FFFFFF',
         'text': '#2C3E50'
     }
+    if not isinstance(df, pd.DataFrame):
+        raise TypeError("df must be a pandas DataFrame for create_visual_summary().")
+
 
     if phenotype_columns:
         for column, ontologies in phenotype_columns.items():

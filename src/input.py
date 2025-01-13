@@ -12,7 +12,7 @@ def read_csv(file_path, chunksize=10000):
     Returns:
         Iterator[pd.DataFrame]: DataFrame chunks.
     """
-    return pd.read_csv(file_path, chunksize=chunksize)
+    return pd.read_csv(file_path, chunksize=chunksize, dtype=str)
 
 def read_tsv(file_path, chunksize=10000):
     """
@@ -25,7 +25,7 @@ def read_tsv(file_path, chunksize=10000):
     Returns:
         Iterator[pd.DataFrame]: DataFrame chunks.
     """
-    return pd.read_csv(file_path, sep='\t', chunksize=chunksize)
+    return pd.read_csv(file_path, sep='\t', chunksize=chunksize, dtype=str)
 
 def read_json(file_path, chunksize=10000):
     """

@@ -28,6 +28,8 @@ class DataValidator:
             reference_data (pd.DataFrame, optional): A reference dataset for cross-checking references (if any).
             reference_columns (list, optional): Which columns in `df` must match `reference_data`.
         """
+        for c in df.columns:
+            df[c] = df[c].astype('object')
         self.df = df
         self.schema = schema
         self.unique_identifiers = unique_identifiers
@@ -35,9 +37,11 @@ class DataValidator:
         self.reference_columns = reference_columns
 
         # DataFrames for issues found
-        self.duplicate_records = pd.DataFrame()
-        self.conflicting_records = pd.DataFrame()
-        self.integrity_issues = pd.DataFrame()
+        # self.duplicate_records = pd.DataFrame()
+        # self.conflicting_records = pd.DataFrame()
+        self.duplicate_records = pd.DataFrame(columns=df.columns).astype('object')
+        self.conflicting_records = pd.DataFrame(columns=df.columns).astype('object')
+        self.integrity_issues = pd.DataFrame(columns=df.columns).astype('object')
         self.referential_integrity_issues = pd.DataFrame()
         self.anomalies = pd.DataFrame()
 
@@ -85,11 +89,21 @@ class DataValidator:
 
         if invalid_indices:
             # Mark those rows as having schema violations
-            self.df.loc[invalid_indices, 'SchemaViolationFlag'] = True
-            # Store them for reporting
-            violators = self.df.loc[invalid_indices]
-            self.integrity_issues = pd.concat([self.integrity_issues, violators]).drop_duplicates()
+            self.df.loc[invalid_indices, 'SchemaViolationFlag'] = True   
+            violators = self.df.loc[invalid_indices].copy()
 
+            # Force the relevant columns to object as well
+            for col in violators.columns:
+                violators[col] = violators[col].astype('object')            
+            
+            # --- Fix: unify dtypes so we never lose the literal strings ---
+            if not self.integrity_issues.empty:
+                common_cols = self.integrity_issues.columns.intersection(violators.columns)
+                for col in common_cols:
+                    # Force both to object to avoid "Thirty" -> NaN
+                    self.integrity_issues[col] = self.integrity_issues[col].astype('object')
+                    violators[col] = violators[col].astype('object')
+            self.integrity_issues = pd.concat([self.integrity_issues, violators]).drop_duplicates()
         return valid
 
     # -------------------------------------------------------------------------

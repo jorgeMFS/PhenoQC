@@ -54,5 +54,8 @@ venv/
 # Other miscellaneous
 *.bak
 *.backup
+# Concatenation files
 concatenate_src_files.py
+concat_tests.py
+test_concat.txt
 concatenated_src.txt

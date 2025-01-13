@@ -69,7 +69,8 @@ def on_editor_change():
 
 def display_editable_grid_with_highlighting(df: pd.DataFrame,
                                             invalid_mask: pd.DataFrame,
-                                            allow_edit: bool = True) -> pd.DataFrame:
+                                            allow_edit: bool = True
+                                            ,key: str = None) -> pd.DataFrame:
     """
     Simple, functional editable grid with error highlighting and scrollable width.
     Only editable if allow_edit=True.
@@ -122,6 +123,7 @@ def display_editable_grid_with_highlighting(df: pd.DataFrame,
     # Render the grid
     grid_response = AgGrid(
         df,
+        key=key,
         gridOptions=grid_options,
         data_return_mode='AS_INPUT',
         update_mode='MODEL_CHANGED',
@@ -904,7 +906,8 @@ def main():
                             editable_df = display_editable_grid_with_highlighting(
                                 st.session_state[f"{key_prefix}_df"].copy(),
                                 st.session_state[f"{key_prefix}_mask"].copy(),
-                                allow_edit=True
+                                allow_edit=True,
+                                key=f"{key_prefix}_aggrid"
                             )
 
                             st.write("Edits here do NOT trigger re-validation; this is just for reference.")
