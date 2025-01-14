@@ -23,20 +23,23 @@ Example usage (for your synthetic_phenotypic_data.csv):
                     ObservedFeatures VisitDate SampleCollectionDateTime \
                     GenomeSampleID HospitalID
 """
-
 import subprocess
 import time
 import argparse
 import os
 import re
+import glob
 import pandas as pd
 
+def find_processed_file_in_output(output_dir, input_basename):
+    base_no_ext, _ = os.path.splitext(input_basename)
+    pattern = os.path.join(output_dir, f"{base_no_ext}_*_csv.csv")
+    matches = glob.glob(pattern)
+    if matches:
+        return matches[0]
+    return None
+
 def parse_schema_violations_from_stdout(stdout_text):
-    """
-    Looks in the phenoqc CLI stdout for a line like:
-      "Format validation failed. 6012 record(s) do not match the JSON schema, but continuing..."
-    Returns the integer count of violations, or 0 if none found.
-    """
     pattern = re.compile(
         r"Format validation failed\.\s+(\d+)\s+record\(s\).*do not match the JSON schema",
         re.IGNORECASE
@@ -47,9 +50,6 @@ def parse_schema_violations_from_stdout(stdout_text):
     return 0
 
 def run_phenoqc(args):
-    """
-    Invokes the phenoqc CLI in a subprocess; returns (exit_code, runtime_seconds, stdout_text, stderr_text).
-    """
     cli_cmd = [
         "phenoqc",
         "--input", args.input_data,
@@ -83,10 +83,6 @@ def run_phenoqc(args):
     return completed.returncode, elapsed, completed.stdout, completed.stderr
 
 def analyze_missing_data(df, columns=None):
-    """
-    Show basic missing-data stats for specified columns (or all if None).
-    Returns a dict for each column: {missing_count, missing_percent}.
-    """
     if columns is None:
         columns = df.columns
     stats = {}
@@ -111,20 +107,25 @@ def main():
                         help="Columns to check for missing-data stats. If not specified, checks all columns.")
     args = parser.parse_args()
 
-    # 1) Run the pipeline
+    # 1) Run phenoqc
     ret_code, elapsed, stdout_text, stderr_text = run_phenoqc(args)
     print(f"[INFO] phenoqc exit code={ret_code}, time={elapsed:.2f}s")
 
-    # 2) Parse the schema-violation count from stdout
+    # 2) Check for schema violations
     viol_count = parse_schema_violations_from_stdout(stdout_text)
     if viol_count > 0:
         print(f"[INFO] Found {viol_count} schema violation(s) from phenoqc CLI stdout.")
     else:
         print("[INFO] No schema violations reported (or none matched).")
 
-    # 3) Build the expected processed filename
+    # 3) Locate the processed CSV in the output directory
     basename = os.path.basename(args.input_data)
-    processed_file_path = os.path.join(args.output_dir, basename)
+    processed_file_path = find_processed_file_in_output(args.output_dir, basename)
+    if not processed_file_path:
+        print(f"[ERROR] Could not find any processed file matching pattern "
+              f"in '{args.output_dir}' for input '{basename}'.")
+        return
+
     if not os.path.isfile(processed_file_path):
         print(f"[ERROR] Processed file not found: {processed_file_path}")
         return
@@ -139,7 +140,7 @@ def main():
     for col, (count, pct) in missing_stats.items():
         print(f"  {col}: missing={count} ({pct:.2f}%)")
 
-    # 6) Duplicate check (just a final quick check)
+    # 6) Duplicate check
     if len(args.uniqueIDs) > 0:
         dups = df[df.duplicated(subset=args.uniqueIDs, keep=False)]
         if not dups.empty:
