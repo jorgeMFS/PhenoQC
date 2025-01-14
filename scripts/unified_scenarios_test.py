@@ -5,10 +5,10 @@ unified_scenarios_test.py
 One script to run multiple synthetic-data scenarios and measure PhenoQC performance.
 
 Scenarios implemented:
-  1) SCALING         (varying num_records)
-  2) MISSINGNESS     (varying missing_rate)
-  3) CORRUPTION      (varying invalid_rate)
-  4) DUPLICATE_STRESS (varying duplicate_rate)
+  1) SCALING           (varying num_records)
+  2) MISSINGNESS       (varying missing_rate)
+  3) CORRUPTION        (varying invalid_rate)
+  4) DUPLICATE_STRESS  (varying duplicate_rate)
 
 Additionally:
  - Measures both runtime and CPU usage for each step (data generation + benchmark).
@@ -30,9 +30,8 @@ import subprocess
 import csv
 import time
 import re
-import glob
 
-# Optional import of psutil for CPU usage
+
 try:
     import psutil
     PSUTIL_AVAILABLE = True
@@ -41,12 +40,11 @@ except ImportError:
     print("[WARNING] psutil not found; CPU usage measurement will be skipped.")
 
 
-# ====================================
+# =========================================
 # CONFIG: paths to your existing scripts
-# ====================================
+# =========================================
 GENERATE_SCRIPT = "./generate_synthetic_ontology_data.py"
 BENCHMARK_SCRIPT = "./phenoqc_benchmark.py"
-ACCURACY_SCRIPT = "./check_ontology_accuracy.py"  # optional; not used in this script by default
 
 # Where outputs go
 OUTPUT_DIR = "./unified_scenarios_outputs"
@@ -56,8 +54,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 CONFIG_PATH = "./config/config.yaml"
 SCHEMA_PATH = "./config/schema.json"
 
-
-# ====================================
+# ==================================================================
 # SCENARIO DEFINITIONS
 # Each item is a dict specifying:
 #   "name": scenario identifier
@@ -65,7 +62,7 @@ SCHEMA_PATH = "./config/schema.json"
 #   "param_values": list of values to test
 #   "fixed_params": any other generator settings to keep constant
 #   "desc": optional description
-# ====================================
+# ===================================================================
 SCENARIOS = [
     {
         "name": "SCALING",
@@ -113,10 +110,6 @@ SCENARIOS = [
     }
 ]
 
-
-# ====================================
-# HELPER FUNCTIONS
-# ====================================
 
 def measure_cpu_usage_start():
     """
@@ -314,9 +307,6 @@ def parse_missing_data(benchmark_stdout):
     return "\n".join(collected).strip() if collected else ""
 
 
-# ==============================
-# MAIN
-# ==============================
 def main():
     results = []
     scenario_csv = os.path.join(OUTPUT_DIR, "unified_scenarios_summary.csv")
@@ -373,7 +363,7 @@ def main():
                 unique_ids=["SampleID"],
                 ontologies=None,
                 recursive=False,
-                columns_to_check=["Height_cm","Weight_kg","Cholesterol_mgdl"]  # or add more as you like
+                columns_to_check=["Height_cm","Weight_kg","Cholesterol_mgdl"] 
             )
 
             # parse shape => (rows, cols)

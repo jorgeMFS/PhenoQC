@@ -20,16 +20,12 @@ default_ontologies:
   - DO
   - MPO
 
-fuzzy_threshold: 80  # Minimum rapidfuzz match score for approximate term mapping
+fuzzy_threshold: 80
 
 imputation_strategies:
-  # Here, we specify per-column overrides for default imputation strategies.
-  # If a column isn't listed here, the pipeline will fall back to the --impute or default strategy in your CLI or GUI.
   Height_cm: median
   Weight_kg: mean
-  PrimaryPhenotype: mode
-  DiseaseCode: mode
-  # For ObservedFeatures or any array/string fields, you'd typically skip or use 'mode' if they're mostly categorical strings.
+
 
 advanced_imputation_methods:
   - MICE
