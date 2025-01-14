@@ -21,8 +21,9 @@ setup(
         'fancyimpute',
         'fastjsonschema',
         'pronto',
-        'rapidfuzz',
         'psutil',
+        'rapidfuzz',
+        'ucimlrepo',
     ],
     extras_require={
         'test': [
