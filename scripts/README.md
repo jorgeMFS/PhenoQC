@@ -136,7 +136,7 @@ If you want to demonstrate in a paper how PhenoQC manages missing values and tex
 
    Check the console output for lines indicating `[WARNING] Found X duplicates` or `missing=X (Y%)`.
 
-4. **Examine Ontology Mapping (Optional)**  
+4. **Examine Ontology Mapping**  
    If you would like to confirm that textual descriptors such as “Hypertension ???(typo)” were correctly mapped to an HPO ID, run `check_ontology_accuracy.py`:
 
    ```
@@ -151,16 +151,3 @@ If you want to demonstrate in a paper how PhenoQC manages missing values and tex
 
 5. **Scale Up or Automate**  
    Finally, if you want to replicate multiple runs for different parameter values (e.g., 5% vs. 20% vs. 50% missingness), you can do so manually or use `unified_scenarios_test.py`. Running `python unified_scenarios_test.py` loops over each scenario defined in the file and writes a summary to `unified_scenarios_summary.csv`. You can still run `check_ontology_accuracy.py` on any final CSV that interests you, though that step must be done separately.
-
----
-
-## 3) Conclusion
-
-These scripts, in combination, offer a flexible and reproducible pipeline for evaluating PhenoQC under conditions that mimic real-world phenotypic data challenges. You can focus solely on numeric validations or expand your analysis to ontology mapping accuracy, all while controlling how much corruption, missingness, or duplication is injected. Each individual script targets a specific portion of this workflow:
-
-1. `generate_synthetic_ontology_data.py` for data creation.  
-2. `phenoqc_benchmark.py` for validating and measuring duplicates and missing data after PhenoQC’s processes.  
-3. `check_ontology_accuracy.py` for assessing how faithfully textual fields match ground-truth ontology IDs.  
-4. `unified_scenarios_test.py` for automating scenario-driven testing across multiple parameters.
-
-By mixing and matching these scripts—or by using them all in a staged approach—you can produce detailed results on how well PhenoQC handles schema validation, missing-data imputation, duplicate detection, and ontology term mapping in synthetic, controlled experiments.
