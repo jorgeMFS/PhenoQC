@@ -22,7 +22,7 @@
     },
     "sg": {
       "type": [
-        "string",
+        "number",
         "null"
       ]
     },
@@ -103,19 +103,19 @@
     },
     "pcv": {
       "type": [
-        "string",
+        "number",
         "null"
       ]
     },
-    "wc": {
+    "wbcc": {
       "type": [
-        "string",
+        "number",
         "null"
       ]
     },
-    "rc": {
+    "rbcc": {
       "type": [
-        "string",
+        "number",
         "null"
       ]
     },
@@ -164,11 +164,6 @@
   },
   "required": [
     "SampleID",
-    "age",
-    "bp",
-    "sg",
-    "al",
-    "su",
     "class"
   ]
 }
