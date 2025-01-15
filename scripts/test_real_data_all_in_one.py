@@ -135,7 +135,9 @@ def main():
         "exit_code": 0,  # We'll store phenoqc CLI return code
     }
 
-    # 1) Load the data
+    # ---------------------------------------------------------------------
+    # 1) LOAD THE DATA
+    # ---------------------------------------------------------------------
     try:
         df = pd.read_csv(args.data)
     except Exception as e:
@@ -146,7 +148,16 @@ def main():
         sys.exit(1)
     print(f"[INFO] Real data loaded: shape={df.shape}")
 
-    # 2) Check ID column presence & non-null
+    ## ADDED: Debug prints of dtypes + sample
+    print("[DEBUG] DataFrame dtypes after reading input CSV:")
+    print(df.dtypes)
+    print("[DEBUG] Sample of the first 10 rows of input CSV data:")
+    print(df.head(10))
+    print("-"*50)
+
+    # ---------------------------------------------------------------------
+    # 2) CHECK ID COLUMN
+    # ---------------------------------------------------------------------
     try:
         check_id_column(df, args.unique_id)
         print("[INFO] ID column is valid.")
@@ -157,11 +168,23 @@ def main():
         _write_summary_row(args.output_dir, args.summary_csv, summary_results)
         sys.exit(1)
 
-    # 3) Load JSON schema & YAML config
+    # ---------------------------------------------------------------------
+    # 3) LOAD JSON SCHEMA & YAML CONFIG
+    # ---------------------------------------------------------------------
     try:
         schema = load_schema(args.schema)
         config = load_config_yaml(args.config)
         print("[INFO] Successfully loaded schema & config.")
+
+        ## ADDED: Print the loaded schema + config
+        print("[DEBUG] JSON schema (from %s):" % args.schema)
+        print(json.dumps(schema, indent=2))
+        print("-"*50)
+
+        print("[DEBUG] YAML config (from %s):" % args.config)
+        print(yaml.dump(config, sort_keys=False))
+        print("-"*50)
+
     except Exception as e:
         print(f"[ERROR] Could not load schema or config: {e}")
         summary_results["schema_pass"] = f"FAIL - cannot load schema/config: {str(e)}"
@@ -169,7 +192,9 @@ def main():
         _write_summary_row(args.output_dir, args.summary_csv, summary_results)
         sys.exit(1)
 
-    # 4) Optional row-level schema validation
+    # ---------------------------------------------------------------------
+    # 4) OPTIONAL ROW-LEVEL SCHEMA VALIDATION
+    # ---------------------------------------------------------------------
     pass_schema, failing_df = run_schema_validation(df, schema, args.unique_id)
     if not pass_schema:
         print("[ERROR] Some rows fail the JSON schema. Example failing rows:")
@@ -177,6 +202,13 @@ def main():
         failing_csv = os.path.join(args.output_dir, "schema_failures.csv")
         failing_df.to_csv(failing_csv, index=False)
         print(f"[INFO] Wrote failing rows to {failing_csv}")
+
+        # ADDED: Print failing row data types
+        print("[DEBUG] Failing rows data types:")
+        print(failing_df.dtypes)
+        print("[DEBUG] Full failing rows sample (up to 10):")
+        print(failing_df.head(10))
+
         summary_results["schema_pass"] = "FAIL"
         summary_results["n_schema_fails"] = len(failing_df)
     else:
@@ -184,7 +216,9 @@ def main():
         summary_results["schema_pass"] = "PASS"
         summary_results["n_schema_fails"] = 0
 
-    # 5) Check missing numeric data before PhenoQC
+    # ---------------------------------------------------------------------
+    # 5) CHECK MISSING NUMERIC DATA BEFORE PHENOQC
+    # ---------------------------------------------------------------------
     missing_pre = count_missing(df)
     pre_missing_total = total_missing(missing_pre)
     summary_results["missing_pre_total"] = pre_missing_total
@@ -195,20 +229,24 @@ def main():
     else:
         print("[INFO] No missing numeric data detected pre-imputation.")
 
-    # 6) Run PhenoQC
+    # ---------------------------------------------------------------------
+    # 6) RUN PHENOQC CLI
+    # ---------------------------------------------------------------------
     rc, stdout_text, stderr_text = run_phenoqc_cli(args.data, args.schema, args.config, args.unique_id, args.output_dir)
     summary_results["exit_code"] = rc
-    print("[INFO] PhenoQC stdout:\n", stdout_text)
-    print("[INFO] PhenoQC stderr:\n", stderr_text)
+    print("\n[INFO] PhenoQC stdout:\n", stdout_text)
+    print("\n[INFO] PhenoQC stderr:\n", stderr_text)
+
     if rc != 0:
         print(f"[ERROR] PhenoQC returned code {rc}. Possibly an error encountered.")
-        # We'll write partial summary and exit
         _write_summary_row(args.output_dir, args.summary_csv, summary_results)
         sys.exit(rc)
     else:
         print("[INFO] PhenoQC completed successfully.")
 
-    # 7) Locate the processed CSV
+    # ---------------------------------------------------------------------
+    # 7) LOCATE THE PROCESSED CSV
+    # ---------------------------------------------------------------------
     processed_csv_fallback = os.path.join(args.output_dir, "processed_data.csv")
     if os.path.exists(processed_csv_fallback):
         post_df = pd.read_csv(processed_csv_fallback)
@@ -227,7 +265,9 @@ def main():
             post_df = None
             print("[ERROR] Could not locate processed CSV. Skipping post-run checks.")
 
-    # 8) Additional checks on the processed CSV
+    # ---------------------------------------------------------------------
+    # 8) ADDITIONAL CHECKS ON THE PROCESSED CSV
+    # ---------------------------------------------------------------------
     if post_df is not None and not post_df.empty:
         # 8a) Missing data post-imputation
         missing_post = count_missing(post_df)
@@ -262,14 +302,20 @@ def main():
                 print(f"[INFO] Ontology column '{col}' is present.")
             else:
                 print(f"[INFO] Column '{col}' not found. That may be normal if no mapping was configured.")
+    else:
+        print("[INFO] No final processed CSV to examine or it was empty.")
 
-    # 9) Look for PDF or other artifact
+    # ---------------------------------------------------------------------
+    # 9) LOOK FOR PDF OR OTHER ARTIFACT
+    # ---------------------------------------------------------------------
     for fname in os.listdir(args.output_dir):
         if fname.endswith("_report.pdf"):
             print(f"[INFO] Found a PDF report: {fname}")
             summary_results["pdf_found"] = True
 
-    # 10) Write final results to summary CSV
+    # ---------------------------------------------------------------------
+    # 10) WRITE FINAL RESULTS TO SUMMARY CSV
+    # ---------------------------------------------------------------------
     _write_summary_row(args.output_dir, args.summary_csv, summary_results)
 
     print("\n[TEST COMPLETE] No fatal errors above => success.\n")
