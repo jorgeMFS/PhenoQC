@@ -177,14 +177,13 @@ def create_heart_dataset():
         yaml.dump(config, f, sort_keys=False)
     print(f"[INFO] Created YAML config: {config_filename}")
 
-
 def create_kidney_dataset():
     """
     1) Download Chronic Kidney Disease dataset (UCI ID=336).
     2) Merge features + target into a single CSV file.
-    3) Insert 'SampleID' column.
-    4) Create JSON schema + YAML config.
-    5) Save them to 'output/real_data'.
+    3) Insert 'SampleID' column (for unique IDs).
+    4) Create a JSON schema + YAML config for PhenoQC.
+    5) Store in 'output/real_data' by default.
     """
     print("[INFO] Attempting to fetch Chronic Kidney Disease dataset (id=336) from UCI ML Repository...")
     try:
@@ -205,11 +204,10 @@ def create_kidney_dataset():
     # Clean up column names (remove spaces/slashes)
     df.columns = [c.strip().replace("/", "_").replace(" ", "_") for c in df.columns]
 
-    # Insert SampleID column
+    # Insert 'SampleID' column if needed
     df = add_sample_id_column(df, dataset_label="kidney")
 
     summarize_dataframe(df, "Chronic Kidney Disease (with SampleID)")
-
     ensure_output_dir_exists()
 
     # Write CSV
@@ -217,47 +215,49 @@ def create_kidney_dataset():
     df.to_csv(csv_filename, index=False)
     print(f"[INFO] Created CSV: {csv_filename}")
 
-    # JSON schema
+    # Corrected JSON schema
     schema = {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "title": "Chronic Kidney Disease Dataset Schema",
         "type": "object",
         "properties": {
             "SampleID": {"type": "string"},  # newly added ID column
-            "age":   {"type": ["number", "null"], "minimum": 0, },
-            "bp":    {"type": ["number", "null"], "minimum": 0, },
-            "sg":    {"type": ["string", "null"]},
-            "al":    {"type": ["number", "null"], },
-            "su":    {"type": ["number", "null"], },
-            "rbc":   {"type": ["string", "null"]},
-            "pc":    {"type": ["string", "null"]},
-            "pcc":   {"type": ["string", "null"]},
-            "ba":    {"type": ["string", "null"]},
-            "bgr":   {"type": ["number", "null"], "minimum": 0, },
-            "bu":    {"type": ["number", "null"], "minimum": 0, },
-            "sc":    {"type": ["number", "null"], "minimum": 0},  # float
-            "sod":   {"type": ["number", "null"]},                 # float
-            "pot":   {"type": ["number", "null"]},                 # float
-            "hemo":  {"type": ["number", "null"]},                 # float
-            "pcv":   {"type": ["string", "null"]},  # sometimes numeric but stored as string
-            "wc":    {"type": ["string", "null"]},  # also often stored as string
-            "rc":    {"type": ["string", "null"]},
-            "htn":   {"type": ["string", "null"]},
-            "dm":    {"type": ["string", "null"]},
-            "cad":   {"type": ["string", "null"]},
-            "appet": {"type": ["string", "null"]},
-            "pe":    {"type": ["string", "null"]},
-            "ane":   {"type": ["string", "null"]},
-            "class": {"type": ["string", "null"]}  # ckd or notckd
+            "age":      {"type": ["number", "null"], "minimum": 0},
+            "bp":       {"type": ["number", "null"], "minimum": 0},
+            "sg":       {"type": ["number", "null"]},
+            "al":       {"type": ["number", "null"]},
+            "su":       {"type": ["number", "null"]},
+            "rbc":      {"type": ["string", "null"]},
+            "pc":       {"type": ["string", "null"]},
+            "pcc":      {"type": ["string", "null"]},
+            "ba":       {"type": ["string", "null"]},
+            "bgr":      {"type": ["number", "null"], "minimum": 0},
+            "bu":       {"type": ["number", "null"], "minimum": 0},
+            "sc":       {"type": ["number", "null"], "minimum": 0},
+            "sod":      {"type": ["number", "null"]},
+            "pot":      {"type": ["number", "null"]},
+            "hemo":     {"type": ["number", "null"]},
+            "pcv":      {"type": ["number", "null"]},    # in your CSV, it's numeric like 44.0
+            "wbcc":     {"type": ["number", "null"]},    # e.g. 7800.0
+            "rbcc":     {"type": ["number", "null"]},    # e.g. 5.2
+            "htn":      {"type": ["string", "null"]},
+            "dm":       {"type": ["string", "null"]},
+            "cad":      {"type": ["string", "null"]},
+            "appet":    {"type": ["string", "null"]},
+            "pe":       {"type": ["string", "null"]},
+            "ane":      {"type": ["string", "null"]},
+            "class":    {"type": ["string", "null"]}      # 'ckd' or 'notckd'
         },
-        "required": ["SampleID", "age", "bp", "sg", "al", "su", "class"]
+        # Mark whichever columns must be present. Usually at least these:
+        "required": ["SampleID","class"]
+        # "required": ["SampleID","pe","ane","class"]
     }
     schema_filename = os.path.join(OUTPUT_DIR, "kidney_disease_schema.json")
     with open(schema_filename, "w") as f:
         json.dump(schema, f, indent=2)
     print(f"[INFO] Created JSON schema: {schema_filename}")
 
-    # Minimal YAML config
+    # Minimal YAML config (no changes needed, but you can edit as desired)
     config = {
         "ontologies": {
             "HPO": {
@@ -281,6 +281,7 @@ def create_kidney_dataset():
     with open(config_filename, "w") as f:
         yaml.dump(config, f, sort_keys=False)
     print(f"[INFO] Created YAML config: {config_filename}")
+
 
 
 def main():

@@ -1,0 +1,169 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Chronic Kidney Disease Dataset Schema",
+  "type": "object",
+  "properties": {
+    "SampleID": {
+      "type": "string"
+    },
+    "age": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "bp": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "sg": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "al": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "su": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "rbc": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pc": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pcc": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "ba": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "bgr": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "bu": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "sc": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "sod": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "pot": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "hemo": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "pcv": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "wbcc": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "rbcc": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "htn": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "dm": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "cad": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "appet": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pe": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "ane": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "class": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "SampleID",
+    "class"
+  ]
+}

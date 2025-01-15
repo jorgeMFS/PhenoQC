@@ -1,0 +1,16 @@
+ontologies:
+  HPO:
+    name: Human Phenotype Ontology
+    source: url
+    url: http://purl.obolibrary.org/obo/hp.obo
+    format: obo
+  DO:
+    name: Disease Ontology
+    source: url
+    url: http://purl.obolibrary.org/obo/doid.obo
+    format: obo
+default_ontologies:
+- HPO
+- DO
+cache_expiry_days: 30
+fuzzy_threshold: 80
