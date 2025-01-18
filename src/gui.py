@@ -333,9 +333,9 @@ def main():
                     df = None
                     try:
                         if ext == '.csv':
-                            df = pd.read_csv(io.StringIO(file_content.decode('utf-8','ignore')))
+                            df = pd.read_csv(io.StringIO(file_content.decode('utf-8','ignore')), na_values=["", " ", "NA", "N/A"],keep_default_na=True)
                         elif ext == '.tsv':
-                            df = pd.read_csv(io.StringIO(file_content.decode('utf-8','ignore')), sep='\t')
+                            df = pd.read_csv(io.StringIO(file_content.decode('utf-8','ignore')), sep='\t', na_values=["", " ", "NA", "N/A"],keep_default_na=True)
                         elif ext == '.json':
                             try:
                                 df = pd.read_json(io.StringIO(file_content.decode('utf-8','ignore')), lines=True)
@@ -420,9 +420,9 @@ def main():
                         with open(fpath, 'rb') as f:
                             content = f.read()
                         if ext == '.csv':
-                            df = pd.read_csv(io.StringIO(content.decode('utf-8','ignore')))
+                            df = pd.read_csv(io.StringIO(content.decode('utf-8','ignore')), na_values=["", " ", "NA", "N/A"],keep_default_na=True)
                         elif ext == '.tsv':
-                            df = pd.read_csv(io.StringIO(content.decode('utf-8','ignore')), sep='\t')
+                            df = pd.read_csv(io.StringIO(content.decode('utf-8','ignore')), sep='\t', na_values=["", " ", "NA", "N/A"],keep_default_na=True)
                         elif ext == '.json':
                             try:
                                 df = pd.read_json(io.StringIO(content.decode('utf-8','ignore')), lines=True)
