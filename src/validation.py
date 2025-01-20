@@ -80,6 +80,8 @@ class DataValidator:
                     f"[SchemaValidation] Row #{row_idx} failed: {e.message}. "
                     f"Record snippet: {preview}"
                 )
+                print("[DEBUG] Full JSON Schema exception for row:", row_idx)
+                print("[DEBUG] Exception detail:", e.__dict__)  # might show 'path', 'rule_definition', etc.
                 log_activity(msg, level='warning')
                 valid = False
 

@@ -7,12 +7,19 @@ def read_csv(file_path, chunksize=10000):
 
     Args:
         file_path (str): Path to the CSV file.
+        na_values (list): List of strings to be interpreted as NA/NaN.
+        keep_default_na (bool): Whether to include the default NaN values.
         chunksize (int): Number of rows per chunk.
 
     Returns:
         Iterator[pd.DataFrame]: DataFrame chunks.
     """
-    return pd.read_csv(file_path, chunksize=chunksize)
+    return pd.read_csv(
+        file_path,
+        na_values=["", " ", "NA", "N/A"],
+        keep_default_na=True,
+        chunksize=chunksize
+    )
 
 def read_tsv(file_path, chunksize=10000):
     """
@@ -25,7 +32,13 @@ def read_tsv(file_path, chunksize=10000):
     Returns:
         Iterator[pd.DataFrame]: DataFrame chunks.
     """
-    return pd.read_csv(file_path, sep='\t', chunksize=chunksize)
+    return pd.read_csv(
+        file_path,
+        sep='\t',
+        na_values=["", " ", "NA", "N/A"],
+        keep_default_na=True,
+        chunksize=chunksize
+    )
 
 def read_json(file_path, chunksize=10000):
     """
