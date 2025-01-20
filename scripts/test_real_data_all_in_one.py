@@ -30,9 +30,6 @@ import csv
 import pandas as pd
 import yaml
 
-# NOTE: We no longer import or run DataValidator locally, 
-# since we rely on PhenoQC itself to do row-level checks.
-# from validation import DataValidator
 from logging_module import setup_logging, log_activity
 
 
@@ -166,8 +163,7 @@ def main():
         _write_summary_row(args.output_dir, args.summary_csv, summary_results)
         sys.exit(1)
 
-    # NOTE: We are NOT doing any local row-level validation. 
-    # We rely fully on PhenoQC for schema checking.
+  
 
     # 4) Check missing numeric data pre-PhenoQC
     missing_pre = count_missing(df)
