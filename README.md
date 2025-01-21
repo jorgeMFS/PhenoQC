@@ -4,6 +4,11 @@
 [![Coverage](https://codecov.io/gh/jorgeMFS/PhenoQC/branch/main/graph/badge.svg)](https://codecov.io/gh/jorgeMFS/PhenoQC)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![PyPI version](https://badge.fury.io/py/phenoqc.svg)](https://badge.fury.io/py/phenoqc)
+[![Downloads](https://static.pepy.tech/badge/phenoqc)](https://pepy.tech/project/phenoqc)
+[![Documentation Status](https://readthedocs.org/projects/phenoqc/badge/?version=latest)](https://phenoqc.readthedocs.io/en/latest/?badge=latest)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.14714540.svg)](https://doi.org/10.5281/zenodo.14714540)
 
 **PhenoQC** is a lightweight, efficient, and user-friendly toolkit designed to perform comprehensive quality control (QC) on phenotypic datasets. It ensures that data adheres to standardized formats, maintains consistency, and is harmonized with recognized ontologies—facilitating seamless integration with genomic data for advanced research.
 
