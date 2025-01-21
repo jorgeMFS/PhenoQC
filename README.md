@@ -2,7 +2,7 @@
 
 [![Tests](https://github.com/jorgeMFS/PhenoQC/actions/workflows/tests.yml/badge.svg)](https://github.com/jorgeMFS/PhenoQC/actions/workflows/tests.yml)
 [![Coverage](https://codecov.io/gh/jorgeMFS/PhenoQC/branch/main/graph/badge.svg)](https://codecov.io/gh/jorgeMFS/PhenoQC)
-[![Python 3.6+](https://img.shields.io/badge/python-3.6+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **PhenoQC** is a lightweight, efficient, and user-friendly toolkit designed to perform comprehensive quality control (QC) on phenotypic datasets. It ensures that data adheres to standardized formats, maintains consistency, and is harmonized with recognized ontologies—facilitating seamless integration with genomic data for advanced research.
@@ -36,7 +36,7 @@
 
 ## Installation
 
-PhenoQC requires Python 3.6+.
+PhenoQC requires Python 3.8+.
 
 **Using `pip`:**
 
