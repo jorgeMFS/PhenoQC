@@ -2,20 +2,20 @@ import streamlit as st
 import os
 import tempfile
 import zipfile
-from configuration import load_config
-from logging_module import setup_logging, log_activity
-from mapping import OntologyMapper
+from .configuration import load_config
+from .logging_module import setup_logging, log_activity
+from .mapping import OntologyMapper
 import pandas as pd
-from reporting import create_visual_summary, generate_qc_report
+from .reporting import create_visual_summary, generate_qc_report
 import json
 import io
-from batch_processing import process_file
-import shutil  # For deleting temporary directories
-import yaml  # Needed for saving config
-import warnings  # For suppressing warnings
+from .batch_processing import process_file
+import shutil 
+import yaml 
+import warnings 
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode, JsCode
-from validation import DataValidator  # or wherever your validation code is
-from utils.ontology_utils import suggest_ontologies
+from .validation import DataValidator
+from .utils.ontology_utils import suggest_ontologies
 import glob
 import numpy as np
 
@@ -76,7 +76,7 @@ def display_editable_grid_with_highlighting(df: pd.DataFrame,
     """
     df = df.reset_index(drop=True)  # ensure a clean, 0-based index
 
-    # Intersect the columns so we don’t get KeyErrors
+    # Intersect the columns so we don't get KeyErrors
     common_cols = df.columns.intersection(invalid_mask.columns)
     invalid_mask = invalid_mask[common_cols].reindex(df.index, fill_value=False)
 
@@ -750,7 +750,7 @@ def main():
                         # 5) Initialize OntologyMapper
                         ontology_mapper = OntologyMapper(config_path)
 
-                        # 6) Grab user’s imputation settings from session
+                        # 6) Grab user's imputation settings from session
                         impute_config = st.session_state.get('imputation_config', {})
                         impute_strategy_value = impute_config.get('global_strategy', 'none') 
                         st.session_state['impute_strategy_value'] = impute_strategy_value #check if this is correct

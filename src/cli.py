@@ -1,9 +1,9 @@
 import argparse
-import os
 import json
-from batch_processing import batch_process
-from logging_module import setup_logging, log_activity
-from utils.zip_utils import extract_zip
+import os
+from .batch_processing import batch_process
+from .logging_module import setup_logging, log_activity
+from .utils.zip_utils import extract_zip
 import datetime
 
 SUPPORTED_EXTENSIONS = {'.csv', '.tsv', '.json', '.zip'}
