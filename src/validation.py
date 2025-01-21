@@ -84,6 +84,13 @@ class DataValidator:
                 print("[DEBUG] Exception detail:", e.__dict__)  # might show 'path', 'rule_definition', etc.
                 log_activity(msg, level='warning')
                 valid = False
+                if getattr(e, 'path', None):
+                    for key_in_path in e.path:
+                        if key_in_path in self.df.columns:
+                            self.invalid_mask.at[row_idx, key_in_path] = True
+                else:
+                    self.invalid_mask.loc[row_idx, :] = True
+                
 
         if invalid_indices:
             # Mark those rows as having schema violations

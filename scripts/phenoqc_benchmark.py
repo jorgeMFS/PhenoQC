@@ -10,7 +10,7 @@ phenoqc_benchmark.py
 
 Example usage (for your synthetic_phenotypic_data.csv):
   python phenoqc_benchmark.py \
-    --input_data ../study/synthetic_phenotypic_data.csv \
+    --input_data output/synthetic_phenotypic_data.csv \
     --config ./config/config.yaml \
     --schema ./config/schema.json \
     --output_dir ../reports \

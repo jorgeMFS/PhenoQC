@@ -156,6 +156,12 @@ def create_visual_summary(df, phenotype_columns=None, output_image_path=None):
       3) Numeric histograms ignoring ID columns
       4) Optional bar/pie charts for phenotype columns
     """
+    # Check for proper DataFrame input
+    if not isinstance(df, pd.DataFrame):
+        raise TypeError(
+            f"create_visual_summary() expects a pandas DataFrame, but got {type(df)}."
+        )
+
     figs = []
 
     # 1) Missingness visuals
@@ -340,7 +346,7 @@ def create_missingness_heatmap(df):
         font=dict(size=12),
         xaxis=dict(side="top"),
     )
-    # Move the chart title downward so it’s clearly separate from x‑labels
+    # Move the chart title downward so it's clearly separate from x-labels
     fig.update_layout(
         title=dict(
             text="Missingness Heatmap",
