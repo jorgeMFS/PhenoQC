@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 num_records = 3000
 missing_rate = 0.1
 duplicate_rate = 0.05
-output_path = '../study/synthetic_phenotypic_data.csv'
+output_path = 'output/synthetic_phenotypic_data.csv'
 
 # --------------------------------------------------
 # HPO terms + synonyms for PRIMARY phenotype
