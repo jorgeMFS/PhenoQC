@@ -1,9 +1,10 @@
+import json
 import pandas as pd
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Union
 import fastjsonschema
 import re
 from datetime import datetime
-from logging_module import log_activity
+from .logging_module import log_activity
 
 class DataValidator:
     """

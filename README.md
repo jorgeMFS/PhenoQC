@@ -116,10 +116,11 @@ phenoqc \
 Launch the Streamlit GUI for an interactive experience:
 
 ```bash
-streamlit run src/gui.py
+python run_gui.py
 ```
 
 **Workflow in the GUI**:
+
 1. **Upload Config & Schema**: Provide a JSON schema and a YAML config to define validation and ontology settings.
 2. **Upload Data**: Either upload individual `.csv`/`.tsv`/`.json` files or a `.zip` archive containing multiple files.
 3. **Choose Unique Identifiers & Ontologies**: Select columns to map to ontologies (HPO, DO, etc.) and specify unique identifier columns (e.g., `SampleID`).

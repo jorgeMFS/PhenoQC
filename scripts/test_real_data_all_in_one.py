@@ -192,7 +192,7 @@ def main():
     else:
         print("[INFO] PhenoQC completed successfully.")
 
-    # Because PhenoQC handles row-level schema internally, we’ll 
+    # Because PhenoQC handles row-level schema internally, we'll 
     # infer success => "schema_pass" is PASS. 
     # (If you want to parse the stdout to detect how many fails, you can.)
     summary_results["schema_pass"] = "PASS"

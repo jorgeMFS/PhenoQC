@@ -4,8 +4,12 @@ import yaml
 import pronto
 from rapidfuzz import fuzz, process
 import requests
+from rapidfuzz import fuzz
+from typing import Dict, List, Optional
+
+from .configuration import load_config
+from .logging_module import log_activity
 from datetime import datetime, timedelta
-from configuration import load_config
 
 class OntologyMapper:
     CACHE_DIR = os.path.expanduser("~/.phenoqc/ontologies")
@@ -162,7 +166,7 @@ class OntologyMapper:
         if target_ontologies is None:
             target_ontologies = self.default_ontologies
 
-        # Convert to string if it’s not None or numeric
+        # Convert to string if it's not None or numeric
         if term is None:
             term_lower = ""
         else:

@@ -1,14 +1,15 @@
-import concurrent.futures
 import os
 import json
 import pandas as pd
-from input import load_data
-from validation import DataValidator
-from mapping import OntologyMapper
-from missing_data import detect_missing_data, impute_missing_data, flag_missing_data_records
-from reporting import generate_qc_report, create_visual_summary
-from logging_module import log_activity, setup_logging
-from configuration import load_config
+import concurrent.futures
+
+from .input import load_data
+from .validation import DataValidator
+from .mapping import OntologyMapper
+from .missing_data import detect_missing_data, flag_missing_data_records, impute_missing_data
+from .reporting import generate_qc_report, create_visual_summary
+from .configuration import load_config
+from .logging_module import log_activity, setup_logging
 from tqdm import tqdm
 import hashlib
 
@@ -324,7 +325,6 @@ def process_file(
                     unique_id_set.update(ids_in_chunk)
 
                 # (D) Missing data
-                from missing_data import detect_missing_data, flag_missing_data_records, impute_missing_data
                 missing = detect_missing_data(chunk)
                 missing_counts = missing_counts.add(missing, fill_value=0)
                 chunk = flag_missing_data_records(chunk)
