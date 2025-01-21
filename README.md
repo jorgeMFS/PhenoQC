@@ -1,5 +1,10 @@
 # PhenoQC
 
+[![Tests](https://github.com/jorgeMFS/PhenoQC/actions/workflows/tests.yml/badge.svg)](https://github.com/jorgeMFS/PhenoQC/actions/workflows/tests.yml)
+[![Coverage](https://codecov.io/gh/jorgeMFS/PhenoQC/branch/main/graph/badge.svg)](https://codecov.io/gh/jorgeMFS/PhenoQC)
+[![Python 3.6+](https://img.shields.io/badge/python-3.6+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 **PhenoQC** is a lightweight, efficient, and user-friendly toolkit designed to perform comprehensive quality control (QC) on phenotypic datasets. It ensures that data adheres to standardized formats, maintains consistency, and is harmonized with recognized ontologies—facilitating seamless integration with genomic data for advanced research.
 
 ---
@@ -183,7 +188,7 @@ cache_expiry_days: 30
 2. **Create a branch**, implement changes, and add tests or documentation as appropriate.  
 3. **Open a Pull Request** describing your contribution.  
 
-We welcome improvements that enhance PhenoQC’s functionality or documentation.
+We welcome improvements that enhance PhenoQC's functionality or documentation.
 
 ---
 
