@@ -81,8 +81,8 @@ class DataValidator:
                     f"[SchemaValidation] Row #{row_idx} failed: {e.message}. "
                     f"Record snippet: {preview}"
                 )
-                print("[DEBUG] Full JSON Schema exception for row:", row_idx)
-                print("[DEBUG] Exception detail:", e.__dict__)  # might show 'path', 'rule_definition', etc.
+                log_activity(f"Full JSON Schema exception for row: {row_idx}", level='debug')
+                log_activity(f"Exception detail: {e.__dict__}", level='debug')
                 log_activity(msg, level='warning')
                 valid = False
                 if getattr(e, 'path', None):
@@ -91,7 +91,6 @@ class DataValidator:
                             self.invalid_mask.at[row_idx, key_in_path] = True
                 else:
                     self.invalid_mask.loc[row_idx, :] = True
-                
 
         if invalid_indices:
             # Mark those rows as having schema violations
@@ -101,6 +100,19 @@ class DataValidator:
             self.integrity_issues = pd.concat([self.integrity_issues, violators]).drop_duplicates()
 
         return valid
+
+    def validate_row_json_schema(self, row_idx: int, row_dict: Dict[str, Any]) -> bool:
+        """
+        Validates a single row against the JSON schema.
+        Returns True if valid, False if invalid.
+        """
+        try:
+            self.validate_record(row_dict)
+            return True
+        except fastjsonschema.JsonSchemaException as e:
+            log_activity(f"JSON Schema validation failed for row {row_idx}: {str(e)}", level='debug')
+            log_activity(f"Exception detail: {e.__dict__}", level='debug')
+            return False
 
     # -------------------------------------------------------------------------
     # 2. Cell-Level Validation
