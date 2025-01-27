@@ -1,19 +1,96 @@
-# batch_processing.py
-
-import concurrent.futures
 import os
 import json
 import pandas as pd
-from input import load_data
-from validation import DataValidator
-from mapping import OntologyMapper
-from missing_data import detect_missing_data, impute_missing_data, flag_missing_data_records
-from reporting import generate_qc_report, create_visual_summary
-from logging_module import log_activity
-from configuration import load_config
+import concurrent.futures
+
+from .input import load_data
+from .validation import DataValidator
+from .mapping import OntologyMapper
+from .missing_data import detect_missing_data, flag_missing_data_records, impute_missing_data
+from .reporting import generate_qc_report, create_visual_summary
+from .configuration import load_config
+from .logging_module import log_activity, setup_logging
 from tqdm import tqdm
+import hashlib
+
+def child_process_run(
+    file_path,
+    schema,
+    ontology_mapper,
+    unique_identifiers,
+    custom_mappings,
+    impute_strategy,
+    field_strategies,
+    output_dir,
+    target_ontologies,
+    report_format,
+    chunksize,
+    phenotype_columns,
+    log_file_for_children
+):
+    """
+    This top-level function is what each child process calls.
+    We do the logging re-init in append mode, then run process_file.
+    """
+    setup_logging(log_file=log_file_for_children, mode='a')
+    return process_file(
+        file_path=file_path,
+        schema=schema,
+        ontology_mapper=ontology_mapper,
+        unique_identifiers=unique_identifiers,
+        custom_mappings=custom_mappings,
+        impute_strategy=impute_strategy,
+        field_strategies=field_strategies,
+        output_dir=output_dir,
+        target_ontologies=target_ontologies,
+        report_format=report_format,
+        chunksize=chunksize,
+        phenotype_columns=phenotype_columns
+    )
+
+def unique_output_name(file_path, output_dir, suffix='.csv'):
+    """
+    Creates a unique output filename using:
+     - The original file's *base name* (not the entire path),
+     - A short 5-char hash based on that base name (to avoid collisions),
+     - The original extension (e.g. .json -> '_json'),
+     - And finally the desired suffix (.csv, _report.pdf, etc.).
+    """
+    just_name = os.path.basename(file_path)
+    short_hash = hashlib.md5(just_name.encode('utf-8')).hexdigest()[:5]
+
+    base_no_ext, orig_ext = os.path.splitext(just_name)
+    ext_no_dot = orig_ext.lstrip('.')  # e.g. "json"
+    final_name = f"{base_no_ext}_{short_hash}_{ext_no_dot}{suffix}"
+    return os.path.join(output_dir, final_name)
+
+def convert_nans_to_none_for_string_cols(df, schema):
+    """
+    Converts NaN to None for columns declared as type=["string","null"] (or "string") in the JSON schema.
+    This ensures row-level validation won't flag them as float('NaN').
+    """
+    df_converted = df.copy(deep=True)
+    props = schema.get("properties", {})
+
+    for col, rules in props.items():
+        declared_type = rules.get("type")
+        
+        if isinstance(declared_type, str) and declared_type == "string":
+            pass_types = ["string"]
+        elif isinstance(declared_type, list) and "string" in declared_type:
+            pass_types = declared_type
+        else:
+            continue
+        if col in df_converted.columns:
+            df_converted[col] = df_converted[col].where(df_converted[col].notna(), None)
+    return df_converted
+
 
 def get_file_type(file_path):
+    """
+    Returns 'csv', 'tsv', or 'json' depending on the file extension.
+    Raises ValueError if unsupported.
+    """
     _, ext = os.path.splitext(file_path.lower())
     if ext == '.csv':
         return 'csv'
@@ -36,201 +113,334 @@ def process_file(
     target_ontologies=None,
     report_format='pdf',
     chunksize=10000,
-    phenotype_column='Phenotype'  # New parameter with default value
+    phenotype_columns=None
 ):
+    """
+    Processes a single file, generating an output CSV and a PDF/MD report.
+    We only changed how we build the final filenames and how we display
+    the file name in the PDF's "Source file" reference.
+    """
     file_type = get_file_type(file_path)
-    log_activity(f"Processing file: {file_path}")
-    print(f"Processing file: {file_path}")
+    log_activity(f"[ChildProcess] Starting on: {file_path}", level='info')
+
+    final_status = 'Processed'
+    error_msg = None
 
     try:
-        # Initialize progress bar for file processing
         with tqdm(total=100, desc=f"Processing {os.path.basename(file_path)}") as pbar:
-            data_iterator = load_data(file_path, file_type, chunksize=chunksize)
+            # 1) Attempt data loading
+            try:
+                data_iterator = load_data(file_path, file_type, chunksize=chunksize)
+            except Exception as e:
+                final_status = 'ProcessedWithWarnings'
+                error_msg = f"Could not load data from {file_path}: {str(e)}"
+                log_activity(f"{file_path}: {error_msg}", level='warning')
+                data_iterator = []
+
             pbar.update(5)
             log_activity("Data loading initiated.")
 
-            # Initialize accumulators for global statistics
+            all_chunks = []
+            if final_status != 'ProcessedWithWarnings':
+                try:
+                    first_chunk = next(data_iterator, None)
+                except StopIteration:
+                    final_status = 'ProcessedWithWarnings'
+                    error_msg = f"No data found in {file_path}. Generating partial PDF."
+                    log_activity(f"{file_path}: {error_msg}", level='warning')
+                    first_chunk = None
+                except Exception as e:
+                    final_status = 'ProcessedWithWarnings'
+                    error_msg = f"Error reading first chunk: {str(e)}"
+                    log_activity(f"{file_path}: {error_msg}", level='warning')
+                    first_chunk = None
+
+                if first_chunk is not None and not first_chunk.empty:
+                    all_chunks = [first_chunk]
+                    for c in data_iterator:
+                        all_chunks.append(c)
+                else:
+                    if not error_msg:
+                        error_msg = f"{file_path} is empty or has no valid rows."
+                    final_status = 'ProcessedWithWarnings'
+                    log_activity(f"{file_path}: {error_msg}", level='warning')
+
+            # 2) Accumulators
             total_records = 0
             flagged_records_count = 0
-            phenotype_terms_set = set()
+            sample_df = pd.DataFrame()
+            sample_size_per_chunk = 1000
+            max_total_samples = 10000
 
-            # Prepare output file path
-            output_data_file = os.path.join(output_dir, os.path.basename(file_path))
-            # Remove existing output file if exists
+            # Build final CSV path
+            output_data_file = unique_output_name(file_path, output_dir, suffix='.csv')
             if os.path.exists(output_data_file):
                 os.remove(output_data_file)
-
-            # Initialize a flag to write header only once
             write_header = True
 
-            # Initialize mapping success rates accumulators
+            # Provide a fallback for phenotype_columns
+            if phenotype_columns is None:
+                phenotype_columns = {
+                    "Phenotype": ["HPO"],
+                    "PrimaryPhenotype": ["HPO"],
+                    "DiseaseCode": ["DO"],
+                    "TertiaryPhenotype": ["MPO"]
+                }
+
+            # Track mapping stats
             cumulative_mapping_stats = {}
-            target_ontologies = target_ontologies or ontology_mapper.default_ontologies
-            for ontology_id in target_ontologies:
-                cumulative_mapping_stats[ontology_id] = {'total_terms': 0, 'mapped_terms': 0}
+            for column, ontologies in phenotype_columns.items():
+                for onto_id in ontologies:
+                    if onto_id not in cumulative_mapping_stats:
+                        cumulative_mapping_stats[onto_id] = {'total_terms': 0, 'mapped_terms': 0}
 
-            # Initialize sample DataFrame for visualizations
-            sample_df = pd.DataFrame()
-            sample_size_per_chunk = 1000  # Adjust as needed
-            max_total_samples = 10000     # Maximum total samples for visualization
-
-            # Initialize accumulators for validation results
             format_valid = True
             duplicate_records = []
             conflicting_records = []
             integrity_issues = []
-            missing_counts = pd.Series(dtype=int)
             anomalies_detected = pd.DataFrame()
-
-            # Accumulator for unique identifiers to check duplicates across chunks
+            missing_counts = pd.Series(dtype=int)
             unique_id_set = set()
+            global_invalid_mask = pd.DataFrame()
+            row_offset = 0
+            chunk_progress = 80
 
-            # Process chunks
-            chunk_progress = 80  # Percentage of progress allocated to chunk processing
-            total_chunks = 0
-            for chunk in data_iterator:
-                total_chunks += 1
-                total_records += len(chunk)
+            # NEW aggregator: track row indices that fail JSON schema
+            schema_fail_indices_global = set()
 
-                # Initialize DataValidator for the chunk
-                validator = DataValidator(chunk, schema, unique_identifiers)
+            # 3) Process each chunk
+            for chunk in all_chunks:
+                if chunk is None or chunk.empty:
+                    continue
 
-                # Run format validation on the chunk
-                chunk_format_valid = validator.validate_format()
-                if not chunk_format_valid:
+                nrows_chunk = len(chunk)
+                if nrows_chunk == 0:
+                    continue
+
+                chunk.index = range(row_offset, row_offset + nrows_chunk)
+                row_offset += nrows_chunk
+                total_records += nrows_chunk
+
+                # (A) Validate chunk
+                chunk = convert_nans_to_none_for_string_cols(chunk, schema)
+                try:
+                    validator = DataValidator(chunk, schema, unique_identifiers)
+                    chunk_results = validator.run_all_validations()
+                except KeyError as e:
+                    missing_col = str(e).strip("'")
+                    required_cols = schema.get("required", [])
+                    if (missing_col in required_cols) or (missing_col in unique_identifiers):
+                        final_status = 'ProcessedWithWarnings'
+                        msg = (f"Missing *required* or unique-id column '{missing_col}' "
+                               f"in chunk => warnings.")
+                        log_activity(f"{file_path}: {msg}", level='warning')
+                        chunk_results = {
+                            "Format Validation": False,
+                            "Duplicate Records": pd.DataFrame(),
+                            "Conflicting Records": pd.DataFrame(),
+                            "Integrity Issues": pd.DataFrame(),
+                            "Referential Integrity Issues": pd.DataFrame(),
+                            "Anomalies Detected": pd.DataFrame(),
+                            "Invalid Mask": pd.DataFrame(False, index=chunk.index, columns=chunk.columns)
+                        }
+                    else:
+                        # It's an optional column => skip silently
+                        log_activity(
+                            f"Skipping optional column '{missing_col}' for chunk, not raising warnings.",
+                            level='info'
+                        )
+                        new_id_list = [col for col in unique_identifiers if col != missing_col]
+                        validator = DataValidator(chunk, schema, new_id_list)
+                        chunk_results = validator.run_all_validations()
+                except Exception as ex:
+                    final_status = 'ProcessedWithWarnings'
+                    msg2 = f"Error during validation: {str(ex)}"
+                    log_activity(f"{file_path}: {msg2}", level='warning')
+                    chunk_results = {
+                        "Format Validation": False,
+                        "Duplicate Records": pd.DataFrame(),
+                        "Conflicting Records": pd.DataFrame(),
+                        "Integrity Issues": pd.DataFrame(),
+                        "Referential Integrity Issues": pd.DataFrame(),
+                        "Anomalies Detected": pd.DataFrame(),
+                        "Invalid Mask": pd.DataFrame(False, index=chunk.index, columns=chunk.columns)
+                    }
+
+                # --- ADDED DEBUG for chunk_results['Invalid Mask'] ---
+                invalid_mask_chunk = chunk_results["Invalid Mask"]
+                if invalid_mask_chunk.any().any():
+                    log_activity(f"[DEBUG] Invalid cells found in chunk (size={invalid_mask_chunk.shape}).", level='info')
+                    # Show a small subset of the True cells
+                    stacked_mask = invalid_mask_chunk.stack()
+                    true_positions = stacked_mask[stacked_mask == True]
+                    limited_positions = true_positions[:20].to_dict()  # just show top 20
+                    log_activity(f"[DEBUG] Sample invalid cells: {limited_positions}", level='info')
+                else:
+                    log_activity("[DEBUG] No invalid cells in this chunk.", level='info')
+
+                # Keep track of row-level schema fails if 'SchemaViolationFlag' is set
+                if 'SchemaViolationFlag' in chunk.columns:
+                    fails_in_chunk = chunk.index[chunk['SchemaViolationFlag'] == True]
+                    for row_id in fails_in_chunk:
+                        schema_fail_indices_global.add(row_id)
+                    if len(fails_in_chunk) > 0:
+                        log_activity(
+                            f"[DEBUG] {len(fails_in_chunk)} row(s) with SchemaViolationFlag=True in this chunk.",
+                            level='info'
+                        )
+                        # Optionally show them
+                        snippet_df = chunk.loc[fails_in_chunk].head(5)
+                        log_activity(f"[DEBUG] Sample of failing rows:\n{snippet_df}", level='info')
+
+                # (B) Format validation?
+                if not chunk_results["Format Validation"]:
                     format_valid = False
-                    integrity_issues.append(validator.integrity_issues)
+                    if not chunk_results["Integrity Issues"].empty:
+                        integrity_issues.append(chunk_results["Integrity Issues"])
 
-                # Identify duplicates in the chunk
-                chunk_duplicates = validator.identify_duplicates()
-                if not chunk_duplicates.empty:
-                    duplicate_records.append(chunk_duplicates)
+                if not chunk_results["Duplicate Records"].empty:
+                    duplicate_records.append(chunk_results["Duplicate Records"])
+                if not chunk_results["Conflicting Records"].empty:
+                    conflicting_records.append(chunk_results["Conflicting Records"])
+                if not chunk_results["Anomalies Detected"].empty:
+                    anomalies_detected = pd.concat([anomalies_detected, chunk_results["Anomalies Detected"]])
 
-                # Detect conflicts in the chunk
-                chunk_conflicts = validator.detect_conflicts()
-                if not chunk_conflicts.empty:
-                    conflicting_records.append(chunk_conflicts)
+                if not chunk_results["Integrity Issues"].empty:
+                    integrity_issues.append(chunk_results["Integrity Issues"])
 
-                # Verify integrity in the chunk
-                chunk_integrity_issues = validator.verify_integrity()
-                if not chunk_integrity_issues.empty:
-                    integrity_issues.append(chunk_integrity_issues)
+                # Merge invalid mask
+                chunk_invalid_mask = chunk_results["Invalid Mask"]
+                all_cols = sorted(set(global_invalid_mask.columns) | set(chunk_invalid_mask.columns))
+                global_invalid_mask = global_invalid_mask.reindex(columns=all_cols, fill_value=False)
+                chunk_invalid_mask = chunk_invalid_mask.reindex(columns=all_cols, fill_value=False)
+                global_invalid_mask = pd.concat([global_invalid_mask, chunk_invalid_mask], axis=0)
 
-                # Detect anomalies in the chunk
-                validator.detect_anomalies()
-                if not validator.anomalies.empty:
-                    anomalies_detected = pd.concat([anomalies_detected, validator.anomalies])
+                # (C) Duplicates across chunks
+                if unique_identifiers:
+                    ids_in_chunk = set(map(tuple, chunk[unique_identifiers].drop_duplicates().values.tolist()))
+                    duplicates_in_ids = unique_id_set.intersection(ids_in_chunk)
+                    if duplicates_in_ids:
+                        cross_dup = chunk[chunk[unique_identifiers].apply(tuple, axis=1).isin(duplicates_in_ids)]
+                        duplicate_records.append(cross_dup)
+                    unique_id_set.update(ids_in_chunk)
 
-                # Update unique identifier set for global duplicate detection
-                ids_in_chunk = set(map(tuple, chunk[unique_identifiers].drop_duplicates().values.tolist()))
-                duplicates_in_ids = unique_id_set.intersection(ids_in_chunk)
-                if duplicates_in_ids:
-                    # Records with duplicate unique identifiers across chunks
-                    duplicate_records.append(chunk[chunk[unique_identifiers].apply(tuple, axis=1).isin(duplicates_in_ids)])
-                unique_id_set.update(ids_in_chunk)
-
-                # Missing Data Handling
+                # (D) Missing data
                 missing = detect_missing_data(chunk)
                 missing_counts = missing_counts.add(missing, fill_value=0)
-
-                # Flag records with missing data
                 chunk = flag_missing_data_records(chunk)
-                chunk_flagged_count = chunk['MissingDataFlag'].sum()
-                flagged_records_count += chunk_flagged_count
+                flagged_records_count += chunk['MissingDataFlag'].sum()
 
-                # Impute missing data
-                chunk = impute_missing_data(chunk, strategy=impute_strategy, field_strategies=field_strategies)
-
-                # Recalculate MissingDataFlag after imputation
+                # Impute
+                try:
+                    chunk = impute_missing_data(chunk, strategy=impute_strategy, field_strategies=field_strategies)
+                except Exception as ex_impute:
+                    final_status = 'ProcessedWithWarnings'
+                    msg3 = f"Error in imputation: {str(ex_impute)}"
+                    log_activity(f"{file_path}: {msg3}", level='warning')
                 chunk = flag_missing_data_records(chunk)
-                # Note: After imputation, MissingDataFlag should decrease or remain the same
 
-                # Collect phenotype terms
-                if phenotype_column in chunk.columns:
-                    phenotype_terms_set.update(chunk[phenotype_column].unique())
-                else:
-                    log_activity(f"{file_path}: '{phenotype_column}' column not found in chunk.", level='error')
-                    pbar.close()
-                    return {'file': file_path, 'status': 'Invalid', 'error': f"'{phenotype_column}' column not found in chunk."}
+                # (E) Ontology mapping
+                for column, ontologies in phenotype_columns.items():
+                    if column not in chunk.columns:
+                        log_activity(f"Skipping optional column '{column}' (not present).", level='info')
+                        continue
 
-                # Ontology Mapping
-                phenotypic_terms = chunk[phenotype_column].unique()
-                mappings = ontology_mapper.map_terms(phenotypic_terms, target_ontologies, custom_mappings)
+                    terms_in_chunk = chunk[column].dropna().unique()
+                    if len(terms_in_chunk) == 0:
+                        continue
 
-                # Add mapped IDs to the DataFrame
-                for ontology_id in target_ontologies:
-                    mapped_column = f"{ontology_id}_ID"
-                    chunk[mapped_column] = chunk[phenotype_column].apply(
-                        lambda x: mappings.get(x, {}).get(ontology_id)
-                    )
+                    mappings = ontology_mapper.map_terms(terms_in_chunk, ontologies, custom_mappings)
+                    for onto_id in ontologies:
+                        col_name = f"{onto_id}_ID"
+                        chunk[col_name] = chunk[column].map(
+                            lambda x: mappings.get(str(x), {}).get(onto_id) if pd.notnull(x) else None
+                        )
+                        if onto_id not in cumulative_mapping_stats:
+                            cumulative_mapping_stats[onto_id] = {'total_terms': 0, 'mapped_terms': 0}
+                        valid_terms = [t for t in terms_in_chunk if pd.notnull(t)]
+                        cumulative_mapping_stats[onto_id]['total_terms'] += len(valid_terms)
+                        cumulative_mapping_stats[onto_id]['mapped_terms'] += sum(
+                            1 for t in valid_terms
+                            if mappings.get(str(t), {}).get(onto_id) is not None
+                        )
 
-                    # Update mapping success rates
-                    mapped_terms = chunk[mapped_column].notnull().sum()
-                    cumulative_mapping_stats[ontology_id]['total_terms'] += len(chunk)
-                    cumulative_mapping_stats[ontology_id]['mapped_terms'] += mapped_terms
-
-                # Collect sample data for visualizations
+                # (F) Accumulate sample df
                 if len(sample_df) < max_total_samples:
-                    remaining_samples = max_total_samples - len(sample_df)
-                    sample_size = min(sample_size_per_chunk, remaining_samples)
-                    if len(chunk) > sample_size:
-                        sample_chunk = chunk.sample(n=sample_size, random_state=42)
+                    remaining = max_total_samples - len(sample_df)
+                    chunk_sample_size = min(sample_size_per_chunk, remaining)
+                    if len(chunk) > chunk_sample_size:
+                        sample_chunk = chunk.sample(n=chunk_sample_size, random_state=42)
                     else:
                         sample_chunk = chunk.copy()
                     sample_df = pd.concat([sample_df, sample_chunk], ignore_index=True)
 
-                # Write processed chunk to the output file
-                chunk.to_csv(output_data_file, mode='a', index=False, header=write_header)
-                if write_header:
-                    write_header = False
+                # (G) Write chunk to final CSV
+                try:
+                    chunk.to_csv(output_data_file, mode='a', index=False, header=write_header)
+                    if write_header:
+                        write_header = False
+                except Exception as ex_csv:
+                    final_status = 'ProcessedWithWarnings'
+                    log_activity(f"Error writing CSV output: {str(ex_csv)}", level='warning')
 
                 # Update progress bar
-                pbar.update(chunk_progress / max(1, total_records / chunksize))
+                chunk_ratio = max(1, total_records / chunksize)
+                pbar.update(chunk_progress / chunk_ratio)
 
-            pbar.update(5)  # Update remaining progress
-
+            # 4) Summarize
             if not format_valid:
-                error_msg = "Format validation failed. Schema compliance issues detected."
-                log_activity(f"{file_path}: {error_msg}", level='error')
-                pbar.close()
-                return {'file': file_path, 'status': 'Invalid', 'error': error_msg}
+                num_invalid_integrity = sum(len(df_part) for df_part in integrity_issues) if integrity_issues else 0
+                msg4 = f"Format validation failed. {num_invalid_integrity} record(s) do not match the JSON schema."
+                log_activity(f"{file_path}: {msg4}", level='warning')
+                if error_msg:
+                    error_msg += f" | {msg4}"
+                else:
+                    error_msg = msg4
+                final_status = 'ProcessedWithWarnings'
 
-            # Aggregate validation results
+            all_duplicates = pd.concat(duplicate_records).drop_duplicates() if duplicate_records else pd.DataFrame()
+            all_conflicts = pd.concat(conflicting_records).drop_duplicates() if conflicting_records else pd.DataFrame()
+            all_integrity = pd.concat(integrity_issues).drop_duplicates() if integrity_issues else pd.DataFrame()
+            anomalies_detected = anomalies_detected.drop_duplicates() if not anomalies_detected.empty else pd.DataFrame()
+
             validation_results = {
                 "Format Validation": format_valid,
-                "Duplicate Records": pd.concat(duplicate_records).drop_duplicates() if duplicate_records else pd.DataFrame(),
-                "Conflicting Records": pd.concat(conflicting_records).drop_duplicates() if conflicting_records else pd.DataFrame(),
-                "Integrity Issues": pd.concat(integrity_issues).drop_duplicates() if integrity_issues else pd.DataFrame(),
-                "Referential Integrity Issues": pd.DataFrame(),  # Placeholder if needed
-                "Anomalies Detected": anomalies_detected.drop_duplicates() if not anomalies_detected.empty else pd.DataFrame()
+                "Duplicate Records": all_duplicates,
+                "Conflicting Records": all_conflicts,
+                "Integrity Issues": all_integrity,
+                "Referential Integrity Issues": pd.DataFrame(),
+                "Anomalies Detected": anomalies_detected,
+                "Invalid Mask": global_invalid_mask.sort_index()
             }
 
-            # Calculate mapping success rates
+            # 5) Mapping stats
             mapping_success_rates = {}
-            for ontology_id, stats in cumulative_mapping_stats.items():
+            for onto_id, stats in cumulative_mapping_stats.items():
                 total_terms = stats['total_terms']
                 mapped_terms = stats['mapped_terms']
                 success_rate = (mapped_terms / total_terms) * 100 if total_terms > 0 else 0
-                mapping_success_rates[ontology_id] = {
+                mapping_success_rates[onto_id] = {
                     'total_terms': total_terms,
                     'mapped_terms': mapped_terms,
                     'success_rate': success_rate
                 }
 
-            # Calculate quality scores
-            total_records = total_records or 1  # Avoid division by zero
-            valid_records = total_records - len(validation_results["Integrity Issues"])
-            schema_validation_score = (valid_records / total_records) * 100
+            total_records = total_records or 1
+            num_schema_fails = len(schema_fail_indices_global)
+            valid_records_for_schema = total_records - num_schema_fails
+            schema_validation_score = (valid_records_for_schema / total_records) * 100
 
             total_cells = total_records * len(sample_df.columns)
             total_missing = missing_counts.sum()
-            missing_data_score = ((total_cells - total_missing) / total_cells) * 100
+            if len(sample_df.columns) == 0:
+                missing_data_score = 100.0
+            else:
+                missing_data_score = ((total_cells - total_missing) / total_cells) * 100 if total_cells > 0 else 100.0
 
-            mapping_success_scores = [stats['success_rate'] for stats in mapping_success_rates.values()]
-            mapping_success_score = sum(mapping_success_scores) / len(mapping_success_scores) if mapping_success_scores else 0
+            success_rates_list = [v['success_rate'] for v in mapping_success_rates.values()]
+            mapping_success_score = sum(success_rates_list)/len(success_rates_list) if success_rates_list else 0
 
-            overall_quality_score = (schema_validation_score + missing_data_score + mapping_success_score) / 3
-
+            overall_quality_score = (schema_validation_score + missing_data_score + mapping_success_score) / 3.0
             quality_scores = {
                 'Schema Validation Score': schema_validation_score,
                 'Missing Data Score': missing_data_score,
@@ -238,67 +448,59 @@ def process_file(
                 'Overall Quality Score': overall_quality_score
             }
 
-            # Generate Reports
-            report_path = os.path.join(
-                output_dir, f"{os.path.splitext(os.path.basename(file_path))[0]}_report.{report_format}"
-            )
-
-            # Create visualizations using sample_df
-            figs = create_visual_summary(
-                sample_df,
-                phenotype_column=phenotype_column,  # Pass phenotype_column
-                output_image_path=None
-            )
-
-            # Save visualizations as images
+            report_path = unique_output_name(file_path, output_dir, suffix='_report.pdf')
+            figs = create_visual_summary(sample_df, phenotype_columns=phenotype_columns, output_image_path=None)
             visualization_images = []
             for idx, fig in enumerate(figs):
                 image_filename = f"{os.path.splitext(os.path.basename(file_path))[0]}_visual_{idx}.png"
                 image_path = os.path.join(output_dir, image_filename)
                 try:
-                    # Explicitly specify format and scale
                     fig.write_image(image_path, format='png', scale=2)
                     visualization_images.append(image_path)
                 except Exception as e:
                     log_activity(f"Error saving image {image_filename}: {e}", level='error')
 
+            base_display_name = os.path.basename(file_path)
             generate_qc_report(
-                validation_results,
-                missing_counts,
-                flagged_records_count,
-                mapping_success_rates,
-                visualization_images,
-                impute_strategy,
-                quality_scores,  # Added parameter
-                report_path,
-                report_format
+                validation_results=validation_results,
+                missing_data=missing_counts,
+                flagged_records_count=flagged_records_count,
+                mapping_success_rates=mapping_success_rates,
+                visualization_images=visualization_images,
+                impute_strategy=impute_strategy,
+                quality_scores=quality_scores,
+                output_path_or_buffer=report_path,
+                report_format=report_format,
+                file_identifier=base_display_name
             )
             log_activity(f"{file_path}: QC report generated at {report_path}.")
             pbar.update(5)
 
             log_activity(f"{file_path}: Processed data saved at {output_data_file}")
-
             pbar.update(5)
             pbar.close()
 
-            result = {
+            return {
                 'file': file_path,
-                'status': 'Processed',
-                'error': None,
+                'status': final_status,
+                'error': error_msg,
                 'validation_results': validation_results,
                 'missing_data': missing_counts,
                 'flagged_records_count': flagged_records_count,
                 'processed_file_path': output_data_file,
+                'report_path': report_path,
                 'mapping_success_rates': mapping_success_rates,
                 'visualization_images': visualization_images,
-                'quality_scores': quality_scores  # Added parameter
+                'quality_scores': quality_scores
             }
-
-            return result
 
     except Exception as e:
         log_activity(f"Error processing file {file_path}: {str(e)}", level='error')
-        return {'file': file_path, 'status': 'Error', 'error': str(e)}
+        return {
+            'file': file_path,
+            'status': 'Error',
+            'error': str(e)
+        }
 
 def batch_process(
     files,
@@ -310,93 +512,67 @@ def batch_process(
     output_dir='reports',
     target_ontologies=None,
     report_format='pdf',
-    chunksize=10000
+    chunksize=10000,
+    phenotype_columns=None,
+    phenotype_column=None,
+    log_file_for_children=None
 ):
-    # Load schema
-    with open(schema_path, 'r') as f:
+    log_activity(f"[ParentProcess] Starting on: {files}", level='info')
+
+    # 1) Load the schema
+    with open(schema_path) as f:
         schema = json.load(f)
 
-    # Load configuration
+    # 2) Load config
     config = load_config(config_path)
 
-    # Extract field-specific imputation strategies from config
-    field_strategies = config.get('imputation_strategies', {})
+    # 3) Create OntologyMapper
+    ontology_mapper = OntologyMapper(config)
 
-    # Initialize OntologyMapper
-    ontology_mapper = OntologyMapper(config_path=config_path)
-
-    # Load custom mappings if provided
+    # 4) Load custom mappings
     custom_mappings = None
-    if custom_mappings_path and os.path.exists(custom_mappings_path):
-        with open(custom_mappings_path, 'r') as f:
+    if custom_mappings_path:
+        with open(custom_mappings_path) as f:
             custom_mappings = json.load(f)
 
-    # Ensure output directory exists
-    os.makedirs(output_dir, exist_ok=True)
+    # Convert old style to new style if needed
+    if phenotype_column and not phenotype_columns:
+        phenotype_columns = {phenotype_column: ["HPO"]}
 
+    # 5) In parallel, call child_process_run
     results = []
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        futures = {
-            executor.submit(
-                process_file,
+        futures = []
+        for file_path in files:
+            future = executor.submit(
+                child_process_run,
                 file_path,
                 schema,
                 ontology_mapper,
                 unique_identifiers,
                 custom_mappings,
                 impute_strategy,
-                field_strategies,
+                None,
                 output_dir,
                 target_ontologies,
                 report_format,
-                chunksize
-            ): file_path for file_path in files
-        }
-        for future in tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Batch Processing"):
-            file_path = futures[future]
+                chunksize,
+                phenotype_columns,
+                log_file_for_children
+            )
+            futures.append(future)
+
+        for future in concurrent.futures.as_completed(futures):
             try:
                 result = future.result()
                 results.append(result)
-                if result['status'] == 'Processed':
-                    print(f"✅ {os.path.basename(result['file'])} processed successfully.")
-                elif result['status'] == 'Invalid':
-                    print(f"⚠️ {os.path.basename(result['file'])} failed validation: {result['error']}")
-                else:
-                    print(f"❌ {os.path.basename(result['file'])} encountered an error: {result['error']}")
             except Exception as e:
-                log_activity(f"Error in processing {file_path}: {str(e)}", level='error')
-                print(f"❌ Error in processing {os.path.basename(file_path)}: {str(e)}")
+                log_activity(f"Error in batch processing: {str(e)}", level='error')
+                dummy_result = {
+                    'file': "<Unknown>",
+                    'status': 'Error',
+                    'error': str(e)
+                }
+                results.append(dummy_result)
 
     return results
-
-def collect_files(inputs, recursive=True):
-    """
-    Collects all supported files from the provided input paths.
-
-    Args:
-        inputs (list): List of file or directory paths.
-        recursive (bool): Whether to scan directories recursively.
-
-    Returns:
-        list: List of file paths.
-    """
-    supported_extensions = {'.csv', '.tsv', '.json'}
-    collected_files = []
-
-    for input_path in inputs:
-        if os.path.isfile(input_path):
-            ext = os.path.splitext(input_path)[1].lower()
-            if ext in supported_extensions:
-                collected_files.append(input_path)
-        elif os.path.isdir(input_path):
-            for root, dirs, files in os.walk(input_path):
-                for file in files:
-                    ext = os.path.splitext(file)[1].lower()
-                    if ext in supported_extensions:
-                        collected_files.append(os.path.join(root, file))
-                if not recursive:
-                    break
-        else:
-            log_activity(f"Input path '{input_path}' is neither a file nor a directory.", level='warning')
-
-    return collected_files

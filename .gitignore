@@ -43,6 +43,7 @@ Thumbs.db
 # Environment variables
 .env
 .env.*
+venv/
 
 # Streamlit cache
 .streamlit/
@@ -55,3 +56,6 @@ Thumbs.db
 *.backup
 concatenate_src_files.py
 concatenated_src.txt
+TODO
+scripts/test_results/*
+scripts/unified_scenarios_outputs/*

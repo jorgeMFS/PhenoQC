@@ -1,0 +1,105 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Heart Disease Dataset Schema",
+  "type": "object",
+  "properties": {
+    "SampleID": {
+      "type": "string"
+    },
+    "age": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "sex": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "cp": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "trestbps": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "chol": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "fbs": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "restecg": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "thalach": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "exang": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "oldpeak": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "slope": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "ca": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "thal": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "num": {
+      "type": [
+        "number",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "SampleID",
+    "age",
+    "sex",
+    "cp",
+    "num"
+  ]
+}

@@ -13,4 +13,7 @@ scikit-learn
 fancyimpute
 fastjsonschema
 pronto
+psutil
 rapidfuzz
+streamlit-aggrid
+ucimlrepo

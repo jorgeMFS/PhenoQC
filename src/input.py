@@ -7,12 +7,19 @@ def read_csv(file_path, chunksize=10000):
 
     Args:
         file_path (str): Path to the CSV file.
+        na_values (list): List of strings to be interpreted as NA/NaN.
+        keep_default_na (bool): Whether to include the default NaN values.
         chunksize (int): Number of rows per chunk.
 
     Returns:
         Iterator[pd.DataFrame]: DataFrame chunks.
     """
-    return pd.read_csv(file_path, chunksize=chunksize)
+    return pd.read_csv(
+        file_path,
+        na_values=["", " ", "NA", "N/A"],
+        keep_default_na=True,
+        chunksize=chunksize
+    )
 
 def read_tsv(file_path, chunksize=10000):
     """
@@ -25,25 +32,45 @@ def read_tsv(file_path, chunksize=10000):
     Returns:
         Iterator[pd.DataFrame]: DataFrame chunks.
     """
-    return pd.read_csv(file_path, sep='\t', chunksize=chunksize)
+    return pd.read_csv(
+        file_path,
+        sep='\t',
+        na_values=["", " ", "NA", "N/A"],
+        keep_default_na=True,
+        chunksize=chunksize
+    )
 
 def read_json(file_path, chunksize=10000):
     """
     Reads a JSON file and returns an iterator over pandas DataFrame chunks.
-
-    Args:
-        file_path (str): Path to the JSON file.
-        chunksize (int): Number of records per chunk.
-
-    Yields:
-        pd.DataFrame: DataFrame chunk.
+    Now gracefully handles empty files or decode errors.
     """
-    with open(file_path, 'r') as f:
-        data = json.load(f)
+    with open(file_path, 'r', encoding='utf-8') as f:
+        content = f.read().strip()
     
+    if not content:
+        # File is empty => yield an empty DataFrame
+        yield pd.DataFrame()
+        return
+
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError:
+        # If JSON is invalid => raise a ValueError so process_file can handle it
+        raise ValueError(f"Invalid JSON file or decode error at: {file_path}")
+
+    # If data is not a list or dict, we can handle that scenario as well
+    # but typically it should be list/dict. For safety:
+    if not isinstance(data, (list, dict)):
+        raise ValueError(f"JSON content is not a list/dict: {file_path}")
+
     # Normalize JSON data into a flat table
     df = pd.json_normalize(data)
-    
+
+    if df.empty:
+        yield pd.DataFrame()
+        return
+
     # Yield the DataFrame in chunks if necessary
     if chunksize < len(df):
         for start in range(0, len(df), chunksize):

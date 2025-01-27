@@ -16,24 +16,14 @@ def generate_qc_report(
     impute_strategy,
     quality_scores,
     output_path_or_buffer,
-    report_format='pdf'
+    report_format='pdf',
+    file_identifier=None
 ):
     """
-    Generates a quality control report.
-
-    Args:
-        validation_results (dict): Results from schema validation.
-        missing_data (pd.Series): Series with counts of missing data per column.
-        flagged_records_count (int): Number of records flagged for missing data.
-        mapping_success_rates (dict): Ontology mapping success rates.
-        visualization_images (list): List of paths to visualization images.
-        impute_strategy (str): Imputation strategy used.
-        quality_scores (dict): Dictionary of data quality scores.
-        output_path_or_buffer (str or BytesIO): Path or buffer to save the report.
-        report_format (str): Format of the report ('pdf' or 'md').
+    Generates a quality control report (PDF or Markdown).
+    No changes to other files are required.
     """
     if report_format == 'pdf':
-        # Generate PDF report using ReportLab Platypus
         styles = getSampleStyleSheet()
         story = []
 
@@ -41,97 +31,101 @@ def generate_qc_report(
         story.append(Paragraph("PhenoQC Quality Control Report", styles['Title']))
         story.append(Spacer(1, 12))
 
+        if file_identifier:
+            story.append(Paragraph(f"<b>Source file:</b> {file_identifier}", styles['Normal']))
+            story.append(Spacer(1, 12))
+
         # Imputation Strategy
         story.append(Paragraph("Imputation Strategy Used:", styles['Heading2']))
-        story.append(Paragraph(f"{impute_strategy.capitalize()}", styles['Normal']))
+        strategy_display = "(No Imputation Strategy)" if impute_strategy is None else impute_strategy.capitalize()
+        story.append(Paragraph(strategy_display, styles['Normal']))
         story.append(Spacer(1, 12))
 
         # Data Quality Scores
         story.append(Paragraph("Data Quality Scores:", styles['Heading2']))
         for score_name, score_value in quality_scores.items():
-            story.append(Paragraph(f"{score_name}: {score_value:.2f}%", styles['Normal']))
+            story.append(Paragraph(f"<b>{score_name}:</b> {score_value:.2f}%", styles['Normal']))
         story.append(Spacer(1, 12))
 
         # Schema Validation Results
         story.append(Paragraph("Schema Validation Results:", styles['Heading2']))
         for key, value in validation_results.items():
-            if isinstance(value, pd.DataFrame) and not value.empty:
-                story.append(Paragraph(f"{key}: {len(value)} issues found.", styles['Normal']))
+            if isinstance(value, pd.DataFrame):
+                if not value.empty:
+                    story.append(Paragraph(
+                        f"<b>{key}:</b> {len(value)} issues found.",
+                        styles['Normal']
+                    ))
+                else:
+                    story.append(Paragraph(
+                        f"<b>{key}:</b> No issues found.",
+                        styles['Normal']
+                    ))
             else:
-                story.append(Paragraph(f"{key}: {value}", styles['Normal']))
+                story.append(Paragraph(f"<b>{key}:</b> {value}", styles['Normal']))
         story.append(Spacer(1, 12))
 
         # Missing Data Summary
         story.append(Paragraph("Missing Data Summary:", styles['Heading2']))
         for column, count in missing_data.items():
-            story.append(Paragraph(f"{column}: {count} missing values", styles['Normal']))
+            story.append(Paragraph(f"<b>{column}:</b> {count} missing values", styles['Normal']))
         story.append(Spacer(1, 12))
 
         # Records Flagged for Missing Data
-        story.append(Paragraph(f"Records Flagged for Missing Data: {flagged_records_count}", styles['Normal']))
+        story.append(Paragraph(f"<b>Records Flagged for Missing Data:</b> {flagged_records_count}", styles['Normal']))
         story.append(Spacer(1, 12))
 
         # Ontology Mapping Success Rates
         story.append(Paragraph("Ontology Mapping Success Rates:", styles['Heading2']))
         for ontology_id, stats in mapping_success_rates.items():
             story.append(Paragraph(f"{ontology_id}:", styles['Heading3']))
-            story.append(Paragraph(f"Total Terms: {stats['total_terms']}", styles['Normal']))
-            story.append(Paragraph(f"Mapped Terms: {stats['mapped_terms']}", styles['Normal']))
-            story.append(Paragraph(f"Success Rate: {stats['success_rate']:.2f}%", styles['Normal']))
+            story.append(Paragraph(f"<b>Total Terms:</b> {stats['total_terms']}", styles['Normal']))
+            story.append(Paragraph(f"<b>Mapped Terms:</b> {stats['mapped_terms']}", styles['Normal']))
+            story.append(Paragraph(f"<b>Success Rate:</b> {stats['success_rate']:.2f}%", styles['Normal']))
             story.append(Spacer(1, 12))
 
         # Visualizations
         story.append(Paragraph("Visualizations:", styles['Heading2']))
         for image_path in visualization_images:
-            # Ensure the image exists before adding
             if os.path.exists(image_path):
-                img = Image(image_path, width=6 * inch, height=4 * inch)
+                # Increase figure size to ensure labels are visible
+                img = Image(image_path, width=6.5 * inch, height=5 * inch)
                 story.append(img)
                 story.append(Spacer(1, 12))
             else:
                 story.append(Paragraph(f"Image not found: {image_path}", styles['Normal']))
 
-        # Build the PDF
         if isinstance(output_path_or_buffer, str):
             doc = SimpleDocTemplate(output_path_or_buffer, pagesize=letter)
         else:
             doc = SimpleDocTemplate(output_path_or_buffer, pagesize=letter)
         doc.build(story)
+
     elif report_format == 'md':
-        # Generate Markdown report
         md_lines = []
         md_lines.append("# PhenoQC Quality Control Report\n")
-
-        # Imputation Strategy
         md_lines.append("## Imputation Strategy Used")
-        md_lines.append(f"{impute_strategy.capitalize()}\n")
+        md_lines.append(f"{impute_strategy.capitalize() if impute_strategy else '(No Imputation Strategy)'}\n")
         md_lines.append("\n")
-
-        # Data Quality Scores
         md_lines.append("## Data Quality Scores")
         for score_name, score_value in quality_scores.items():
             md_lines.append(f"- **{score_name}**: {score_value:.2f}%")
         md_lines.append("")
-
-        # Schema Validation Results
         md_lines.append("## Schema Validation Results")
         for key, value in validation_results.items():
-            if isinstance(value, pd.DataFrame) and not value.empty:
-                md_lines.append(f"- **{key}**: {len(value)} issues found.")
+            if isinstance(value, pd.DataFrame):
+                if not value.empty:
+                    md_lines.append(f"- **{key}**: {len(value)} issues found.")
+                else:
+                    md_lines.append(f"- **{key}**: No issues found.")
             else:
                 md_lines.append(f"- **{key}**: {value}")
         md_lines.append("")
-
-        # Missing Data Summary
         md_lines.append("## Missing Data Summary")
         for column, count in missing_data.items():
             md_lines.append(f"- **{column}**: {count} missing values")
         md_lines.append("")
-
-        # Records Flagged for Missing Data
         md_lines.append(f"**Records Flagged for Missing Data**: {flagged_records_count}\n")
-
-        # Ontology Mapping Success Rates
         md_lines.append("## Ontology Mapping Success Rates")
         for ontology_id, stats in mapping_success_rates.items():
             md_lines.append(f"### {ontology_id}")
@@ -139,15 +133,12 @@ def generate_qc_report(
             md_lines.append(f"- **Mapped Terms**: {stats['mapped_terms']}")
             md_lines.append(f"- **Success Rate**: {stats['success_rate']:.2f}%")
             md_lines.append("")
-
-        # Visualizations
         md_lines.append("## Visualizations")
         for image_path in visualization_images:
             image_filename = os.path.basename(image_path)
             md_lines.append(f"![{image_filename}]({image_filename})")
             md_lines.append("")
 
-        # Write the markdown content to the file or buffer
         if isinstance(output_path_or_buffer, str):
             with open(output_path_or_buffer, 'w') as f:
                 f.write('\n'.join(md_lines))
@@ -157,80 +148,253 @@ def generate_qc_report(
         raise ValueError("Unsupported report format. Use 'pdf' or 'md'.")
 
 
-def create_visual_summary(df, phenotype_column='Phenotype', output_image_path=None):
+def create_visual_summary(df, phenotype_columns=None, output_image_path=None):
     """
-    Creates interactive visual summaries of the data.
-
-    Args:
-        df (pd.DataFrame): The processed data frame.
-        phenotype_column (str): The name of the column containing phenotypic terms.
-        output_image_path (str): Path to save the visualization HTML file (optional).
-
-    Returns:
-        list: List of Plotly figure objects.
+    Creates visual summaries with extra steps to keep axis labels fully visible:
+      1) Missingness Heatmap (white/blue)
+      2) Bar plot of % missing per column
+      3) Numeric histograms ignoring ID columns
+      4) Optional bar/pie charts for phenotype columns
     """
+    # Check for proper DataFrame input
     if not isinstance(df, pd.DataFrame):
-        raise TypeError("Input `df` must be a pandas DataFrame.")
+        raise TypeError(
+            f"create_visual_summary() expects a pandas DataFrame, but got {type(df)}."
+        )
 
     figs = []
 
-    # Missing Data Heatmap
-    missing_data = df.isnull()
-    if missing_data.any().any():
-        fig1 = px.imshow(
-            missing_data,
-            labels=dict(x="Columns", y="Records", color="Missing"),
-            title="Missing Data Heatmap",
-            color_continuous_scale='Viridis'  # Specify a color scale
-        )
-        figs.append(fig1)
-    else:
-        # Add a message indicating no missing data
-        fig1 = go.Figure()
-        fig1.add_annotation(
-            x=0.5, y=0.5,
-            text="No Missing Data",
-            showarrow=False,
-            font=dict(size=20)
-        )
-        fig1.update_layout(
-            title="Missing Data Heatmap",
-            xaxis={'visible': False},
-            yaxis={'visible': False}
-        )
-        figs.append(fig1)
+    # 1) Missingness visuals
+    if not df.empty:
+        # (a) Heatmap
+        figs.append(create_missingness_heatmap(df))
+        # (b) Missing distribution
+        figs.append(create_missingness_distribution(df))
+        # (c) Numeric histograms
+        possible_ids = [c for c in df.columns if "id" in c.lower()]
+        figs.extend(create_numeric_histograms(df, unique_id_cols=possible_ids))
 
-    # Distribution of Phenotypes
-    if phenotype_column in df.columns:
-        phenotype_counts = df[phenotype_column].value_counts()
-        if not phenotype_counts.empty:
-            fig2 = px.bar(
+    # 2) Phenotype-based plots
+    if phenotype_columns:
+        for column, ontologies in phenotype_columns.items():
+            if column not in df.columns:
+                continue
+            non_null_values = df[column].dropna()
+            if len(non_null_values) == 0:
+                continue
+
+            phenotype_counts = non_null_values.value_counts().head(20)
+            fig_bar = px.bar(
                 phenotype_counts,
-                labels={'index': phenotype_column, 'value': 'Count'},
-                title='Distribution of Phenotypic Traits',
-                color_discrete_sequence=px.colors.qualitative.Plotly  # Define color sequence
+                labels={'index': 'Phenotype Term', 'value': 'Count'},
+                title=f"Top 20 Most Common Terms in {column}",
+                template='plotly_white'
             )
-            figs.append(fig2)
+            fig_bar.update_layout(
+                plot_bgcolor="#FFFFFF",
+                paper_bgcolor="#FFFFFF",
+                font={'color': "#2C3E50", 'size': 12},
+                title={
+                    'text': f"Top 20 Most Common Terms in {column}",
+                    'y': 0.97, 'x': 0.45,
+                    'xanchor': 'center',
+                    'yanchor': 'top',
+                    'font': {'size': 16}
+                },
+                showlegend=False,
+                width=1200,
+                height=700,
+                margin=dict(t=120, b=200, l=140, r=120),
+                bargap=0.25
+            )
+            fig_bar.update_xaxes(
+                tickangle=60,
+                automargin=True,
+                tickfont={'size': 10},
+                ticktext=[
+                    f"{text[:40]}..." if len(text) > 40 else text
+                    for text in phenotype_counts.index
+                ],
+                tickvals=list(range(len(phenotype_counts))),
+                showticklabels=True,
+                tickmode='array'
+            )
+            figs.append(fig_bar)
 
-    # Pie Charts for Each Ontology
-    ontology_columns = [col for col in df.columns if col.endswith('_ID')]
-    for ontology_column in ontology_columns:
-        mapped = df[ontology_column].notnull().sum()
-        unmapped = df[ontology_column].isnull().sum()
-        fig = go.Figure(data=[go.Pie(
-            labels=['Mapped', 'Unmapped'],
-            values=[mapped, unmapped],
-            hole=.3,
-            marker=dict(colors=px.colors.qualitative.Plotly[:2])  # Define explicit colors
-        )])
-        fig.update_layout(title=f'Mapped vs Unmapped Phenotypic Terms ({ontology_column})')
+            for onto_id in ontologies:
+                mapped_col = f"{onto_id}_ID"
+                if mapped_col not in df.columns:
+                    continue
+                valid_terms = ~df[column].isin([
+                    'NotARealTerm','ZZZZ:9999999','PhenotypeJunk','InvalidTerm42'
+                ])
+                total = df[column].notna() & valid_terms
+                total_count = total.sum()
+                mapped = df[mapped_col].notna() & total
+                mapped_count = mapped.sum()
+                unmapped_count = total_count - mapped_count
+
+                fig_pie = go.Figure(data=[go.Pie(
+                    labels=['Mapped', 'Unmapped'],
+                    values=[mapped_count, unmapped_count],
+                    hole=0.4,
+                    marker=dict(colors=['#4C72B0', '#DD8452']),
+                    textinfo='label+percent',
+                    textposition='outside',
+                    textfont={'size': 14},
+                    hovertemplate="<b>%{label}</b><br>Count: %{value}"
+                                  "<br>Percentage: %{percent}<extra></extra>"
+                )])
+                fig_pie.update_layout(
+                    title={
+                        'text': f"Mapping Results: {column} → {onto_id}",
+                        'y': 0.95,
+                        'x': 0.5,
+                        'xanchor': 'center',
+                        'yanchor': 'top',
+                        'font': {'size': 16}
+                    },
+                    annotations=[{
+                        'text': (
+                            f"Total Valid Terms: {total_count}<br>"
+                            f"Mapped: {mapped_count} "
+                            f"({(mapped_count / total_count * 100 if total_count else 0):.1f}%)<br>"
+                            f"Unmapped: {unmapped_count} "
+                            f"({(unmapped_count / total_count * 100 if total_count else 0):.1f}%)"
+                        ),
+                        'x': 0.5,
+                        'y': -0.2,
+                        'showarrow': False,
+                        'font': {'size': 12}
+                    }],
+                    showlegend=True,
+                    legend={
+                        'orientation': 'h',
+                        'yanchor': 'bottom',
+                        'y': -0.3,
+                        'xanchor': 'center',
+                        'x': 0.5
+                    },
+                    width=900,
+                    height=700,
+                    plot_bgcolor="#FFFFFF",
+                    paper_bgcolor="#FFFFFF",
+                    font={'color': "#2C3E50"},
+                    margin=dict(t=120, b=180, l=100, r=100)
+                )
+                figs.append(fig_pie)
+
+    return figs
+
+def create_missingness_distribution(df):
+    """
+    Returns a bar chart showing percent missingness per column.
+    """
+    missing_count = df.isna().sum()
+    missing_percent = (missing_count / len(df)) * 100
+    data = pd.DataFrame({
+        "column": missing_count.index,
+        "percent_missing": missing_percent
+    }).sort_values("percent_missing", ascending=True)
+
+    fig = px.bar(
+        data,
+        x="percent_missing",
+        y="column",
+        orientation="h",
+        title="Percentage of Missing Data by Column",
+        template="plotly_white",
+        color_discrete_sequence=["#d62728"]
+    )
+    fig.update_layout(
+        height=500,
+        width=800,
+        margin=dict(l=120, r=80, t=60, b=60),
+        font=dict(size=12)
+    )
+    fig.update_xaxes(title_text="Percent Missing", automargin=True)
+    fig.update_yaxes(title_text="Columns", automargin=True)
+    return fig
+
+def create_missingness_heatmap(df):
+    """
+    Generates a missingness heatmap with exactly two colors:
+    White for present (0) and a pleasing blue (#3B82F6) for missing (1).
+    """
+    missing_matrix = df.isna().astype(int)
+    col_order = missing_matrix.sum().sort_values(ascending=False).index
+    missing_matrix = missing_matrix[col_order]
+
+    two_color_scale = [(0.0, "white"), (1.0, "#3B82F6")]
+
+    # Build the base heatmap
+    fig = px.imshow(
+        missing_matrix,
+        zmin=0,
+        zmax=1,
+        color_continuous_scale=two_color_scale,
+        labels={"color": "Missing"},
+        aspect="auto",
+        title="Missingness Heatmap"
+    )
+    # Bump the figure size
+    fig.update_layout(
+        height=800,
+        width=1200,
+        # Extra space for big labels & a lower-located chart title
+        margin=dict(l=130, r=130, t=180, b=200),
+        font=dict(size=12),
+        xaxis=dict(side="top"),
+    )
+    # Move the chart title downward so it's clearly separate from x-labels
+    fig.update_layout(
+        title=dict(
+            text="Missingness Heatmap",
+            x=0.5,
+            y=0.90,      # Move the title down a bit more
+            xanchor="center",
+            yanchor="bottom"
+        )
+    )
+    # Increase standoff for the x-axis label
+    fig.update_xaxes(
+        title=dict(text="Columns", standoff=70),
+        tickangle=80,  # or 90 to make them vertical
+        automargin=True
+    )
+    # Extra standoff for y-axis label if needed
+    fig.update_yaxes(
+        title=dict(text="Rows", standoff=20),
+        automargin=True
+    )
+    return fig
+
+def create_numeric_histograms(df, unique_id_cols=None, max_cols=5):
+    """
+    Creates histogram figures for numeric columns, ignoring any columns
+    that appear in `unique_id_cols` (if provided).
+    """
+    if unique_id_cols is None:
+        unique_id_cols = []
+    numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+    numeric_cols = [col for col in numeric_cols if col not in unique_id_cols]
+    numeric_cols = numeric_cols[:max_cols]
+
+    figs = []
+    for col in numeric_cols:
+        fig = px.histogram(
+            df,
+            x=col,
+            nbins=30,
+            title=f"Distribution of {col}",
+            template="plotly_white",
+            color_discrete_sequence=["#1f77b4"]
+        )
+        fig.update_layout(
+            height=400,
+            width=600,
+            margin=dict(l=60, r=60, t=60, b=60),
+            font=dict(size=12),
+        )
         figs.append(fig)
-
-    if output_image_path:
-        # Create a single HTML file with all figures
-        with open(output_image_path, 'w') as f:
-            for idx, fig in enumerate(figs):
-                f.write(fig.to_html(full_html=False, include_plotlyjs='cdn'))
-    else:
-        # Return the list of figures
-        return figs
+    return figs

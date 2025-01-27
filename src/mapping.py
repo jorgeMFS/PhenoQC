@@ -4,25 +4,45 @@ import yaml
 import pronto
 from rapidfuzz import fuzz, process
 import requests
+from rapidfuzz import fuzz
+from typing import Dict, List, Optional
+
+from .configuration import load_config
+from .logging_module import log_activity
 from datetime import datetime, timedelta
 
 class OntologyMapper:
     CACHE_DIR = os.path.expanduser("~/.phenoqc/ontologies")
 
-    def __init__(self, config_path: str = 'config.yaml'):
+    def __init__(self, config_source):
         """
-        Initializes the OntologyMapper by loading ontologies from the configuration file.
+        Initializes the OntologyMapper by loading ontologies from a config source.
 
         Args:
-            config_path (str): Path to the configuration YAML file.
+            config_source (Union[str, dict]): Either:
+                - A string path to the configuration file (YAML/JSON)
+                - An already-loaded dict with configuration data
         """
-        self.config = self.load_config(config_path)
+        if isinstance(config_source, dict):
+            # We got a dict directly (e.g., from load_config in the GUI or CLI)
+            self.config = config_source
+        elif isinstance(config_source, str):
+            # We got a path to a config file. Let's load it ourselves:
+            self.config = load_config(config_source)
+        else:
+            raise ValueError(
+                "OntologyMapper expects config_source to be either a dict or a path (str). "
+                f"Got: {type(config_source)}"
+            )
+
         self.cache_expiry_days = self.config.get('cache_expiry_days', 30)
         self.ontologies = self.load_ontologies()
         self.default_ontologies = self.config.get('default_ontologies', [])
         if not self.default_ontologies:
             raise ValueError("No default ontologies specified in the configuration.")
         self.fuzzy_threshold = self.config.get('fuzzy_threshold', 80)
+    
+    
 
     def load_config(self, config_path: str) -> Dict[str, Any]:
         """
@@ -146,7 +166,12 @@ class OntologyMapper:
         if target_ontologies is None:
             target_ontologies = self.default_ontologies
 
-        term_lower = term.lower().strip()
+        # Convert to string if it's not None or numeric
+        if term is None:
+            term_lower = ""
+        else:
+            term_lower = str(term).strip().lower()
+        
         mappings = {}
 
         # Check custom mappings first
@@ -165,9 +190,11 @@ class OntologyMapper:
                 match = None
                 score = 0
                 if ontology_mapping:
-                    match, score, _ = process.extractOne(
+                    extracted = process.extractOne(
                         term_lower, ontology_mapping.keys(), scorer=fuzz.token_sort_ratio
                     )
+                    if extracted is not None:
+                        match, score, _ = extracted
                 if score >= self.fuzzy_threshold:
                     mapped_id = ontology_mapping[match]
                 else:

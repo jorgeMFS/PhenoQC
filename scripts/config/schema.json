@@ -1,0 +1,74 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "http://example.com/PhenotypicData.schema.json",
+  "title": "PhenotypicData",
+  "type": "object",
+  "properties": {
+    "SampleID": {
+      "type": ["integer", "string"] 
+    },
+    "Height_cm": {
+      "type": ["number", "null"],
+      "minimum": 0 
+    },
+    "Weight_kg": {
+      "type": ["number", "null"],
+      "minimum": 0 
+    },
+    "Cholesterol_mgdl": {
+      "type": ["number", "null"]
+    },
+    "BP_systolic": {
+      "type": ["number", "null"]
+    },
+    "BP_diastolic": {
+      "type": ["number", "null"]
+    },
+    "Glucose_mgdl": {
+      "type": ["number", "null"]
+    },
+    "Creatinine_mgdl": {
+      "type": ["number", "null"]
+    },
+    "PrimaryPhenotype": {
+      "type": ["string", "null"]
+    },
+    "SecondaryPhenotype": {
+      "type": ["string", "null"]
+    },
+    "DiseaseCode": {
+      "type": ["string", "null"]
+    },
+    "ObservedFeatures": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "VisitDate": {
+      "type": ["string", "null"],
+      "format": "date"
+    },
+    "SampleCollectionDateTime": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "GenomeSampleID": {
+      "type": ["string", "null"]
+    },
+    "HospitalID": {
+      "type": ["string", "null"]
+    }
+  },
+  "required": [
+    "SampleID"
+  ],
+  "additionalProperties": false
+}
