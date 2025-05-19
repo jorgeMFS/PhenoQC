@@ -1,11 +1,10 @@
 import os
 from typing import Dict, List, Any, Optional
+
 import yaml
 import pronto
 from rapidfuzz import fuzz, process
 import requests
-from rapidfuzz import fuzz
-from typing import Dict, List, Optional
 
 from .configuration import load_config
 from .logging_module import log_activity
