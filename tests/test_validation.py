@@ -208,7 +208,9 @@ class TestValidationModule(unittest.TestCase):
             reference_columns=["SampleID"],
         )
         validator.check_referential_integrity()
-        self.assertFalse(validator.referential_integrity_issues.empty)
+        issues = validator.referential_integrity_issues
+        self.assertEqual(issues.shape[0], 1)
+        self.assertEqual(issues['SampleID'].iloc[0], "S999")
 
 if __name__ == '__main__':
     unittest.main()
