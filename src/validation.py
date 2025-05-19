@@ -336,7 +336,7 @@ class DataValidator:
         """
         Ensures that values in self.reference_columns exist in self.reference_data.
         """
-        if not self.reference_data or not self.reference_columns:
+        if self.reference_data is None or not self.reference_columns:
             log_activity("No reference data/columns, skipping referential checks.", level='info')
             return
 
