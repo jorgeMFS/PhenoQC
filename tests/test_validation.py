@@ -179,5 +179,38 @@ class TestValidationModule(unittest.TestCase):
         self.assertIn(-5, integrity_df['Age'].values, "Negative Age (-5) wasn't captured in integrity issues.")
         self.assertIn("Unknown", integrity_df['Gender'].values, "'Unknown' gender wasn't captured in integrity issues.")
 
+    def test_referential_integrity_check(self):
+        """Ensure referential integrity check does not raise with valid reference data."""
+        ref_df = pd.DataFrame({"SampleID": ["S001", "S002", "S003", "S004"]})
+        validator = DataValidator(
+            self.df,
+            self.schema,
+            self.unique_identifiers,
+            reference_data=ref_df,
+            reference_columns=["SampleID"],
+        )
+        try:
+            validator.check_referential_integrity()
+        except Exception as e:
+            self.fail(f"check_referential_integrity raised an exception: {e}")
+        self.assertTrue(validator.referential_integrity_issues.empty)
+
+    def test_referential_integrity_missing_values(self):
+        """Rows with IDs absent from reference data should be reported."""
+        ref_df = pd.DataFrame({"SampleID": ["S001", "S002"]})
+        df_invalid = self.df.copy()
+        df_invalid.loc[3, "SampleID"] = "S999"
+        validator = DataValidator(
+            df_invalid,
+            self.schema,
+            self.unique_identifiers,
+            reference_data=ref_df,
+            reference_columns=["SampleID"],
+        )
+        validator.check_referential_integrity()
+        issues = validator.referential_integrity_issues
+        self.assertEqual(issues.shape[0], 1)
+        self.assertEqual(issues['SampleID'].iloc[0], "S999")
+
 if __name__ == '__main__':
     unittest.main()
