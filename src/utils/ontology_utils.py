@@ -76,4 +76,5 @@ def suggest_ontologies(column_name: str, column_data: pd.Series, available_ontol
             suggestions.update(['HPO', 'DO'])  # Default to common clinical ontologies
     
     # 4. Filter suggestions to only include available ontologies
-    return sorted(list(suggestions)) 
+    filtered = [ont for ont in suggestions if ont in available_ontologies]
+    return sorted(filtered)
