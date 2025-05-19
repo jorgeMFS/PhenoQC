@@ -24,3 +24,4 @@ def extract_zip(zip_path, extract_to=None):
         return None, f"The file '{zip_path}' is not a valid ZIP archive."
     except Exception as e:
         return None, f"An error occurred during ZIP extraction of '{zip_path}': {str(e)}"
+
