@@ -197,7 +197,7 @@ class TestValidationModule(unittest.TestCase):
 
     def test_referential_integrity_missing_values(self):
         """Rows with IDs absent from reference data should be reported."""
-        ref_df = pd.DataFrame({"SampleID": ["S001", "S002"]})
+        ref_df = pd.DataFrame({"SampleID": ["S001", "S002", "S003"]})
         df_invalid = self.df.copy()
         df_invalid.loc[3, "SampleID"] = "S999"
         validator = DataValidator(
