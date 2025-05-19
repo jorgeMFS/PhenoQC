@@ -95,5 +95,17 @@ class TestInputModule(unittest.TestCase):
         with self.assertRaises(ValueError):
             load_data('example.txt', 'txt')
 
+    def test_read_json_invalid(self):
+        """read_json should raise ValueError for malformed JSON."""
+        invalid_file = os.path.join(self.examples_dir, 'invalid.json')
+        with open(invalid_file, 'w') as f:
+            f.write('{"SampleID": "S001", "Age": 34')
+
+        try:
+            with self.assertRaises(ValueError):
+                list(read_json(invalid_file))
+        finally:
+            os.remove(invalid_file)
+
 if __name__ == '__main__':
     unittest.main()
