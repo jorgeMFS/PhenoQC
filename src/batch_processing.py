@@ -23,12 +23,19 @@ def _safe_md5_hexdigest(data: bytes) -> str:
     argument which leads to ``TypeError``.  This helper first tries to create
     the hash with ``usedforsecurity=False`` and falls back to the regular call
     if that fails, providing a compatible way to obtain an MD5 digest across
-    environments.
+    environments. If MD5 is entirely disabled, raises a clear error.
     """
     try:  # Preferred path for FIPS-enabled Python builds
         return hashlib.new("md5", data, usedforsecurity=False).hexdigest()
     except TypeError:  # ``usedforsecurity`` not supported; fall back
-        return hashlib.md5(data).hexdigest()
+        try:
+            return hashlib.md5(data).hexdigest()
+        except ValueError as e:
+            raise RuntimeError(
+                "MD5 is not available in this Python environment. "
+                "This may be due to FIPS mode or a restricted build. "
+                "Please use a different hashing algorithm or adjust your environment."
+            ) from e
 
 def child_process_run(
     file_path,
