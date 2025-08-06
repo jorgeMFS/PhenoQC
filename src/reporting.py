@@ -1,11 +1,27 @@
+import os
+import hashlib
+import inspect
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
+
+# ``reportlab`` internally calls ``hashlib.md5(usedforsecurity=False)``,
+# but Python versions prior to 3.9 do not accept the ``usedforsecurity``
+# keyword argument.  This causes a ``TypeError`` on those interpreters
+# (notably Python 3.8 used in our CI).  To maintain compatibility we
+# shim ``hashlib.md5`` so that it silently ignores the argument when the
+# runtime does not support it.
+_hashlib_md5 = hashlib.md5
+if 'usedforsecurity' not in inspect.signature(_hashlib_md5).parameters:
+    def _md5_compat(*args, **kwargs):
+        kwargs.pop('usedforsecurity', None)
+        return _hashlib_md5(*args, **kwargs)
+    hashlib.md5 = _md5_compat
+
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
-import os
 
 def generate_qc_report(
     validation_results,
