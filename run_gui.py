@@ -7,8 +7,8 @@ if __name__ == '__main__':
     # Get the project root directory
     project_root = os.path.dirname(os.path.abspath(__file__))
     
-    # Set PYTHONPATH to include the project root
-    os.environ['PYTHONPATH'] = project_root
+    # Add project root to the module search path
+    sys.path.append(project_root)
     
     # Import and run the main function
     from src.gui import main
