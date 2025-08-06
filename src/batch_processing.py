@@ -262,7 +262,7 @@ def process_file(
                         log_activity(f"{file_path}: {msg}", level='warning')
                         chunk_results = _empty_validator_results(
                             chunk,
-                            include_quality_metrics=cfg and cfg.get("quality_metrics"),
+                            include_quality_metrics=bool(cfg and cfg.get("quality_metrics")),
                         )
                     else:
                         # It's an optional column => skip silently
