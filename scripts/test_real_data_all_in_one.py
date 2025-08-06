@@ -30,6 +30,12 @@ import csv
 import pandas as pd
 import yaml
 
+# Ensure the repository's ``src`` directory is on ``sys.path`` so that
+# ``logging_module`` can be imported when running this script directly
+# without installing the package.
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.join(SCRIPT_DIR, '..', 'src'))
+
 from logging_module import setup_logging, log_activity
 
 
