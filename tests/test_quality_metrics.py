@@ -84,5 +84,15 @@ def test_check_timeliness_flags_old_records():
     recent_date = now.isoformat()
     df = pd.DataFrame({"timestamp": [old_date, recent_date]})
     result = check_timeliness(df, "timestamp", max_lag_days=5)
+    # Only the outdated record should be flagged with appropriate issue
     assert old_date in result["timestamp"].values
     assert recent_date not in result["timestamp"].values
+    assert (result[result["timestamp"] == old_date]["issue"] == "lag_exceeded").all()
+
+
+def test_check_timeliness_flags_invalid_or_missing_dates():
+    df = pd.DataFrame({"timestamp": ["not_a_date", None]})
+    result = check_timeliness(df, "timestamp", max_lag_days=5)
+    # Both rows should be reported with a missing/invalid date issue
+    assert set(result["issue"]) == {"missing_or_invalid_date"}
+    assert len(result) == 2
