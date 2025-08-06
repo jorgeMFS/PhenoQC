@@ -131,8 +131,10 @@ def check_traceability(
     # Check for missing IDs or duplicates across id_cols combination
     dup_mask = df.duplicated(subset=id_cols, keep=False)
     if dup_mask.any():
-        for idx in df.index[dup_mask]:
-            records.append({"row": idx, "issue": "duplicate_identifier"})
+        records.extend(
+            {"row": idx, "issue": "duplicate_identifier"}
+            for idx in df.index[dup_mask]
+        )
     missing_mask = df[id_cols].isnull().any(axis=1)
     for idx in df.index[missing_mask]:
         records.append({"row": idx, "issue": "missing_identifier"})
