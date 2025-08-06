@@ -11,8 +11,16 @@ def test_check_accuracy_flags_out_of_range():
     df = pd.DataFrame({"age": [10, 20, 5]})
     schema = {"properties": {"age": {"minimum": 8, "maximum": 18}}}
     result = check_accuracy(df, schema)
+    # The function should flag row 1 (value 20) and row 2 (value 5) as out of range
     assert not result.empty
     assert set(result["row"]) == {1, 2}
+
+def test_check_accuracy_all_within_range():
+    df = pd.DataFrame({"age": [10, 12, 15]})
+    schema = {"properties": {"age": {"minimum": 8, "maximum": 18}}}
+    result = check_accuracy(df, schema)
+    # All values are within the valid range, so the result should be empty
+    assert result.empty
 
 
 def test_detect_redundancy_identical_columns():
