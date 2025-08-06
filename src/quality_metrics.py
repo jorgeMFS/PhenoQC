@@ -156,7 +156,7 @@ def check_traceability(
 
 
 def check_timeliness(df: pd.DataFrame, date_col: str, max_lag_days: int) -> pd.DataFrame:
-    """Return records with timestamps older than allowed lag.
+    """Return records with outdated or invalid timestamps.
 
     Parameters
     ----------
@@ -170,11 +170,23 @@ def check_timeliness(df: pd.DataFrame, date_col: str, max_lag_days: int) -> pd.D
     Returns
     -------
     pd.DataFrame
-        Rows where ``now - date_col`` exceeds ``max_lag_days``.
+        Rows where ``now - date_col`` exceeds ``max_lag_days`` or where
+        ``date_col`` is missing/invalid. An ``issue`` column describes the
+        problem.
     """
     if date_col not in df.columns:
         return pd.DataFrame()
     dates = pd.to_datetime(df[date_col], errors="coerce")
     lag = pd.Timedelta(days=max_lag_days)
-    mask = (pd.Timestamp.now() - dates) > lag
-    return df.loc[mask]
+    stale_mask = (pd.Timestamp.now() - dates) > lag
+    invalid_mask = dates.isna()
+    results = []
+    if stale_mask.any():
+        stale = df.loc[stale_mask].copy()
+        stale["issue"] = "lag_exceeded"
+        results.append(stale)
+    if invalid_mask.any():
+        invalid = df.loc[invalid_mask].copy()
+        invalid["issue"] = "missing_or_invalid_date"
+        results.append(invalid)
+    return pd.concat(results) if results else pd.DataFrame()
