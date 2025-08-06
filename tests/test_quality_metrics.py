@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 from src.quality_metrics import (
     check_accuracy,
     detect_redundancy,
@@ -69,6 +70,12 @@ def test_check_traceability_duplicates_and_missing_source():
     result = check_traceability(df, ["id"], source_col="source")
     assert not result[result["issue"] == "duplicate_identifier"].empty
     assert not result[result["issue"] == "missing_source"].empty
+
+
+def test_check_traceability_empty_id_cols_raises():
+    df = pd.DataFrame({"id": [1, 2]})
+    with pytest.raises(ValueError):
+        check_traceability(df, [])
 
 
 def test_check_timeliness_flags_old_records():

@@ -117,7 +117,7 @@ def check_traceability(
     df : pd.DataFrame
         Dataset to validate.
     id_cols : list of str
-        Columns that should uniquely identify a record.
+        Columns that should uniquely identify a record. Must not be empty.
     source_col : str, optional
         Column expected to contain non-null provenance information.
 
@@ -126,7 +126,15 @@ def check_traceability(
     pd.DataFrame
         Rows that violate traceability requirements with an ``issue`` column
         describing the problem.
+
+    Raises
+    ------
+    ValueError
+        If ``id_cols`` is empty.
     """
+    if not id_cols:
+        raise ValueError("id_cols must contain at least one column")
+
     records = []
     # Check for missing IDs or duplicates across id_cols combination
     dup_mask = df.duplicated(subset=id_cols, keep=False)
