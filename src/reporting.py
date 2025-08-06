@@ -2,7 +2,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 import os
@@ -65,6 +65,25 @@ def generate_qc_report(
                 story.append(Paragraph(f"<b>{key}:</b> {value}", styles['Normal']))
         story.append(Spacer(1, 12))
 
+        # Additional Quality Dimensions
+        story.append(Paragraph("Additional Quality Dimensions:", styles['Heading2']))
+        for metric in ["Accuracy Issues", "Redundancy Issues", "Traceability Issues", "Timeliness Issues"]:
+            if metric in validation_results:
+                df_metric = validation_results[metric]
+                if isinstance(df_metric, pd.DataFrame) and not df_metric.empty:
+                    story.append(Paragraph(
+                        f"<b>{metric}:</b> {len(df_metric)} issues found.",
+                        styles['Normal']
+                    ))
+                    table_data = [df_metric.columns.tolist()] + df_metric.values.tolist()
+                    story.append(Table(table_data))
+                else:
+                    story.append(Paragraph(
+                        f"<b>{metric}:</b> No issues found.",
+                        styles['Normal']
+                    ))
+        story.append(Spacer(1, 12))
+
         # Missing Data Summary
         story.append(Paragraph("Missing Data Summary:", styles['Heading2']))
         for column, count in missing_data.items():
@@ -120,6 +139,20 @@ def generate_qc_report(
                     md_lines.append(f"- **{key}**: No issues found.")
             else:
                 md_lines.append(f"- **{key}**: {value}")
+        md_lines.append("")
+
+        md_lines.append("## Additional Quality Dimensions")
+        for metric in ["Accuracy Issues", "Redundancy Issues", "Traceability Issues", "Timeliness Issues"]:
+            if metric in validation_results:
+                df_metric = validation_results[metric]
+                if isinstance(df_metric, pd.DataFrame) and not df_metric.empty:
+                    md_lines.append(f"- **{metric}**: {len(df_metric)} issues found.")
+                    try:
+                        md_lines.append(df_metric.to_markdown(index=False))
+                    except Exception:
+                        md_lines.append(df_metric.to_csv(index=False))
+                else:
+                    md_lines.append(f"- **{metric}**: No issues found.")
         md_lines.append("")
         md_lines.append("## Missing Data Summary")
         for column, count in missing_data.items():
