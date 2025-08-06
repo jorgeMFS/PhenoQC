@@ -74,7 +74,9 @@ def test_check_traceability_duplicates_and_missing_source():
 
 def test_check_traceability_empty_id_cols_raises():
     df = pd.DataFrame({"id": [1, 2]})
-    with pytest.raises(ValueError):
+    # When no identifier columns are provided the function should raise a
+    # clear ``ValueError`` instead of failing inside ``pandas``.
+    with pytest.raises(ValueError, match="id_cols must contain at least one column"):
         check_traceability(df, [])
 
 
@@ -93,6 +95,7 @@ def test_check_timeliness_flags_old_records():
 def test_check_timeliness_flags_invalid_or_missing_dates():
     df = pd.DataFrame({"timestamp": ["not_a_date", None]})
     result = check_timeliness(df, "timestamp", max_lag_days=5)
-    # Both rows should be reported with a missing/invalid date issue
-    assert set(result["issue"]) == {"missing_or_invalid_date"}
-    assert len(result) == 2
+    # Both rows should be reported with a missing/invalid date issue and the
+    # offending rows should be preserved in the output.
+    assert set(result.index) == {0, 1}
+    assert result["issue"].eq("missing_or_invalid_date").all()
