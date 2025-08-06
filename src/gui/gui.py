@@ -2,20 +2,20 @@ import streamlit as st
 import os
 import tempfile
 import zipfile
-from .configuration import load_config
-from .logging_module import setup_logging, log_activity
-from .mapping import OntologyMapper
+from ..configuration import load_config
+from ..logging_module import setup_logging, log_activity
+from ..mapping import OntologyMapper
 import pandas as pd
-from .reporting import create_visual_summary, generate_qc_report
+from ..reporting import create_visual_summary, generate_qc_report
 import json
 import io
-from .batch_processing import process_file
+from ..batch_processing import process_file
 import shutil 
 import yaml 
 import warnings 
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode, JsCode
-from .validation import DataValidator
-from .utils.ontology_utils import suggest_ontologies
+from ..validation import DataValidator
+from ..utils.ontology_utils import suggest_ontologies
 import glob
 import numpy as np
 
