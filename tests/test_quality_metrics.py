@@ -28,6 +28,18 @@ def test_detect_redundancy_identical_columns():
     result = detect_redundancy(df)
     assert ((result["metric"] == "identical") & (result["column_1"] == "a") & (result["column_2"] == "b")).any()
 
+def test_detect_redundancy_highly_correlated_columns():
+    # Create two highly correlated columns (not identical)
+    a = [1, 2, 3, 4, 5]
+    b = [2, 4, 6, 8, 10]  # Perfect correlation with a
+    c = [5, 3, 6, 2, 1]   # Not correlated
+    df = pd.DataFrame({"a": a, "b": b, "c": c})
+    result = detect_redundancy(df)
+    # Check for a correlation metric between a and b
+    assert ((result["metric"] == "correlation") & 
+            (((result["column_1"] == "a") & (result["column_2"] == "b")) | 
+             ((result["column_1"] == "b") & (result["column_2"] == "a")))).any()
+
 
 def test_check_traceability_missing_id():
     df = pd.DataFrame({"id": [1, None, 2], "source": ["x", "y", "z"]})
