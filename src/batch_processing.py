@@ -103,6 +103,25 @@ def get_file_type(file_path):
     else:
         raise ValueError(f"Unsupported file extension: {ext}")
 
+def _empty_validator_results(chunk, include_quality_metrics=False):
+    """Return base validation results with optional empty quality metrics."""
+    base = {
+        "Format Validation": False,
+        "Duplicate Records": pd.DataFrame(),
+        "Conflicting Records": pd.DataFrame(),
+        "Integrity Issues": pd.DataFrame(),
+        "Referential Integrity Issues": pd.DataFrame(),
+        "Anomalies Detected": pd.DataFrame(),
+        "Invalid Mask": pd.DataFrame(False, index=chunk.index, columns=chunk.columns),
+    }
+    quality_template = {
+        "Accuracy Issues": pd.DataFrame(),
+        "Redundancy Issues": pd.DataFrame(),
+        "Traceability Issues": pd.DataFrame(),
+        "Timeliness Issues": pd.DataFrame(),
+    }
+    return base | (quality_template if include_quality_metrics else {})
+
 def process_file(
     file_path,
     schema,
@@ -241,24 +260,10 @@ def process_file(
                         msg = (f"Missing *required* or unique-id column '{missing_col}' "
                                f"in chunk => warnings.")
                         log_activity(f"{file_path}: {msg}", level='warning')
-                        chunk_results = {
-                            "Format Validation": False,
-                            "Duplicate Records": pd.DataFrame(),
-                            "Conflicting Records": pd.DataFrame(),
-                            "Integrity Issues": pd.DataFrame(),
-                            "Referential Integrity Issues": pd.DataFrame(),
-                            "Anomalies Detected": pd.DataFrame(),
-                            "Invalid Mask": pd.DataFrame(False, index=chunk.index, columns=chunk.columns)
-                        }
-                        if cfg and cfg.get("quality_metrics"):
-                            chunk_results.update(
-                                {
-                                    "Accuracy Issues": pd.DataFrame(),
-                                    "Redundancy Issues": pd.DataFrame(),
-                                    "Traceability Issues": pd.DataFrame(),
-                                    "Timeliness Issues": pd.DataFrame(),
-                                }
-                            )
+                        chunk_results = _empty_validator_results(
+                            chunk,
+                            include_quality_metrics=bool(cfg and cfg.get("quality_metrics")),
+                        )
                     else:
                         # It's an optional column => skip silently
                         log_activity(
@@ -272,24 +277,10 @@ def process_file(
                     final_status = 'ProcessedWithWarnings'
                     msg2 = f"Error during validation: {str(ex)}"
                     log_activity(f"{file_path}: {msg2}", level='warning')
-                    chunk_results = {
-                        "Format Validation": False,
-                        "Duplicate Records": pd.DataFrame(),
-                        "Conflicting Records": pd.DataFrame(),
-                        "Integrity Issues": pd.DataFrame(),
-                        "Referential Integrity Issues": pd.DataFrame(),
-                        "Anomalies Detected": pd.DataFrame(),
-                        "Invalid Mask": pd.DataFrame(False, index=chunk.index, columns=chunk.columns)
-                    }
-                    if cfg and cfg.get("quality_metrics"):
-                        chunk_results.update(
-                            {
-                                "Accuracy Issues": pd.DataFrame(),
-                                "Redundancy Issues": pd.DataFrame(),
-                                "Traceability Issues": pd.DataFrame(),
-                                "Timeliness Issues": pd.DataFrame(),
-                            }
-                        )
+                    chunk_results = _empty_validator_results(
+                        chunk,
+                        include_quality_metrics=cfg and cfg.get("quality_metrics"),
+                    )
 
                 # --- ADDED DEBUG for chunk_results['Invalid Mask'] ---
                 invalid_mask_chunk = chunk_results["Invalid Mask"]
