@@ -6,6 +6,26 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 import os
+import hashlib
+from reportlab.pdfbase import pdfdoc
+
+# ---------------------------------------------------------------------------
+# ReportLab uses ``hashlib.md5(usedforsecurity=False)`` when building PDF files
+# to remain compatible with Python builds that disable insecure hashes in FIPS
+# mode.  Python 3.8's ``hashlib`` does not support the ``usedforsecurity``
+# argument, leading to a ``TypeError`` when generating PDF reports during the
+# tests.  To keep the project compatible with both older and newer Python
+# versions we replace ReportLab's ``md5`` helper with a wrapper that accepts the
+# keyword but simply ignores it when the runtime does not understand it.
+# ---------------------------------------------------------------------------
+try:  # Supported in newer Python releases
+    hashlib.md5(b"", usedforsecurity=False)
+except TypeError:  # Fallback for Python versions without the keyword
+    def _md5_compat(data=b"", usedforsecurity=False):  # noqa: D401 - thin wrapper
+        """Return an MD5 hash object ignoring ``usedforsecurity``."""
+        return hashlib.md5(data)
+
+    pdfdoc.md5 = _md5_compat
 
 def generate_qc_report(
     validation_results,
