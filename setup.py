@@ -1,18 +1,10 @@
-from setuptools import setup
+from setuptools import find_packages, setup
 
 setup(
     name='PhenoQC',
     version='1.0.0',
-    packages=[
-        'phenoqc',
-        'phenoqc.gui',
-        'phenoqc.utils',
-    ],
-    package_dir={
-        'phenoqc': 'src',
-        'phenoqc.gui': 'src/gui',
-        'phenoqc.utils': 'src/utils',
-    },
+    packages=find_packages(where="src"),
+    package_dir={"": "src"},
     install_requires=[
         'pandas',
         'jsonschema',
@@ -34,10 +26,7 @@ setup(
         'ucimlrepo',
     ],
     extras_require={
-        'test': [
-            'pytest',
-            'unittest',
-        ],
+        'test': ['pytest'],
     },
     entry_points={
         'console_scripts': [
