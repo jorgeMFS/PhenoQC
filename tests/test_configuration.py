@@ -4,7 +4,7 @@ import os
 import json
 import yaml
 
-from src.configuration import load_config, save_config
+from phenoqc.configuration import load_config, save_config
 
 
 class TestConfigurationModule(unittest.TestCase):
