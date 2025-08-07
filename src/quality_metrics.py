@@ -79,16 +79,20 @@ def detect_redundancy(df: pd.DataFrame, threshold: float = 0.98) -> pd.DataFrame
     numeric_cols = df.select_dtypes(include="number").columns
     if len(numeric_cols) >= 2:
         corr = df[numeric_cols].corr(method="pearson").abs()
-        for i, col1 in enumerate(numeric_cols):
-            for col2 in numeric_cols[i + 1:]:
-                val = corr.loc[col1, col2]
-                if pd.notna(val) and val >= threshold:
-                    records.append({
-                        "column_1": col1,
-                        "column_2": col2,
-                        "metric": "correlation",
-                        "value": float(val),
-                    })
+        records.extend(
+            {
+                "column_1": col1,
+                "column_2": col2,
+                "metric": "correlation",
+                "value": float(corr.loc[col1, col2]),
+            }
+            for i, col1 in enumerate(numeric_cols)
+            for col2 in numeric_cols[i + 1:]
+            if (
+                pd.notna(corr.loc[col1, col2])
+                and corr.loc[col1, col2] >= threshold
+            )
+        )
 
     # Hash-based check for identical columns
     hashes: Dict[str, List[str]] = {}
@@ -101,13 +105,15 @@ def detect_redundancy(df: pd.DataFrame, threshold: float = 0.98) -> pd.DataFrame
     for cols in hashes.values():
         if len(cols) > 1:
             first = cols[0]
-            for other in cols[1:]:
-                records.append({
+            records.extend(
+                {
                     "column_1": first,
                     "column_2": other,
                     "metric": "identical",
                     "value": 1.0,
-                })
+                }
+                for other in cols[1:]
+            )
     return pd.DataFrame(records)
 
 
