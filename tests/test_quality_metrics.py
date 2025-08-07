@@ -1,6 +1,6 @@
 import pandas as pd
 import pytest
-from src.quality_metrics import (
+from phenoqc.quality_metrics import (
     check_accuracy,
     detect_redundancy,
     check_traceability,

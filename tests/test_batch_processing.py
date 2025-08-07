@@ -2,8 +2,8 @@ import unittest
 import os
 import json
 import tempfile
-from src.batch_processing import batch_process, unique_output_name
-from src.configuration import load_config
+from phenoqc.batch_processing import batch_process, unique_output_name
+from phenoqc.configuration import load_config
 import pandas as pd
 
 class TestBatchProcessingModule(unittest.TestCase):
