@@ -19,11 +19,16 @@ else:  # pragma: no cover - allows execution without installation
         pkg = types.ModuleType("phenoqc")
         pkg.__path__ = [current_dir]
         sys.modules["phenoqc"] = pkg
-    batch_process = import_module("phenoqc.batch_processing").batch_process
-    logging_mod = import_module("phenoqc.logging_module")
-    setup_logging = logging_mod.setup_logging
-    log_activity = logging_mod.log_activity
-    extract_zip = import_module("phenoqc.utils.zip_utils").extract_zip
+
+    def _dynamic_imports():
+        batch_process = import_module("phenoqc.batch_processing").batch_process
+        logging_mod = import_module("phenoqc.logging_module")
+        setup_logging = logging_mod.setup_logging
+        log_activity = logging_mod.log_activity
+        extract_zip = import_module("phenoqc.utils.zip_utils").extract_zip
+        return batch_process, setup_logging, log_activity, extract_zip
+
+    batch_process, setup_logging, log_activity, extract_zip = _dynamic_imports()
 
 SUPPORTED_EXTENSIONS = {'.csv', '.tsv', '.json', '.zip'}
 
