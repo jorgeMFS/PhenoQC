@@ -4,7 +4,7 @@ Installation
 Requirements
 ----------------------------------------------------
 
-PhenoQC requires Python 3.8 or later. The package and its dependencies can be installed using pip.
+PhenoQC requires Python 3.9 or later. The package and its dependencies can be installed using pip.
 
 Using pip
 ---------
