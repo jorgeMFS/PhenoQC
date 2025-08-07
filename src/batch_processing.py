@@ -202,26 +202,18 @@ def process_file(
             all_chunks = []
             if final_status != "ProcessedWithWarnings":
                 try:
-                    first_chunk = next(data_iterator, None)
-                except StopIteration:
-                    final_status = "ProcessedWithWarnings"
-                    error_msg = f"No data found in {file_path}. Generating partial PDF."
-                    log_activity(f"{file_path}: {error_msg}", level="warning")
-                    first_chunk = None
+                    if (first_chunk := next(data_iterator, None)) is not None and not first_chunk.empty:
+                        all_chunks = [first_chunk]
+                        for c in data_iterator:
+                            all_chunks.append(c)
+                    else:
+                        if not error_msg:
+                            error_msg = f"{file_path} is empty or has no valid rows."
+                        final_status = "ProcessedWithWarnings"
+                        log_activity(f"{file_path}: {error_msg}", level="warning")
                 except Exception as e:
                     final_status = "ProcessedWithWarnings"
                     error_msg = f"Error reading first chunk: {str(e)}"
-                    log_activity(f"{file_path}: {error_msg}", level="warning")
-                    first_chunk = None
-
-                if first_chunk is not None and not first_chunk.empty:
-                    all_chunks = [first_chunk]
-                    for c in data_iterator:
-                        all_chunks.append(c)
-                else:
-                    if not error_msg:
-                        error_msg = f"{file_path} is empty or has no valid rows."
-                    final_status = "ProcessedWithWarnings"
                     log_activity(f"{file_path}: {error_msg}", level="warning")
 
             # 2) Accumulators
