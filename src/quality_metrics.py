@@ -144,9 +144,10 @@ def check_traceability(
             for idx in df.index[dup_mask]
         )
     missing_mask = df[id_cols].isnull().any(axis=1)
-    for idx in df.index[missing_mask]:
-        records.append({"row": idx, "issue": "missing_identifier"})
-
+    records.extend(
+        {"row": idx, "issue": "missing_identifier"}
+        for idx in df.index[missing_mask]
+    )
     # Source column must be present and non-null if provided
     if source_col and source_col in df.columns:
         src_null = df[source_col].isnull()
