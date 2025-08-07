@@ -494,11 +494,9 @@ def process_file(
                         cumulative_mapping_stats[onto_id]["total_terms"] += len(
                             valid_terms
                         )
-                        cumulative_mapping_stats[onto_id]["mapped_terms"] += sum(
-                            1
-                            for t in valid_terms
-                            if mappings.get(str(t), {}).get(onto_id) is not None
-                        )
+                        cumulative_mapping_stats[onto_id]["mapped_terms"] += sum(bool(mappings.get(str(t), {}).get(onto_id) is not None)
+                                                                             for t in valid_terms)
+
 
                 # (F) Accumulate sample df
                 if len(sample_df) < max_total_samples:
