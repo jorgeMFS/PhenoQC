@@ -3,7 +3,7 @@ import json
 import tempfile
 import os
 import yaml
-from src.mapping import OntologyMapper
+from phenoqc.mapping import OntologyMapper
 
 class TestOntologyMapper(unittest.TestCase):
     def setUp(self):

@@ -1,6 +1,6 @@
 import unittest
 import pandas as pd
-from src.validation import DataValidator
+from phenoqc.validation import DataValidator
 
 class TestValidationModule(unittest.TestCase):
     def setUp(self):

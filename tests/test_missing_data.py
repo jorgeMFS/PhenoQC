@@ -1,7 +1,7 @@
 import unittest
 import logging
 import pandas as pd
-from src.missing_data import detect_missing_data, impute_missing_data, flag_missing_data_records
+from phenoqc.missing_data import detect_missing_data, impute_missing_data, flag_missing_data_records
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
          
