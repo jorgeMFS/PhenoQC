@@ -579,9 +579,8 @@ def process_file(
                 else pd.DataFrame()
             )
             anomalies_detected = (
-                anomalies_detected.drop_duplicates()
-                if not anomalies_detected.empty
-                else pd.DataFrame()
+                pd.DataFrame() if anomalies_detected.empty else anomalies_detected.drop_duplicates()
+
             )
 
             validation_results = {
