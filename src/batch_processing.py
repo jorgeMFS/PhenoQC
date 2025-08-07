@@ -594,6 +594,10 @@ def batch_process(
     # 2) Load config
     config = load_config(config_path)
     if quality_metrics is not None:
+        allowed_metrics = {"precision", "recall", "f1", "accuracy"}  # <-- update as needed
+        invalid_metrics = [m for m in quality_metrics if m not in allowed_metrics]
+        if invalid_metrics:
+            raise ValueError(f"Invalid quality_metrics: {invalid_metrics}. Allowed metrics are: {sorted(allowed_metrics)}")
         config["quality_metrics"] = quality_metrics
 
     # 3) Create OntologyMapper
