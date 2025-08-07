@@ -1,10 +1,34 @@
 import argparse
 import json
 import os
-from .batch_processing import batch_process
-from .logging_module import setup_logging, log_activity
-from .utils.zip_utils import extract_zip
+import sys
 import datetime
+
+# Support running both as a module (with package context) and as a script.
+if __package__:
+    from .batch_processing import batch_process
+    from .logging_module import setup_logging, log_activity
+    from .utils.zip_utils import extract_zip
+else:  # pragma: no cover - allows execution without installation
+    from importlib import import_module
+    import types
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.insert(0, current_dir)
+    if "phenoqc" not in sys.modules:
+        pkg = types.ModuleType("phenoqc")
+        pkg.__path__ = [current_dir]
+        sys.modules["phenoqc"] = pkg
+
+    def _dynamic_imports():
+        batch_process = import_module("phenoqc.batch_processing").batch_process
+        logging_mod = import_module("phenoqc.logging_module")
+        setup_logging = logging_mod.setup_logging
+        log_activity = logging_mod.log_activity
+        extract_zip = import_module("phenoqc.utils.zip_utils").extract_zip
+        return batch_process, setup_logging, log_activity, extract_zip
+
+    batch_process, setup_logging, log_activity, extract_zip = _dynamic_imports()
 
 SUPPORTED_EXTENSIONS = {'.csv', '.tsv', '.json', '.zip'}
 

@@ -13,6 +13,30 @@ from .logging_module import log_activity, setup_logging
 from tqdm import tqdm
 import hashlib
 
+
+def _safe_md5_hexdigest(data: bytes) -> str:
+    """Return an MD5 hex digest that works in FIPS environments.
+
+    Some Python builds expose a ``usedforsecurity`` keyword argument on hash
+    constructors to allow MD5 usage when the system is running in FIPS mode.
+    Other builds (like the one used for the kata tests) do not recognise this
+    argument which leads to ``TypeError``.  This helper first tries to create
+    the hash with ``usedforsecurity=False`` and falls back to the regular call
+    if that fails, providing a compatible way to obtain an MD5 digest across
+    environments. If MD5 is entirely disabled, raises a clear error.
+    """
+    try:  # Preferred path for FIPS-enabled Python builds
+        return hashlib.new("md5", data, usedforsecurity=False).hexdigest()
+    except TypeError:  # ``usedforsecurity`` not supported; fall back
+        try:
+            return hashlib.md5(data).hexdigest()
+        except ValueError as e:
+            raise RuntimeError(
+                "MD5 is not available in this Python environment. "
+                "This may be due to FIPS mode or a restricted build. "
+                "Please use a different hashing algorithm or adjust your environment."
+            ) from e
+
 def child_process_run(
     file_path,
     schema,
@@ -59,7 +83,11 @@ def unique_output_name(file_path, output_dir, suffix='.csv'):
      - And finally the desired suffix (.csv, _report.pdf, etc.).
     """
     just_name = os.path.basename(file_path)
-    short_hash = hashlib.md5(just_name.encode('utf-8')).hexdigest()[:5]
+    # ``hashlib.md5`` is not available in some FIPS-enabled Python builds
+    # unless the ``usedforsecurity`` flag is provided.  ``_safe_md5_hexdigest``
+    # handles those differences and falls back to a regular MD5 call when the
+    # flag is unsupported.
+    short_hash = _safe_md5_hexdigest(just_name.encode('utf-8'))[:5]
 
     base_no_ext, orig_ext = os.path.splitext(just_name)
     ext_no_dot = orig_ext.lstrip('.')  # e.g. "json"
