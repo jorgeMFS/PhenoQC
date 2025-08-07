@@ -2,7 +2,7 @@ import unittest
 import tempfile
 import os
 
-from src.logging_module import setup_logging, log_activity
+from phenoqc.logging_module import setup_logging, log_activity
 
 
 class TestLoggingModule(unittest.TestCase):
