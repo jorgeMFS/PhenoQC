@@ -1,10 +1,14 @@
-from setuptools import find_packages, setup
+from setuptools import setup
 
 setup(
     name='PhenoQC',
     version='1.0.0',
-    packages=find_packages(where="src"),
-    package_dir={"": "src"},
+    packages=["phenoqc", "phenoqc.gui", "phenoqc.utils"],
+    package_dir={
+        "phenoqc": "src",
+        "phenoqc.gui": "src/gui",
+        "phenoqc.utils": "src/utils",
+    },
     install_requires=[
         'pandas',
         'jsonschema',
