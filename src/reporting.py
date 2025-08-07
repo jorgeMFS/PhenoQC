@@ -130,19 +130,17 @@ def generate_qc_report(
             else:
                 story.append(Paragraph(f"Image not found: {image_path}", styles['Normal']))
 
-        if isinstance(output_path_or_buffer, str):
-            doc = SimpleDocTemplate(output_path_or_buffer, pagesize=letter)
-        else:
-            doc = SimpleDocTemplate(output_path_or_buffer, pagesize=letter)
+        doc = SimpleDocTemplate(output_path_or_buffer, pagesize=letter)
         doc.build(story)
 
     elif report_format == 'md':
-        md_lines = []
-        md_lines.append("# PhenoQC Quality Control Report\n")
-        md_lines.append("## Imputation Strategy Used")
-        md_lines.append(f"{impute_strategy.capitalize() if impute_strategy else '(No Imputation Strategy)'}\n")
-        md_lines.append("\n")
-        md_lines.append("## Data Quality Scores")
+        md_lines = [
+            "# PhenoQC Quality Control Report\n",
+            "## Imputation Strategy Used",
+            f"{impute_strategy.capitalize() if impute_strategy else '(No Imputation Strategy)'}\n",
+            "",
+            "## Data Quality Scores",
+        ]
         for score_name, score_value in quality_scores.items():
             md_lines.append(f"- **{score_name}**: {score_value:.2f}%")
         md_lines.append("")
