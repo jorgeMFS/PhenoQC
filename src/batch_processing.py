@@ -431,8 +431,9 @@ def process_file(
                             chunk[unique_identifiers].drop_duplicates().values.tolist(),
                         )
                     )
-                    duplicates_in_ids = unique_id_set.intersection(ids_in_chunk)
-                    if duplicates_in_ids:
+                    if duplicates_in_ids := unique_id_set.intersection(
+                        ids_in_chunk
+                    ):
                         cross_dup = chunk[
                             chunk[unique_identifiers]
                             .apply(tuple, axis=1)
