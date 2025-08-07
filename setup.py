@@ -23,6 +23,7 @@ setup(
         "pronto",
         "psutil",
         "rapidfuzz",
+        "streamlit-aggrid",
         "ucimlrepo",
     ],
     extras_require={
