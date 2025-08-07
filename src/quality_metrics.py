@@ -37,14 +37,18 @@ def check_accuracy(df: pd.DataFrame, schema_cfg: Dict[str, Any]) -> pd.DataFrame
         if max_val is not None:
             mask |= series > max_val
         offending = df.loc[mask, col]
-        for idx, value in offending.items():
-            records.append({
-                "row": idx,
-                "column": col,
-                "value": value,
-                "minimum": min_val,
-                "maximum": max_val,
-            })
+        records.extend(
+            [
+                {
+                    "row": idx,
+                    "column": col,
+                    "value": value,
+                    "minimum": min_val,
+                    "maximum": max_val,
+                }
+                for idx, value in offending.items()
+            ]
+        )
     return pd.DataFrame(records)
 
 
