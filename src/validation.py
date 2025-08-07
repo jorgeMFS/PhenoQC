@@ -5,6 +5,12 @@ import fastjsonschema
 import re
 from datetime import datetime
 from .logging_module import log_activity
+from .quality_metrics import (
+    check_accuracy,
+    detect_redundancy,
+    check_traceability,
+    check_timeliness,
+)
 
 class DataValidator:
     """
@@ -380,10 +386,16 @@ class DataValidator:
     # 6. Orchestrator
     # -------------------------------------------------------------------------
 
-    def run_all_validations(self) -> Dict[str, Any]:
+    def run_all_validations(self, cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Runs row-level validation, cell-level checks, duplicates, conflicts,
-        referential checks, and anomaly detection.
+        referential checks, anomaly detection and optional quality metrics.
+
+        Parameters
+        ----------
+        cfg : dict, optional
+            Configuration dictionary. If it contains a ``quality_metrics`` list,
+            the corresponding metrics are calculated and appended to the output.
         """
         format_valid = self.validate_format_rowwise()
         self.validate_cells()
@@ -396,7 +408,7 @@ class DataValidator:
             self.integrity_issues, self.referential_integrity_issues
         ]).drop_duplicates()
 
-        return {
+        results = {
             "Format Validation": format_valid,
             "Duplicate Records": dups,
             "Conflicting Records": conflicts,
@@ -405,3 +417,30 @@ class DataValidator:
             "Anomalies Detected": self.anomalies,
             "Invalid Mask": self.invalid_mask,
         }
+
+        if cfg and cfg.get("quality_metrics"):
+            metrics = cfg["quality_metrics"]
+            if "all" in metrics:
+                metrics = [
+                    "accuracy",
+                    "redundancy",
+                    "traceability",
+                    "timeliness",
+                ]
+            if "accuracy" in metrics:
+                results["Accuracy Issues"] = check_accuracy(self.df, self.schema)
+            if "redundancy" in metrics:
+                results["Redundancy Issues"] = detect_redundancy(self.df)
+            if "traceability" in metrics:
+                results["Traceability Issues"] = check_traceability(
+                    self.df, self.unique_identifiers, cfg.get("source_column")
+                )
+            if "timeliness" in metrics:
+                date_col = cfg.get("date_col")
+                max_lag = cfg.get("max_lag_days", 0)
+                if date_col:
+                    results["Timeliness Issues"] = check_timeliness(
+                        self.df, date_col, max_lag
+                    )
+
+        return results

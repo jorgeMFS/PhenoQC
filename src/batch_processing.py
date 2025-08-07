@@ -50,6 +50,7 @@ def child_process_run(
     report_format,
     chunksize,
     phenotype_columns,
+    cfg,
     log_file_for_children
 ):
     """
@@ -69,7 +70,8 @@ def child_process_run(
         target_ontologies=target_ontologies,
         report_format=report_format,
         chunksize=chunksize,
-        phenotype_columns=phenotype_columns
+        phenotype_columns=phenotype_columns,
+        cfg=cfg,
     )
 
 def unique_output_name(file_path, output_dir, suffix='.csv'):
@@ -129,6 +131,25 @@ def get_file_type(file_path):
     else:
         raise ValueError(f"Unsupported file extension: {ext}")
 
+def _empty_validator_results(chunk, include_quality_metrics=False):
+    """Return base validation results with optional empty quality metrics."""
+    base = {
+        "Format Validation": False,
+        "Duplicate Records": pd.DataFrame(),
+        "Conflicting Records": pd.DataFrame(),
+        "Integrity Issues": pd.DataFrame(),
+        "Referential Integrity Issues": pd.DataFrame(),
+        "Anomalies Detected": pd.DataFrame(),
+        "Invalid Mask": pd.DataFrame(False, index=chunk.index, columns=chunk.columns),
+    }
+    quality_template = {
+        "Accuracy Issues": pd.DataFrame(),
+        "Redundancy Issues": pd.DataFrame(),
+        "Traceability Issues": pd.DataFrame(),
+        "Timeliness Issues": pd.DataFrame(),
+    }
+    return base | (quality_template if include_quality_metrics else {})
+
 def process_file(
     file_path,
     schema,
@@ -141,7 +162,8 @@ def process_file(
     target_ontologies=None,
     report_format='pdf',
     chunksize=10000,
-    phenotype_columns=None
+    phenotype_columns=None,
+    cfg=None
 ):
     """
     Processes a single file, generating an output CSV and a PDF/MD report.
@@ -226,6 +248,10 @@ def process_file(
             duplicate_records = []
             conflicting_records = []
             integrity_issues = []
+            accuracy_issues = []
+            redundancy_issues = []
+            traceability_issues = []
+            timeliness_issues = []
             anomalies_detected = pd.DataFrame()
             missing_counts = pd.Series(dtype=int)
             unique_id_set = set()
@@ -253,7 +279,7 @@ def process_file(
                 chunk = convert_nans_to_none_for_string_cols(chunk, schema)
                 try:
                     validator = DataValidator(chunk, schema, unique_identifiers)
-                    chunk_results = validator.run_all_validations()
+                    chunk_results = validator.run_all_validations(cfg)
                 except KeyError as e:
                     missing_col = str(e).strip("'")
                     required_cols = schema.get("required", [])
@@ -262,15 +288,10 @@ def process_file(
                         msg = (f"Missing *required* or unique-id column '{missing_col}' "
                                f"in chunk => warnings.")
                         log_activity(f"{file_path}: {msg}", level='warning')
-                        chunk_results = {
-                            "Format Validation": False,
-                            "Duplicate Records": pd.DataFrame(),
-                            "Conflicting Records": pd.DataFrame(),
-                            "Integrity Issues": pd.DataFrame(),
-                            "Referential Integrity Issues": pd.DataFrame(),
-                            "Anomalies Detected": pd.DataFrame(),
-                            "Invalid Mask": pd.DataFrame(False, index=chunk.index, columns=chunk.columns)
-                        }
+                        chunk_results = _empty_validator_results(
+                            chunk,
+                            include_quality_metrics=bool(cfg and cfg.get("quality_metrics")),
+                        )
                     else:
                         # It's an optional column => skip silently
                         log_activity(
@@ -279,20 +300,15 @@ def process_file(
                         )
                         new_id_list = [col for col in unique_identifiers if col != missing_col]
                         validator = DataValidator(chunk, schema, new_id_list)
-                        chunk_results = validator.run_all_validations()
+                        chunk_results = validator.run_all_validations(cfg)
                 except Exception as ex:
                     final_status = 'ProcessedWithWarnings'
                     msg2 = f"Error during validation: {str(ex)}"
                     log_activity(f"{file_path}: {msg2}", level='warning')
-                    chunk_results = {
-                        "Format Validation": False,
-                        "Duplicate Records": pd.DataFrame(),
-                        "Conflicting Records": pd.DataFrame(),
-                        "Integrity Issues": pd.DataFrame(),
-                        "Referential Integrity Issues": pd.DataFrame(),
-                        "Anomalies Detected": pd.DataFrame(),
-                        "Invalid Mask": pd.DataFrame(False, index=chunk.index, columns=chunk.columns)
-                    }
+                    chunk_results = _empty_validator_results(
+                        chunk,
+                        include_quality_metrics=cfg and cfg.get("quality_metrics"),
+                    )
 
                 # --- ADDED DEBUG for chunk_results['Invalid Mask'] ---
                 invalid_mask_chunk = chunk_results["Invalid Mask"]
@@ -332,6 +348,15 @@ def process_file(
                     conflicting_records.append(chunk_results["Conflicting Records"])
                 if not chunk_results["Anomalies Detected"].empty:
                     anomalies_detected = pd.concat([anomalies_detected, chunk_results["Anomalies Detected"]])
+
+                if "Accuracy Issues" in chunk_results and not chunk_results["Accuracy Issues"].empty:
+                    accuracy_issues.append(chunk_results["Accuracy Issues"])
+                if "Redundancy Issues" in chunk_results and not chunk_results["Redundancy Issues"].empty:
+                    redundancy_issues.append(chunk_results["Redundancy Issues"])
+                if "Traceability Issues" in chunk_results and not chunk_results["Traceability Issues"].empty:
+                    traceability_issues.append(chunk_results["Traceability Issues"])
+                if "Timeliness Issues" in chunk_results and not chunk_results["Timeliness Issues"].empty:
+                    timeliness_issues.append(chunk_results["Timeliness Issues"])
 
                 if not chunk_results["Integrity Issues"].empty:
                     integrity_issues.append(chunk_results["Integrity Issues"])
@@ -429,6 +454,10 @@ def process_file(
             all_duplicates = pd.concat(duplicate_records).drop_duplicates() if duplicate_records else pd.DataFrame()
             all_conflicts = pd.concat(conflicting_records).drop_duplicates() if conflicting_records else pd.DataFrame()
             all_integrity = pd.concat(integrity_issues).drop_duplicates() if integrity_issues else pd.DataFrame()
+            all_accuracy = pd.concat(accuracy_issues).drop_duplicates() if accuracy_issues else pd.DataFrame()
+            all_redundancy = pd.concat(redundancy_issues).drop_duplicates() if redundancy_issues else pd.DataFrame()
+            all_traceability = pd.concat(traceability_issues).drop_duplicates() if traceability_issues else pd.DataFrame()
+            all_timeliness = pd.concat(timeliness_issues).drop_duplicates() if timeliness_issues else pd.DataFrame()
             anomalies_detected = anomalies_detected.drop_duplicates() if not anomalies_detected.empty else pd.DataFrame()
 
             validation_results = {
@@ -438,8 +467,18 @@ def process_file(
                 "Integrity Issues": all_integrity,
                 "Referential Integrity Issues": pd.DataFrame(),
                 "Anomalies Detected": anomalies_detected,
-                "Invalid Mask": global_invalid_mask.sort_index()
+                "Invalid Mask": global_invalid_mask.sort_index(),
             }
+
+            if cfg and cfg.get("quality_metrics"):
+                validation_results.update(
+                    {
+                        "Accuracy Issues": all_accuracy,
+                        "Redundancy Issues": all_redundancy,
+                        "Traceability Issues": all_traceability,
+                        "Timeliness Issues": all_timeliness,
+                    }
+                )
 
             # 5) Mapping stats
             mapping_success_rates = {}
@@ -543,7 +582,8 @@ def batch_process(
     chunksize=10000,
     phenotype_columns=None,
     phenotype_column=None,
-    log_file_for_children=None
+    log_file_for_children=None,
+    quality_metrics=None
 ):
     log_activity(f"[ParentProcess] Starting on: {files}", level='info')
 
@@ -553,6 +593,8 @@ def batch_process(
 
     # 2) Load config
     config = load_config(config_path)
+    if quality_metrics is not None:
+        config["quality_metrics"] = quality_metrics
 
     # 3) Create OntologyMapper
     ontology_mapper = OntologyMapper(config)
@@ -586,6 +628,7 @@ def batch_process(
                 report_format,
                 chunksize,
                 phenotype_columns,
+                config,
                 log_file_for_children
             )
             futures.append(future)

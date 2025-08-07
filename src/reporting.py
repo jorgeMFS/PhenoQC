@@ -1,40 +1,27 @@
+import os
+import hashlib
+import inspect
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
+
+# ``reportlab`` internally calls ``hashlib.md5(usedforsecurity=False)``,
+# but Python versions prior to 3.9 do not accept the ``usedforsecurity``
+# keyword argument.  This causes a ``TypeError`` on those interpreters
+# (notably Python 3.8 used in our CI).  To maintain compatibility we
+# shim ``hashlib.md5`` so that it silently ignores the argument when the
+# runtime does not support it.
+_hashlib_md5 = hashlib.md5
+if 'usedforsecurity' not in inspect.signature(_hashlib_md5).parameters:
+    def _md5_compat(*args, **kwargs):
+        kwargs.pop('usedforsecurity', None)
+        return _hashlib_md5(*args, **kwargs)
+    hashlib.md5 = _md5_compat
+
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
-import os
-import hashlib
-from reportlab.pdfbase import pdfdoc
-from reportlab.lib import utils as reportlab_utils
-
-# ---------------------------------------------------------------------------
-# ReportLab uses ``hashlib.md5(usedforsecurity=False)`` when building PDF files
-# to remain compatible with Python builds that disable insecure hashes in FIPS
-# mode.  Python 3.8's ``hashlib`` does not support the ``usedforsecurity``
-# argument, leading to a ``TypeError`` when generating PDF reports during the
-# tests.  To keep the project compatible with both older and newer Python
-# versions we replace ReportLab's ``md5`` helper with a wrapper that accepts the
-# keyword but simply ignores it when the runtime does not understand it.
-# ---------------------------------------------------------------------------
-try:  # Supported in newer Python releases
-    hashlib.md5(b"", usedforsecurity=False)
-except TypeError:  # Fallback for Python versions without the keyword
-    def _md5_compat(data=b"", usedforsecurity=False):  # noqa: D401 - thin wrapper
-        """Return an MD5 hash object ignoring ``usedforsecurity``."""
-        return hashlib.md5(data)
-
-    pdfdoc.md5 = _md5_compat
-    reportlab_utils.md5 = _md5_compat
-
-    def _digester_compat(s):
-        return hashlib.md5(
-            s if reportlab_utils.isBytes(s) else s.encode("utf8")
-        ).hexdigest()
-
-    reportlab_utils._digester = _digester_compat
 
 def generate_qc_report(
     validation_results,
@@ -94,6 +81,25 @@ def generate_qc_report(
                 story.append(Paragraph(f"<b>{key}:</b> {value}", styles['Normal']))
         story.append(Spacer(1, 12))
 
+        # Additional Quality Dimensions
+        story.append(Paragraph("Additional Quality Dimensions:", styles['Heading2']))
+        for metric in ["Accuracy Issues", "Redundancy Issues", "Traceability Issues", "Timeliness Issues"]:
+            if metric in validation_results:
+                df_metric = validation_results[metric]
+                if isinstance(df_metric, pd.DataFrame) and not df_metric.empty:
+                    story.append(Paragraph(
+                        f"<b>{metric}:</b> {len(df_metric)} issues found.",
+                        styles['Normal']
+                    ))
+                    table_data = [df_metric.columns.tolist()] + df_metric.values.tolist()
+                    story.append(Table(table_data))
+                else:
+                    story.append(Paragraph(
+                        f"<b>{metric}:</b> No issues found.",
+                        styles['Normal']
+                    ))
+        story.append(Spacer(1, 12))
+
         # Missing Data Summary
         story.append(Paragraph("Missing Data Summary:", styles['Heading2']))
         for column, count in missing_data.items():
@@ -149,6 +155,20 @@ def generate_qc_report(
                     md_lines.append(f"- **{key}**: No issues found.")
             else:
                 md_lines.append(f"- **{key}**: {value}")
+        md_lines.append("")
+
+        md_lines.append("## Additional Quality Dimensions")
+        for metric in ["Accuracy Issues", "Redundancy Issues", "Traceability Issues", "Timeliness Issues"]:
+            if metric in validation_results:
+                df_metric = validation_results[metric]
+                if isinstance(df_metric, pd.DataFrame) and not df_metric.empty:
+                    md_lines.append(f"- **{metric}**: {len(df_metric)} issues found.")
+                    try:
+                        md_lines.append(df_metric.to_markdown(index=False))
+                    except Exception:
+                        md_lines.append(df_metric.to_csv(index=False))
+                else:
+                    md_lines.append(f"- **{metric}**: No issues found.")
         md_lines.append("")
         md_lines.append("## Missing Data Summary")
         for column, count in missing_data.items():
