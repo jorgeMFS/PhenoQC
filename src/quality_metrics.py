@@ -186,7 +186,7 @@ def check_timeliness(df: pd.DataFrame, date_col: str, max_lag_days: int) -> pd.D
         problem.
     """
     if date_col not in df.columns:
-        return pd.DataFrame()
+        return df.iloc[0:0].copy()
     dates = pd.to_datetime(df[date_col], errors="coerce")
     lag = pd.Timedelta(days=max_lag_days)
     stale_mask = (pd.Timestamp.now() - dates) > lag
@@ -201,4 +201,4 @@ def check_timeliness(df: pd.DataFrame, date_col: str, max_lag_days: int) -> pd.D
 
     _tag_issue(stale_mask, "lag_exceeded")
     _tag_issue(invalid_mask, "missing_or_invalid_date")
-    return pd.concat(results) if results else pd.DataFrame()
+    return pd.concat(results) if results else df.iloc[0:0].copy()
