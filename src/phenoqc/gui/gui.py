@@ -900,6 +900,33 @@ def main():
 
                         st.info("**Summary of Key Findings**\n\n" + "\n".join(summary_text))
 
+                        # ---------------------------------------------------------
+                        # Additional Quality Dimensions (only if enabled in config)
+                        # ---------------------------------------------------------
+                        active_metrics = st.session_state.get('config', {}).get('quality_metrics', []) or []
+                        metric_key_map = [
+                            ("accuracy", "Accuracy Issues"),
+                            ("redundancy", "Redundancy Issues"),
+                            ("traceability", "Traceability Issues"),
+                            ("timeliness", "Timeliness Issues"),
+                        ]
+                        if active_metrics:
+                            st.write("### Additional Quality Dimensions")
+                            for metric_id, vr_key in metric_key_map:
+                                if metric_id not in active_metrics:
+                                    continue
+                                df_metric = validation_res.get(vr_key, pd.DataFrame())
+                                with st.expander(f"{vr_key}", expanded=False):
+                                    if isinstance(df_metric, pd.DataFrame) and not df_metric.empty:
+                                        st.write(f"{len(df_metric)} issues found.")
+                                        # Show up to 200 rows for usability
+                                        preview_rows = min(200, len(df_metric))
+                                        st.dataframe(df_metric.head(preview_rows))
+                                        if len(df_metric) > preview_rows:
+                                            st.caption(f"Showing first {preview_rows} rows out of {len(df_metric)}")
+                                    else:
+                                        st.write("No issues found.")
+
                         # ----------------------------------------------------------------
                         # Display the invalid cells (highlighting), but remove re-validate
                         # ----------------------------------------------------------------
