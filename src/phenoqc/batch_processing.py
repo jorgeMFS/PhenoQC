@@ -801,6 +801,7 @@ def process_file(
                     if class_distribution_result is not None
                     else None
                 ),
+                "imputation_summary": imputation_summary,
             }
 
     except Exception as e:
