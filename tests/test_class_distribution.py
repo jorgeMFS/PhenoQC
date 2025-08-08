@@ -14,7 +14,6 @@ def test_class_distribution_single_pass_warning():
     assert res.minority_class == 'B'
     assert pytest.approx(res.proportions['B'], rel=1e-6) == 0.05
 
-
 def test_class_distribution_chunked_equals_single_pass():
     df1 = pd.DataFrame({'label': ['A'] * 50 + ['B'] * 2})
     df2 = pd.DataFrame({'label': ['A'] * 45 + ['B'] * 3})
@@ -33,3 +32,38 @@ def test_class_distribution_chunked_equals_single_pass():
     assert single.counts == chunked.counts
     assert single.warning == chunked.warning
 
+def test_class_distribution_chunked_with_empty_chunk():
+    df1 = pd.DataFrame({'label': ['A'] * 10 + ['B'] * 1})
+    df2 = pd.DataFrame({'label': []})  # empty chunk
+
+    single = report_class_distribution(
+        pd.concat([df1, df2], ignore_index=True),
+        label_column='label',
+        warn_threshold=0.10,
+    )
+
+    counter = ClassCounter()
+    counter.update(df1['label'])
+    counter.update(df2['label'])
+    chunked = counter.finalize(warn_threshold=0.10)
+
+    assert single.counts == chunked.counts
+    assert single.warning == chunked.warning
+
+def test_class_distribution_chunked_with_nan_chunk():
+    df1 = pd.DataFrame({'label': ['A'] * 10 + ['B'] * 1})
+    df2 = pd.DataFrame({'label': [float('nan')] * 5})  # chunk with only NaNs
+
+    single = report_class_distribution(
+        pd.concat([df1, df2], ignore_index=True),
+        label_column='label',
+        warn_threshold=0.10,
+    )
+
+    counter = ClassCounter()
+    counter.update(df1['label'])
+    counter.update(df2['label'])
+    chunked = counter.finalize(warn_threshold=0.10)
+
+    assert single.counts == chunked.counts
+    assert single.warning == chunked.warning
