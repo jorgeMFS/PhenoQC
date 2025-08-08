@@ -118,8 +118,7 @@ def main():
     )
     print(f"[INFO] Summary written to {summary_path}")
 
-    missing = [m for m, found in metrics_found.items() if not found]
-    if missing:
+    if missing := [m for m, found in metrics_found.items() if not found]:
         print(f"[WARNING] Metrics missing from stdout: {missing}")
     else:
         print("[INFO] All requested metrics found in stdout.")
