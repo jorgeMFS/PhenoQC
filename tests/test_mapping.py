@@ -321,5 +321,10 @@ default_ontologies: [HPO]
         self.assertEqual(result["HPO"], "HP:0000822")
         self.assertEqual(result["DO"], "DOID:0050167")
 
+    def test_map_term_fuzzy_matching_negative(self):
+        """Terms too dissimilar to any known term should not map via fuzzy matching."""
+        result = self.mapper.map_term("Xyzzypopple")
+        self.assertTrue(all(v is None for v in result.values()))
+
 if __name__ == '__main__':
     unittest.main()
