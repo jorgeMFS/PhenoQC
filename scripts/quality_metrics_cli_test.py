@@ -103,6 +103,26 @@ def run_phenoqc(data_path: str, cfg_path: str, output_dir: str) -> None:
     df = pd.read_csv(processed_csv)
     assert "HPO_ID" in df.columns, "Expected 'HPO_ID' column in processed CSV after mapping"
 
+    # Verify per-file quality metrics artifacts exist
+    metrics_tsv = unique_output_name(data_path, output_dir, suffix="_quality_metrics.tsv")
+    metrics_json = unique_output_name(data_path, output_dir, suffix="_quality_metrics_summary.json")
+    assert os.path.exists(metrics_tsv), f"Quality metrics TSV not found: {metrics_tsv}"
+    assert os.path.exists(metrics_json), f"Quality metrics summary JSON not found: {metrics_json}"
+
+    # Validate JSON counts vs TSV rows per metric
+    import json
+    import pandas as pd
+    with open(metrics_json, "r", encoding="utf-8") as jf:
+        summary = json.load(jf)
+    tsv_df = pd.read_csv(metrics_tsv, sep="\t") if os.path.getsize(metrics_tsv) > 0 else pd.DataFrame()
+    if not tsv_df.empty and "metric" in tsv_df.columns:
+        for m in ["accuracy", "redundancy", "traceability", "timeliness"]:
+            if m in summary:
+                # Count rows for this metric in TSV
+                tsv_count = int((tsv_df["metric"] == m).sum())
+                json_count = int(summary.get(m, 0))
+                assert tsv_count == json_count, f"Mismatch for {m}: TSV={tsv_count}, JSON={json_count}"
+
 
 def main() -> None:
     out_dir = os.path.join(SCRIPT_DIR, "output", "quality_metrics")

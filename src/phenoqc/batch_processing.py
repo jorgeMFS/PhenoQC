@@ -594,6 +594,53 @@ def process_file(
                     "Timeliness Issues": all_timeliness,
                 }
 
+            # 5a) Persist quality metrics artifacts (per-file) when requested
+            if cfg and cfg.get("quality_metrics"):
+                try:
+                    # Per-file TSV with all issues combined and a 'metric' column
+                    metrics_rows = []
+                    def _append_metric(df_in: pd.DataFrame, metric_name: str) -> None:
+                        if isinstance(df_in, pd.DataFrame) and not df_in.empty:
+                            df_copy = df_in.copy()
+                            df_copy["metric"] = metric_name
+                            metrics_rows.append(df_copy)
+
+                    _append_metric(all_accuracy, "accuracy")
+                    _append_metric(all_redundancy, "redundancy")
+                    _append_metric(all_traceability, "traceability")
+                    _append_metric(all_timeliness, "timeliness")
+
+                    metrics_tsv_path = unique_output_name(
+                        file_path, output_dir, suffix="_quality_metrics.tsv"
+                    )
+                    if metrics_rows:
+                        pd.concat(metrics_rows, ignore_index=True).to_csv(
+                            metrics_tsv_path, sep="\t", index=False
+                        )
+                    else:
+                        # Create an empty file with header to indicate no issues
+                        pd.DataFrame(columns=["metric"]).to_csv(
+                            metrics_tsv_path, sep="\t", index=False
+                        )
+
+                    # Per-file JSON summary with counts per metric
+                    metrics_summary = {
+                        "accuracy": int(len(all_accuracy)) if isinstance(all_accuracy, pd.DataFrame) else 0,
+                        "redundancy": int(len(all_redundancy)) if isinstance(all_redundancy, pd.DataFrame) else 0,
+                        "traceability": int(len(all_traceability)) if isinstance(all_traceability, pd.DataFrame) else 0,
+                        "timeliness": int(len(all_timeliness)) if isinstance(all_timeliness, pd.DataFrame) else 0,
+                    }
+                    metrics_json_path = unique_output_name(
+                        file_path, output_dir, suffix="_quality_metrics_summary.json"
+                    )
+                    with open(metrics_json_path, "w", encoding="utf-8") as jf:
+                        json.dump(metrics_summary, jf, indent=2)
+                except Exception as _persist_ex:
+                    log_activity(
+                        f"{file_path}: Failed to persist quality metrics artifacts: {_persist_ex}",
+                        level="warning",
+                    )
+
             # 5) Mapping stats
             mapping_success_rates = {}
             for onto_id, stats in cumulative_mapping_stats.items():
