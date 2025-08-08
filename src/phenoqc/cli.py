@@ -29,6 +29,18 @@ def parse_arguments():
         default='mean',
         help='Imputation strategy for missing data'
     )
+    parser.add_argument(
+        '--impute-params',
+        type=json.loads,
+        default=None,
+        help='JSON object of parameters for the imputation strategy (e.g., {"n_neighbors": 5})'
+    )
+    parser.add_argument(
+        '--impute-tuning',
+        choices=['on', 'off'],
+        default='off',
+        help='Enable quick tuning for imputation (mask-and-score)'
+    )
     parser.add_argument('--recursive', action='store_true', help='Enable recursive directory scanning for nested files')
     parser.add_argument('--unique_identifiers', nargs='+', required=True, help='List of column names that uniquely identify a record')
     parser.add_argument('--ontologies', nargs='+', help='List of ontologies to map to (e.g., HPO DO MPO)', default=None)

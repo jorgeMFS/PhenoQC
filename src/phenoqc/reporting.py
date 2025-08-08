@@ -124,9 +124,9 @@ def generate_qc_report(
             fontName='Helvetica-Bold',
             textColor=colors.black,
         )
-        scores_items = [
-            [Paragraph("Imputation Strategy", label_style), Paragraph(strategy_display, table_cell_style)]
-        ]
+        scores_items = [[Paragraph("Imputation Strategy", label_style), Paragraph(strategy_display, table_cell_style)]]
+        # If available, include a concise imputation tuning summary
+        # Expectation: quality_scores may be augmented elsewhere; keep resilient here
         for score_name, score_value in quality_scores.items():
             scores_items.append([
                 Paragraph(score_name, label_style),
@@ -422,6 +422,18 @@ def generate_qc_report(
         for score_name, score_value in quality_scores.items():
             md_lines.append(f"- **{score_name}**: {score_value:.2f}%")
         md_lines.append("")
+        # Optional class distribution
+        if class_distribution:
+            md_lines.append("## Class Distribution")
+            counts = getattr(class_distribution, 'counts', {})
+            proportions = getattr(class_distribution, 'proportions', {})
+            warn_threshold = getattr(class_distribution, 'warn_threshold', 0.10)
+            for cls, cnt in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])):
+                md_lines.append(f"- {cls}: {cnt} ({proportions.get(cls, 0.0):.2%})")
+            if getattr(class_distribution, 'warning', False):
+                md_lines.append(f"\n> Severe imbalance flagged (minority < {warn_threshold:.0%}).\n")
+            md_lines.append("")
+
         md_lines.append("## Schema Validation Results")
         for key, value in validation_results.items():
             if isinstance(value, pd.DataFrame):

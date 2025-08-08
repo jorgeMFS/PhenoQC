@@ -10,6 +10,7 @@ from .missing_data import (
     detect_missing_data,
     flag_missing_data_records,
     impute_missing_data,
+    ImputationEngine,
 )
 from .reporting import generate_qc_report, create_visual_summary
 from .configuration import load_config
@@ -455,11 +456,23 @@ def process_file(
 
                 # Impute
                 try:
-                    chunk = impute_missing_data(
-                        chunk,
-                        strategy=impute_strategy,
-                        field_strategies=field_strategies,
-                    )
+                    # Build engine from cfg if provided; exclude label column from numeric space
+                    exclude_cols = []
+                    if class_dist_cfg and class_dist_cfg.get("label_column"):
+                        exclude_cols.append(class_dist_cfg.get("label_column"))
+                    impute_cfg = None
+                    if cfg and isinstance(cfg, dict):
+                        impute_cfg = cfg.get('imputation')
+                        # CLI-impute strategy override (legacy arg)
+                        if not impute_cfg and impute_strategy:
+                            impute_cfg = {'strategy': impute_strategy}
+                        elif impute_cfg and impute_strategy and impute_cfg.get('strategy') is None:
+                            impute_cfg['strategy'] = impute_strategy
+                    else:
+                        impute_cfg = {'strategy': impute_strategy}
+
+                    engine = ImputationEngine(impute_cfg, exclude_columns=exclude_cols)
+                    chunk = engine.fit_transform(chunk)
                 except Exception as ex_impute:
                     final_status = "ProcessedWithWarnings"
                     msg3 = f"Error in imputation: {str(ex_impute)}"
