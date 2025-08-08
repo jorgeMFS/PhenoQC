@@ -3,7 +3,7 @@ import os
 import pandas as pd
 import tempfile
 import types
-from src.input import read_csv, read_tsv, read_json, load_data
+from phenoqc.input import read_csv, read_tsv, read_json, load_data
 
 class TestInputModule(unittest.TestCase):
     def setUp(self):

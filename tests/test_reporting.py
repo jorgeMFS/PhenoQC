@@ -2,7 +2,7 @@ import unittest
 import os
 import pandas as pd
 import tempfile
-from src.reporting import generate_qc_report, create_visual_summary
+from phenoqc.reporting import generate_qc_report, create_visual_summary
 from PIL import Image  # Import PIL for creating valid images
 
 class TestReportingModule(unittest.TestCase):

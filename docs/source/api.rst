@@ -6,7 +6,7 @@ This section provides detailed API documentation for PhenoQC's modules.
 Validation Module
 ----------------------------------------------------
 
-.. automodule:: src.validation
+.. automodule:: phenoqc.validation
    :members:
    :undoc-members:
    :show-inheritance:
@@ -14,7 +14,7 @@ Validation Module
 Mapping Module
 -------------
 
-.. automodule:: src.mapping
+.. automodule:: phenoqc.mapping
    :members:
    :undoc-members:
    :show-inheritance:
@@ -22,7 +22,7 @@ Mapping Module
 Missing Data Module
 -----------------
 
-.. automodule:: src.missing_data
+.. automodule:: phenoqc.missing_data
    :members:
    :undoc-members:
    :show-inheritance:
@@ -30,7 +30,7 @@ Missing Data Module
 Batch Processing Module
 ---------------------
 
-.. automodule:: src.batch_processing
+.. automodule:: phenoqc.batch_processing
    :members:
    :undoc-members:
    :show-inheritance:
@@ -38,7 +38,7 @@ Batch Processing Module
 Input Module
 -----------
 
-.. automodule:: src.input
+.. automodule:: phenoqc.input
    :members:
    :undoc-members:
    :show-inheritance:
@@ -46,7 +46,7 @@ Input Module
 Reporting Module
 --------------
 
-.. automodule:: src.reporting
+.. automodule:: phenoqc.reporting
    :members:
    :undoc-members:
    :show-inheritance:
@@ -54,7 +54,7 @@ Reporting Module
 Configuration Module
 ------------------
 
-.. automodule:: src.configuration
+.. automodule:: phenoqc.configuration
    :members:
    :undoc-members:
    :show-inheritance:
@@ -62,7 +62,7 @@ Configuration Module
 Logging Module
 -------------
 
-.. automodule:: src.logging_module
+.. automodule:: phenoqc.logging_module
    :members:
    :undoc-members:
-   :show-inheritance: 
+   :show-inheritance:

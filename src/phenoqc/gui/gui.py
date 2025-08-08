@@ -10,6 +10,7 @@ from ..reporting import create_visual_summary, generate_qc_report
 import json
 import io
 from ..batch_processing import process_file
+from .views import build_quality_metrics_widget, apply_quality_metrics_selection
 import shutil 
 import yaml 
 import warnings 
@@ -288,6 +289,20 @@ def main():
                     st.error(f"Error loading JSON schema file: {e}")
 
         st.markdown("---")
+        if config_loaded:
+            qm_widget = build_quality_metrics_widget(
+                st.session_state.get('config', {})
+            )
+            selection = st.multiselect(
+                "Select Quality Metrics",
+                options=qm_widget["options"],
+                default=qm_widget["selected"],
+                key="quality_metrics",
+            )
+            st.session_state['config'] = apply_quality_metrics_selection(
+                st.session_state.get('config', {}),
+                selection,
+            )
         # Only proceed if both files are loaded
         if config_loaded and schema_loaded:
             st.session_state.steps_completed["Upload Config Files"] = True
@@ -784,7 +799,8 @@ def main():
                                     field_strategies=field_strategies,
                                     output_dir=output_dir,
                                     target_ontologies=st.session_state.get('ontologies_selected_list', []),
-                                    phenotype_columns=st.session_state.get('phenotype_columns')
+                                    phenotype_columns=st.session_state.get('phenotype_columns'),
+                                    cfg=st.session_state.get('config'),
                                 )
                                 # Store the result
                                 st.session_state['processing_results'].append((file_name, result, output_dir))
@@ -883,6 +899,33 @@ def main():
                             summary_text.append("- No anomalies detected.")
 
                         st.info("**Summary of Key Findings**\n\n" + "\n".join(summary_text))
+
+                        # ---------------------------------------------------------
+                        # Additional Quality Dimensions (only if enabled in config)
+                        # ---------------------------------------------------------
+                        active_metrics = st.session_state.get('config', {}).get('quality_metrics', []) or []
+                        metric_key_map = [
+                            ("accuracy", "Accuracy Issues"),
+                            ("redundancy", "Redundancy Issues"),
+                            ("traceability", "Traceability Issues"),
+                            ("timeliness", "Timeliness Issues"),
+                        ]
+                        if active_metrics:
+                            st.write("### Additional Quality Dimensions")
+                            for metric_id, vr_key in metric_key_map:
+                                if metric_id not in active_metrics:
+                                    continue
+                                df_metric = validation_res.get(vr_key, pd.DataFrame())
+                                with st.expander(f"{vr_key}", expanded=False):
+                                    if isinstance(df_metric, pd.DataFrame) and not df_metric.empty:
+                                        st.write(f"{len(df_metric)} issues found.")
+                                        # Show up to 200 rows for usability
+                                        preview_rows = min(200, len(df_metric))
+                                        st.dataframe(df_metric.head(preview_rows))
+                                        if len(df_metric) > preview_rows:
+                                            st.caption(f"Showing first {preview_rows} rows out of {len(df_metric)}")
+                                    else:
+                                        st.write("No issues found.")
 
                         # ----------------------------------------------------------------
                         # Display the invalid cells (highlighting), but remove re-validate

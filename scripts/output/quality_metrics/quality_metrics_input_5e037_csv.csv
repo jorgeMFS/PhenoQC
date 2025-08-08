@@ -1,0 +1,4 @@
+SampleID,Height_cm,Weight_kg,Cholesterol_mgdl,BP_systolic,BP_diastolic,Glucose_mgdl,Creatinine_mgdl,PrimaryPhenotype,VisitDate,SchemaViolationFlag,MissingDataFlag,HPO_ID
+1.0,170,70,170,120,60,90,1.0,HP:0001250,2025-07-29,False,False,
+1.0,-5,80,-5,100,50,95,1.2,HP:0001166,2025-08-08,True,False,
+1.0,180,75,180,140,70,100,1.1,HP:0000001,not_a_date,True,False,

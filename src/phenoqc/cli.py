@@ -1,10 +1,12 @@
 import argparse
 import json
 import os
-from .batch_processing import batch_process
-from .logging_module import setup_logging, log_activity
-from .utils.zip_utils import extract_zip
 import datetime
+
+from phenoqc.batch_processing import batch_process
+from phenoqc.logging_module import setup_logging, log_activity
+from phenoqc.utils.zip_utils import extract_zip
+from phenoqc.quality_metrics import QUALITY_METRIC_CHOICES
 
 SUPPORTED_EXTENSIONS = {'.csv', '.tsv', '.json', '.zip'}
 
@@ -39,6 +41,13 @@ def parse_arguments():
         '--phenotype_column',
         help='[Deprecated] Use --phenotype_columns instead'
     )
+    parser.add_argument(
+        '--quality-metrics',
+        nargs='+',
+        choices=QUALITY_METRIC_CHOICES + ['all'],
+        help='Additional quality metrics to evaluate',
+        default=None
+    )
     args = parser.parse_args()
     
     # Convert old phenotype_column to new format if specified
@@ -46,7 +55,10 @@ def parse_arguments():
         if not args.phenotype_columns:  # Only use if phenotype_columns not specified
             args.phenotype_columns = {args.phenotype_column: ["HPO"]}
         args.phenotype_column = None  # Clear the old argument
-    
+
+    if args.quality_metrics and 'all' in args.quality_metrics:
+        args.quality_metrics = QUALITY_METRIC_CHOICES
+
     return args
 
 def collect_files(input_paths, recursive=False):
@@ -153,7 +165,8 @@ def main():
         output_dir=args.output,
         target_ontologies=args.ontologies,
         phenotype_columns=args.phenotype_columns,
-        log_file_for_children=single_log_filename
+        log_file_for_children=single_log_filename,
+        quality_metrics=args.quality_metrics
     )
     
     for result in results:

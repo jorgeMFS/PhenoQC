@@ -1,0 +1,31 @@
+advanced_imputation_methods:
+- MICE
+- KNN
+- IterativeSVD
+cache_expiry_days: 30
+date_col: VisitDate
+default_ontologies:
+- HPO
+- DO
+- MPO
+fuzzy_threshold: 80
+imputation_strategies:
+  Height_cm: median
+  Weight_kg: mean
+max_lag_days: 5
+ontologies:
+  DO:
+    format: obo
+    name: Disease Ontology
+    source: url
+    url: http://purl.obolibrary.org/obo/doid.obo
+  HPO:
+    format: obo
+    name: Human Phenotype Ontology
+    source: url
+    url: http://purl.obolibrary.org/obo/hp.obo
+  MPO:
+    format: obo
+    name: Mammalian Phenotype Ontology
+    source: url
+    url: http://purl.obolibrary.org/obo/mp.obo

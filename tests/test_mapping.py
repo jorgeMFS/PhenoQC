@@ -3,7 +3,7 @@ import json
 import tempfile
 import os
 import yaml
-from src.mapping import OntologyMapper
+from phenoqc.mapping import OntologyMapper
 
 class TestOntologyMapper(unittest.TestCase):
     def setUp(self):
@@ -306,6 +306,25 @@ default_ontologies: [HPO]
         
         with self.assertRaises(FileNotFoundError):
             OntologyMapper(missing_config_file)
+
+    def test_map_term_handles_non_string(self):
+        """Ensure non-string inputs are handled gracefully."""
+        result_none = self.mapper.map_term(None)
+        self.assertTrue(all(v is None for v in result_none.values()))
+
+        result_numeric = self.mapper.map_term(12345)
+        self.assertTrue(all(v is None for v in result_numeric.values()))
+
+    def test_map_term_fuzzy_matching(self):
+        """Terms with minor misspellings should still map using fuzzy matching."""
+        result = self.mapper.map_term("Hypertention")
+        self.assertEqual(result["HPO"], "HP:0000822")
+        self.assertEqual(result["DO"], "DOID:0050167")
+
+    def test_map_term_fuzzy_matching_negative(self):
+        """Terms too dissimilar to any known term should not map via fuzzy matching."""
+        result = self.mapper.map_term("Xyzzypopple")
+        self.assertTrue(all(v is None for v in result.values()))
 
 if __name__ == '__main__':
     unittest.main()
