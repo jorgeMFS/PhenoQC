@@ -92,6 +92,19 @@ python unified_scenarios_test.py
 ```
 It will execute all scenario definitions listed at the top of the file (SCALING, MISSINGNESS, CORRUPTION, DUPLICATE_STRESS) and create outputs in a directory (e.g., `./unified_scenarios_outputs/`). Within that folder, the script writes a CSV summarizing each run’s performance metrics.
 
+### 1.5 `quality_metrics_cli_test.py`
+
+`quality_metrics_cli_test.py` demonstrates the `--quality-metrics` option by
+building a tiny dataset with intentional accuracy, redundancy, traceability and
+timeliness problems. It then runs the PhenoQC CLI with all metrics enabled and
+prints the resulting stdout/stderr so you can review the reported issues.
+
+Example:
+```bash
+python quality_metrics_cli_test.py
+```
+Temporary files and reports are written to `./output/quality_metrics/`.
+
 ---
 
 ## 2) Typical Workflow for Testing Missing Data and Ontology Mapping
