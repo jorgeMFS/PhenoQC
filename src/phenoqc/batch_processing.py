@@ -637,7 +637,7 @@ def process_file(
                         json.dump(metrics_summary, jf, indent=2)
                 except Exception as _persist_ex:
                     log_activity(
-                        f"{file_path}: Failed to persist quality metrics artifacts: {_persist_ex}",
+                        f"{file_path}: Failed to persist quality metrics artifacts [{type(_persist_ex).__name__}]: {_persist_ex}",
                         level="warning",
                     )
 
