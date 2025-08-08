@@ -284,7 +284,7 @@ class ClassCounter:
             minority_class, minority_prop = min(proportions.items(), key=lambda kv: kv[1])
         else:
             minority_class, minority_prop = None, None
-        warning_flag = bool(minority_prop is not None and minority_prop < warn_threshold)
+        warning_flag = minority_prop is not None and minority_prop < warn_threshold
         return ClassDistributionResult(
             counts=counts,
             proportions=proportions,
