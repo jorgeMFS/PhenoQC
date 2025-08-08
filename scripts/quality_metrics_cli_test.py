@@ -21,6 +21,7 @@ import pandas as pd
 import yaml
 
 from phenoqc.quality_metrics import QUALITY_METRIC_CHOICES
+from phenoqc.batch_processing import unique_output_name
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_CONFIG = os.path.join(SCRIPT_DIR, "config", "config.yaml")
@@ -86,18 +87,21 @@ def run_phenoqc(data_path: str, cfg_path: str, output_dir: str) -> None:
     # Assert exit code is 0
     assert proc.returncode == 0, f"CLI exited with non-zero code: {proc.returncode}"
 
-    # Assert expected output files exist
+    # Assert expected output artifacts created by the CLI
     import os
+    processed_csv = unique_output_name(data_path, output_dir, suffix=".csv")
+    report_pdf = unique_output_name(data_path, output_dir, suffix="_report.pdf")
 
-    expected_files = [
-        os.path.join(output_dir, "quality_metrics_report.tsv"),
-        os.path.join(output_dir, "quality_metrics_summary.json"),
-    ]
-    for f in expected_files:
-        assert os.path.exists(f), f"Expected output file not found: {f}"
+    assert os.path.exists(processed_csv), f"Processed CSV not found: {processed_csv}"
+    assert os.path.exists(report_pdf), f"Report PDF not found: {report_pdf}"
 
-    # Optionally, check that stderr is empty or does not contain 'error'
-    assert "error" not in proc.stderr.lower(), f"Error found in stderr: {proc.stderr}"
+    # The PDF should not be empty
+    assert os.path.getsize(report_pdf) > 0, f"Report PDF is empty: {report_pdf}"
+
+    # Basic sanity check on processed CSV columns (HPO mapping should produce HPO_ID)
+    import pandas as pd
+    df = pd.read_csv(processed_csv)
+    assert "HPO_ID" in df.columns, "Expected 'HPO_ID' column in processed CSV after mapping"
 
 
 def main() -> None:

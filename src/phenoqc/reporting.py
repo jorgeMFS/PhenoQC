@@ -18,9 +18,19 @@ if 'usedforsecurity' not in inspect.signature(_hashlib_md5).parameters:
         return _hashlib_md5(*args, **kwargs)
     hashlib.md5 = _md5_compat
 
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import letter, landscape
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    Image,
+    Table,
+    KeepTogether,
+    HRFlowable,
+)
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from reportlab.lib.units import inch
 from reportlab.lib.units import inch
 
 def generate_qc_report(
@@ -41,21 +51,104 @@ def generate_qc_report(
     """
     if report_format == 'pdf':
         styles = getSampleStyleSheet()
+        # Compact style for table cells
+        table_cell_style = ParagraphStyle(
+            name="TableCell",
+            parent=styles['BodyText'],
+            fontSize=7,
+            leading=9,
+            spaceAfter=0,
+            spaceBefore=0,
+        )
+        # Aggressive wrapping for long tokens (e.g., IDs without spaces)
+        table_cell_style.wordWrap = 'CJK'
+
+        # Header style to guarantee white text regardless of table styles
+        table_header_style = ParagraphStyle(
+            name="TableHeader",
+            parent=table_cell_style,
+            fontName='Helvetica-Bold',
+            fontSize=8,
+            leading=10,
+            textColor=colors.white,
+        )
+
+        # Use landscape layout to provide more horizontal space
+        page_size = landscape(letter)
+        left_margin = right_margin = top_margin = bottom_margin = 36  # 0.5 inch
+        available_width = page_size[0] - left_margin - right_margin
+
         story = []
 
-        # Title
+        # Spacing constants
+        SPACING_S = 8
+        SPACING_M = 14
+        SPACING_L = 22
+
+        # Helpers
+        def hr():
+            return HRFlowable(width="100%", thickness=0.6, color=colors.HexColor('#BDC3C7'))
+
+        section_header_style = ParagraphStyle(
+            name="SectionHeader",
+            parent=styles['Heading1'],
+            fontSize=16,
+            leading=20,
+            spaceAfter=6,
+        )
+        subsection_header_style = ParagraphStyle(
+            name="SubSectionHeader",
+            parent=styles['Heading2'],
+            fontSize=13,
+            leading=16,
+            spaceAfter=4,
+        )
+
+        # Cover / Title
         story.append(Paragraph("PhenoQC Quality Control Report", styles['Title']))
-        story.append(Spacer(1, 12))
-
         if file_identifier:
+            story.append(Spacer(1, 4))
             story.append(Paragraph(f"<b>Source file:</b> {file_identifier}", styles['Normal']))
-            story.append(Spacer(1, 12))
+        story.append(Spacer(1, SPACING_M))
+        story.append(hr())
+        story.append(Spacer(1, SPACING_M))
 
-        # Imputation Strategy
-        story.append(Paragraph("Imputation Strategy Used:", styles['Heading2']))
+        # Summary section
+        story.append(Paragraph("Summary", section_header_style))
+        # Imputation Strategy + Quality Scores as label/value pairs (no header row)
         strategy_display = "(No Imputation Strategy)" if impute_strategy is None else impute_strategy.capitalize()
-        story.append(Paragraph(strategy_display, styles['Normal']))
-        story.append(Spacer(1, 12))
+        label_style = ParagraphStyle(
+            name="LabelCell",
+            parent=table_cell_style,
+            fontName='Helvetica-Bold',
+            textColor=colors.black,
+        )
+        scores_items = [
+            [Paragraph("Imputation Strategy", label_style), Paragraph(strategy_display, table_cell_style)]
+        ]
+        for score_name, score_value in quality_scores.items():
+            scores_items.append([
+                Paragraph(score_name, label_style),
+                Paragraph(f"{score_value:.2f}%", table_cell_style),
+            ])
+        scores_table = Table(
+            scores_items,
+            colWidths=[available_width * 0.45, available_width * 0.55],
+            hAlign='LEFT',
+        )
+        scores_table.setStyle([
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#B0B7BF')),
+            ('ROWBACKGROUNDS', (0, 0), (-1, -1), [colors.whitesmoke, colors.HexColor('#ECF0F1')]),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ])
+        story.append(scores_table)
+        story.append(Spacer(1, SPACING_L))
 
         # Data Quality Scores
         story.append(Paragraph("Data Quality Scores:", styles['Heading2']))
@@ -64,7 +157,7 @@ def generate_qc_report(
         story.append(Spacer(1, 12))
 
         # Schema Validation Results
-        story.append(Paragraph("Schema Validation Results:", styles['Heading2']))
+        story.append(Paragraph("Schema Validation Results", subsection_header_style))
         for key, value in validation_results.items():
             if isinstance(value, pd.DataFrame):
                 if not value.empty:
@@ -79,59 +172,207 @@ def generate_qc_report(
                     ))
             else:
                 story.append(Paragraph(f"<b>{key}:</b> {value}", styles['Normal']))
-        story.append(Spacer(1, 12))
+        story.append(Spacer(1, SPACING_L))
+        story.append(hr())
+        story.append(Spacer(1, SPACING_L))
 
-        # Additional Quality Dimensions
-        story.append(Paragraph("Additional Quality Dimensions:", styles['Heading2']))
+        # Helper: build a styled, wrapped table from a DataFrame that fits the page
+        def build_dataframe_table(df: pd.DataFrame, title: str, max_rows: int = 50):
+            flowables = []
+            n_total = len(df)
+            if n_total == 0:
+                flowables.append(Paragraph(f"<b>{title}:</b> No issues found.", styles['Normal']))
+                return flowables
+
+            flowables.append(Paragraph(f"<b>{title}:</b> {n_total} issues found.", styles['Normal']))
+
+            # Truncate to a reasonable number of rows for readability
+            truncated = False
+            if n_total > max_rows:
+                df_to_show = df.head(max_rows).copy()
+                truncated = True
+            else:
+                df_to_show = df.copy()
+
+            # Convert to string and wrap each cell; headers use white text style
+            headers = [Paragraph(str(h), table_header_style) for h in df_to_show.columns]
+            body = []
+            for _, row in df_to_show.iterrows():
+                body.append([
+                    Paragraph(str(val), table_cell_style) for val in row.tolist()
+                ])
+
+            # Compute column widths proportionally to content length, within bounds, fitting available width
+            num_cols = max(1, len(headers))
+            max_col_width = 2.3 * inch
+            min_col_width = 0.8 * inch
+            # Estimate per-column weight using header and 90th percentile of body length
+            weights = []
+            for col in df_to_show.columns:
+                header_len = len(str(col))
+                try:
+                    q90 = int(df_to_show[col].astype(str).str.len().quantile(0.9))
+                except Exception:
+                    q90 = header_len
+                weights.append(max(header_len, q90, 1))
+            total_weight = float(sum(weights)) or float(num_cols)
+            raw_widths = [max(min_col_width, min(max_col_width, (w / total_weight) * available_width)) for w in weights]
+            # Normalize if we exceed available width due to min/max clamping
+            scale = min(1.0, available_width / sum(raw_widths))
+            col_widths = [w * scale for w in raw_widths]
+
+            tbl = Table([headers] + body, colWidths=col_widths, repeatRows=1)
+            tbl.setStyle([
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 7),
+                ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                ('ALIGN', (0, 1), (-1, -1), 'LEFT'),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.whitesmoke, colors.HexColor('#ECF0F1')]),
+                ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#B0B7BF')),
+                ('LINEBELOW', (0, 0), (-1, 0), 0.5, colors.HexColor('#7F8C8D')),
+                ('BOX', (0, 0), (-1, -1), 0.25, colors.HexColor('#B0B7BF')),
+                ('LEFTPADDING', (0, 0), (-1, -1), 4),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+                ('TOPPADDING', (0, 0), (-1, -1), 2),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            ])
+
+            flowables.append(tbl)
+            if truncated:
+                flowables.append(Spacer(1, 6))
+                flowables.append(Paragraph(
+                    f"Showing first {max_rows} rows out of {n_total}.", styles['Italic']
+                ))
+            # Add extra space after each table block to separate metrics clearly
+            flowables.append(Spacer(1, 18))
+            return flowables
+
+        # Additional Quality Dimensions (styled tables)
+        story.append(Paragraph("Additional Quality Dimensions", section_header_style))
         for metric in ["Accuracy Issues", "Redundancy Issues", "Traceability Issues", "Timeliness Issues"]:
             if metric in validation_results:
                 df_metric = validation_results[metric]
-                if isinstance(df_metric, pd.DataFrame) and not df_metric.empty:
-                    story.append(Paragraph(
-                        f"<b>{metric}:</b> {len(df_metric)} issues found.",
-                        styles['Normal']
-                    ))
-                    table_data = [df_metric.columns.tolist()] + df_metric.values.tolist()
-                    story.append(Table(table_data))
+                if isinstance(df_metric, pd.DataFrame):
+                    block = build_dataframe_table(df_metric, metric, max_rows=50)
+                    story.append(KeepTogether(block))
                 else:
-                    story.append(Paragraph(
-                        f"<b>{metric}:</b> No issues found.",
-                        styles['Normal']
-                    ))
-        story.append(Spacer(1, 12))
+                    story.append(Paragraph(f"<b>{metric}:</b> No issues found.", styles['Normal']))
+            else:
+                story.append(Paragraph(f"<b>{metric}:</b> No issues found.", styles['Normal']))
+        story.append(Spacer(1, SPACING_L))
+        story.append(hr())
+        story.append(Spacer(1, SPACING_L))
 
-        # Missing Data Summary
-        story.append(Paragraph("Missing Data Summary:", styles['Heading2']))
-        for column, count in missing_data.items():
-            story.append(Paragraph(f"<b>{column}:</b> {count} missing values", styles['Normal']))
-        story.append(Spacer(1, 12))
+        # Missing Data Summary (table)
+        story.append(Paragraph("Missing Data Summary", section_header_style))
+        if isinstance(missing_data, pd.Series) or isinstance(missing_data, dict):
+            md_items = sorted(list(missing_data.items()), key=lambda kv: (-int(kv[1]), str(kv[0])))
+            md_rows = [[Paragraph("Column", table_header_style), Paragraph("Missing Count", table_header_style)]]
+            for col, cnt in md_items:
+                md_rows.append([Paragraph(str(col), table_cell_style), Paragraph(str(int(cnt)), table_cell_style)])
+            md_table = Table(md_rows, colWidths=[available_width * 0.6, available_width * 0.4])
+            md_table.setStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTSIZE', (0, 0), (-1, -1), 8),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#B0B7BF')),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.whitesmoke, colors.HexColor('#ECF0F1')]),
+            ])
+            story.append(md_table)
+        else:
+            story.append(Paragraph("No missing data summary available.", styles['Normal']))
+        story.append(Spacer(1, SPACING_L))
 
         # Records Flagged for Missing Data
         story.append(Paragraph(f"<b>Records Flagged for Missing Data:</b> {flagged_records_count}", styles['Normal']))
         story.append(Spacer(1, 12))
 
-        # Ontology Mapping Success Rates
-        story.append(Paragraph("Ontology Mapping Success Rates:", styles['Heading2']))
-        for ontology_id, stats in mapping_success_rates.items():
-            story.append(Paragraph(f"{ontology_id}:", styles['Heading3']))
-            story.append(Paragraph(f"<b>Total Terms:</b> {stats['total_terms']}", styles['Normal']))
-            story.append(Paragraph(f"<b>Mapped Terms:</b> {stats['mapped_terms']}", styles['Normal']))
-            story.append(Paragraph(f"<b>Success Rate:</b> {stats['success_rate']:.2f}%", styles['Normal']))
-            story.append(Spacer(1, 12))
+        # Ontology Mapping Success Rates (table)
+        story.append(Paragraph("Ontology Mapping Summary", section_header_style))
+        if mapping_success_rates:
+            map_rows = [[
+                Paragraph("Ontology", table_header_style),
+                Paragraph("Total Terms", table_header_style),
+                Paragraph("Mapped", table_header_style),
+                Paragraph("Success Rate", table_header_style),
+            ]]
+            for ontology_id, stats in mapping_success_rates.items():
+                map_rows.append([
+                    Paragraph(ontology_id, table_cell_style),
+                    Paragraph(str(int(stats.get('total_terms', 0))), table_cell_style),
+                    Paragraph(str(int(stats.get('mapped_terms', 0))), table_cell_style),
+                    Paragraph(f"{float(stats.get('success_rate', 0)):.2f}%", table_cell_style),
+                ])
+            map_table = Table(map_rows, colWidths=[available_width * 0.25, available_width * 0.25, available_width * 0.2, available_width * 0.3])
+            map_table.setStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTSIZE', (0, 0), (-1, -1), 8),
+                ('ALIGN', (1, 1), (-1, -1), 'RIGHT'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#B0B7BF')),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.whitesmoke, colors.HexColor('#ECF0F1')]),
+            ])
+            story.append(map_table)
+        else:
+            story.append(Paragraph("No mapping statistics available.", styles['Normal']))
+        story.append(Spacer(1, SPACING_L))
+        story.append(hr())
+        story.append(Spacer(1, SPACING_L))
 
-        # Visualizations
-        story.append(Paragraph("Visualizations:", styles['Heading2']))
-        for image_path in visualization_images:
-            if os.path.exists(image_path):
-                # Increase figure size to ensure labels are visible
-                img = Image(image_path, width=6.5 * inch, height=5 * inch)
-                story.append(img)
-                story.append(Spacer(1, 12))
-            else:
-                story.append(Paragraph(f"Image not found: {image_path}", styles['Normal']))
+        # Visualizations (grid, two per row)
+        story.append(Paragraph("Visualizations", section_header_style))
+        if visualization_images:
+            col_w = (available_width - 12) / 2  # small gutter
+            rows = []
+            row = []
+            for idx, image_path in enumerate(visualization_images):
+                if os.path.exists(image_path):
+                    # Keep aspect by setting width and a reasonable height
+                    img = Image(image_path, width=col_w, height=col_w * 0.6)
+                    row.append(img)
+                else:
+                    row.append(Paragraph(f"Image not found: {image_path}", styles['Normal']))
+                if len(row) == 2:
+                    rows.append(row)
+                    row = []
+            if row:
+                # Pad last row
+                while len(row) < 2:
+                    row.append(Spacer(1, 1))
+                rows.append(row)
+            img_table = Table(rows, colWidths=[col_w, col_w], hAlign='CENTER', spaceBefore=6, spaceAfter=6)
+            img_table.setStyle([
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 6),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ])
+            story.append(img_table)
+        else:
+            story.append(Paragraph("No visualizations generated.", styles['Normal']))
 
-        doc = SimpleDocTemplate(output_path_or_buffer, pagesize=letter)
-        doc.build(story)
+        doc = SimpleDocTemplate(
+            output_path_or_buffer,
+            pagesize=page_size,
+            leftMargin=left_margin,
+            rightMargin=right_margin,
+            topMargin=top_margin,
+            bottomMargin=bottom_margin,
+        )
+        # Add simple page numbers
+        def _add_page_number(canvas_obj, doc_obj):
+            page_num_text = f"Page {canvas_obj.getPageNumber()}"
+            canvas_obj.setFont('Helvetica', 8)
+            canvas_obj.setFillColor(colors.HexColor('#7F8C8D'))
+            canvas_obj.drawRightString(page_size[0] - right_margin, bottom_margin - 10, page_num_text)
+
+        doc.build(story, onFirstPage=_add_page_number, onLaterPages=_add_page_number)
 
     elif report_format == 'md':
         md_lines = [
