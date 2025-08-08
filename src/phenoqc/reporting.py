@@ -45,6 +45,7 @@ def generate_qc_report(
     report_format='pdf',
     file_identifier=None,
     class_distribution=None,
+    imputation_summary: dict | None = None,
 ):
     """
     Generates a quality control report (PDF or Markdown).
@@ -150,6 +151,33 @@ def generate_qc_report(
         ])
         story.append(scores_table)
         story.append(Spacer(1, SPACING_L))
+
+        # Imputation settings (if provided)
+        if isinstance(imputation_summary, dict) and imputation_summary:
+            story.append(Paragraph("Imputation Settings", subsection_header_style))
+            rows = []
+            global_cfg = imputation_summary.get('global', {})
+            if global_cfg:
+                rows.append([Paragraph("Global Strategy", table_header_style), Paragraph(str(global_cfg.get('strategy')), table_cell_style)])
+                rows.append([Paragraph("Global Params", table_header_style), Paragraph(str(global_cfg.get('params')), table_cell_style)])
+            tuning = imputation_summary.get('tuning', {})
+            if tuning:
+                rows.append([Paragraph("Tuning Enabled", table_header_style), Paragraph(str(tuning.get('enabled')), table_cell_style)])
+                if 'best' in tuning:
+                    rows.append([Paragraph("Best Params", table_header_style), Paragraph(str(tuning.get('best')), table_cell_style)])
+                if 'score' in tuning and 'metric' in tuning:
+                    rows.append([Paragraph("Tuning Score", table_header_style), Paragraph(f"{tuning['score']:.4f} ({tuning['metric']})", table_cell_style)])
+            if rows:
+                imp_table = Table(rows, colWidths=[available_width * 0.35, available_width * 0.65])
+                imp_table.setStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                    ('FONTSIZE', (0, 0), (-1, -1), 8),
+                    ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#B0B7BF')),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.whitesmoke, colors.HexColor('#ECF0F1')]),
+                ])
+                story.append(imp_table)
+                story.append(Spacer(1, SPACING_L))
 
         # Data Quality Scores
         story.append(Paragraph("Data Quality Scores:", styles['Heading2']))

@@ -749,6 +749,20 @@ def process_file(
                     )
 
             base_display_name = os.path.basename(file_path)
+            # Prepare imputation summary for report
+            imputation_summary = None
+            try:
+                if 'imputation' in (cfg or {}):
+                    imputation_summary = {
+                        'global': {
+                            'strategy': (cfg.get('imputation') or {}).get('strategy'),
+                            'params': (cfg.get('imputation') or {}).get('params'),
+                        },
+                        'tuning': (engine.tuning_summary if 'engine' in locals() and engine.tuning_summary else {'enabled': False}),
+                    }
+            except Exception:
+                imputation_summary = None
+
             generate_qc_report(
                 validation_results=validation_results,
                 missing_data=missing_counts,
@@ -761,6 +775,7 @@ def process_file(
                 report_format=report_format,
                 file_identifier=base_display_name,
                 class_distribution=class_distribution_result,
+                imputation_summary=imputation_summary,
             )
             log_activity(f"{file_path}: QC report generated at {report_path}.")
             pbar.update(5)
@@ -800,6 +815,8 @@ def batch_process(
     unique_identifiers,
     custom_mappings_path=None,
     impute_strategy="mean",
+    impute_params=None,
+    impute_tuning_enable=False,
     output_dir="reports",
     target_ontologies=None,
     report_format="pdf",
@@ -836,6 +853,23 @@ def batch_process(
             "label_column": class_label_column,
             "warn_threshold": float(imbalance_threshold),
         }
+
+    # Merge CLI imputation overrides (CLI > YAML)
+    if impute_params is not None or impute_tuning_enable:
+        cfg_imp = config.setdefault('imputation', {})
+        if impute_params is not None:
+            # ensure dict
+            try:
+                if isinstance(impute_params, dict):
+                    params = impute_params
+                else:
+                    params = {}
+            except Exception:
+                params = {}
+            cfg_imp['params'] = {**cfg_imp.get('params', {}), **params}
+        if impute_tuning_enable:
+            tun = cfg_imp.setdefault('tuning', {})
+            tun['enable'] = True
 
     # 3) Create OntologyMapper
     ontology_mapper = OntologyMapper(config)

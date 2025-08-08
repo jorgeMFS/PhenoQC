@@ -185,6 +185,8 @@ def main():
         unique_identifiers=args.unique_identifiers,
         custom_mappings_path=args.custom_mappings,
         impute_strategy=args.impute,
+        impute_params=args.impute_params,
+        impute_tuning_enable=(args.impute_tuning == 'on'),
         output_dir=args.output,
         target_ontologies=args.ontologies,
         phenotype_columns=args.phenotype_columns,

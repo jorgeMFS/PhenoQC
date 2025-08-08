@@ -197,6 +197,7 @@ class ImputationEngine:
         self.exclude_columns = set(exclude_columns or [])
         self.chosen_params: dict = {}
         self.tuning_summary: dict | None = None
+        self._tuned_once: bool = False
 
     def _numeric_columns(self, df: pd.DataFrame) -> list[str]:
         cols = df.select_dtypes(include=['number']).columns.tolist()
@@ -303,11 +304,12 @@ class ImputationEngine:
         numeric_cols = self._numeric_columns(result)
 
         # Optional tuning for global KNN
-        if global_strategy == 'knn' and bool(tuning.get('enable', False)) and numeric_cols:
+        if (not self._tuned_once) and global_strategy == 'knn' and bool(tuning.get('enable', False)) and numeric_cols:
             best = self._tune_knn(result[numeric_cols], tuning)
             if best['n_neighbors'] is not None:
                 global_params = {**global_params, 'n_neighbors': int(best['n_neighbors'])}
             self.tuning_summary = {'enabled': True, 'best': {'n_neighbors': best['n_neighbors']}, 'score': best['score'], 'metric': best['metric']}
+            self._tuned_once = True
         elif bool(tuning.get('enable', False)):
             # Tuning requested but unsupported strategy
             self.tuning_summary = {'enabled': True, 'note': f"tuning not implemented for strategy '{global_strategy}'"}
