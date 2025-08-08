@@ -10,6 +10,7 @@ from .quality_metrics import (
     detect_redundancy,
     check_traceability,
     check_timeliness,
+    QUALITY_METRIC_CHOICES,
 )
 
 class DataValidator:
@@ -389,12 +390,7 @@ class DataValidator:
         if cfg and cfg.get("quality_metrics"):
             metrics = cfg["quality_metrics"]
             if "all" in metrics:
-                metrics = [
-                    "accuracy",
-                    "redundancy",
-                    "traceability",
-                    "timeliness",
-                ]
+                metrics = QUALITY_METRIC_CHOICES
             if "accuracy" in metrics:
                 results["Accuracy Issues"] = check_accuracy(self.df, self.schema)
             if "redundancy" in metrics:

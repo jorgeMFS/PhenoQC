@@ -6,6 +6,7 @@ import datetime
 from phenoqc.batch_processing import batch_process
 from phenoqc.logging_module import setup_logging, log_activity
 from phenoqc.utils.zip_utils import extract_zip
+from phenoqc.quality_metrics import QUALITY_METRIC_CHOICES
 
 SUPPORTED_EXTENSIONS = {'.csv', '.tsv', '.json', '.zip'}
 
@@ -43,7 +44,7 @@ def parse_arguments():
     parser.add_argument(
         '--quality-metrics',
         nargs='+',
-        choices=['accuracy', 'redundancy', 'traceability', 'timeliness', 'all'],
+        choices=QUALITY_METRIC_CHOICES + ['all'],
         help='Additional quality metrics to evaluate',
         default=None
     )
@@ -56,7 +57,7 @@ def parse_arguments():
         args.phenotype_column = None  # Clear the old argument
 
     if args.quality_metrics and 'all' in args.quality_metrics:
-        args.quality_metrics = ['accuracy', 'redundancy', 'traceability', 'timeliness']
+        args.quality_metrics = QUALITY_METRIC_CHOICES
 
     return args
 
