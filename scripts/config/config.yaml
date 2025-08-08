@@ -22,9 +22,28 @@ default_ontologies:
 
 fuzzy_threshold: 80
 
-imputation_strategies:
-  Height_cm: median
-  Weight_kg: mean
+imputation:
+  strategy: knn
+  params:
+    n_neighbors: 5
+    weights: uniform
+  per_column:
+    Creatinine_mgdl:
+      strategy: mice
+      params:
+        max_iter: 15
+    Cholesterol_mgdl:
+      strategy: svd
+      params:
+        rank: 3
+  tuning:
+    enable: true
+    mask_fraction: 0.1
+    scoring: MAE
+    max_cells: 20000
+    random_state: 42
+    grid:
+      n_neighbors: [3,5,7]
 
 
 advanced_imputation_methods:

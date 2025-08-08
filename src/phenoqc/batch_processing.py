@@ -18,6 +18,29 @@ from .logging_module import log_activity, setup_logging
 from tqdm import tqdm
 import hashlib
 from .quality_metrics import QUALITY_METRIC_CHOICES, ClassCounter
+def _finalize_class_distribution(cfg: dict, counter: ClassCounter):
+    if not counter:
+        return None
+    warn_thr = 0.10
+    try:
+        warn_thr = float((cfg or {}).get('class_distribution', {}).get('warn_threshold', 0.10))
+    except Exception:
+        warn_thr = 0.10
+    return counter.finalize(warn_threshold=warn_thr)
+
+
+def _build_imputation_summary(cfg: dict, engine: ImputationEngine):
+    try:
+        imp_cfg = (cfg or {}).get('imputation') or {}
+        return {
+            'global': {
+                'strategy': imp_cfg.get('strategy'),
+                'params': imp_cfg.get('params'),
+            },
+            'tuning': (engine.tuning_summary if engine and engine.tuning_summary else {'enabled': False}),
+        }
+    except Exception:
+        return None
 
 
 def _safe_md5_hexdigest(data: bytes) -> str:
@@ -725,14 +748,7 @@ def process_file(
                 file_path, output_dir, suffix="_report.pdf"
             )
             # Finalize class distribution (if any)
-            class_distribution_result = None
-            if class_counter is not None:
-                warn_thr = 0.10
-                try:
-                    warn_thr = float(class_dist_cfg.get("warn_threshold", 0.10))
-                except Exception:
-                    warn_thr = 0.10
-                class_distribution_result = class_counter.finalize(warn_threshold=warn_thr)
+            class_distribution_result = _finalize_class_distribution(cfg, class_counter) if class_counter is not None else None
             figs = create_visual_summary(
                 sample_df, phenotype_columns=phenotype_columns, output_image_path=None
             )
@@ -750,18 +766,7 @@ def process_file(
 
             base_display_name = os.path.basename(file_path)
             # Prepare imputation summary for report
-            imputation_summary = None
-            try:
-                if 'imputation' in (cfg or {}):
-                    imputation_summary = {
-                        'global': {
-                            'strategy': (cfg.get('imputation') or {}).get('strategy'),
-                            'params': (cfg.get('imputation') or {}).get('params'),
-                        },
-                        'tuning': (engine.tuning_summary if 'engine' in locals() and engine.tuning_summary else {'enabled': False}),
-                    }
-            except Exception:
-                imputation_summary = None
+            imputation_summary = _build_imputation_summary(cfg, engine)
 
             generate_qc_report(
                 validation_results=validation_results,
