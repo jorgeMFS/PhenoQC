@@ -631,9 +631,37 @@ def main():
         st.session_state['unique_identifiers_list'] = chosen_ids
 
         # -------------------------------------------------------------------------
+        # 4) Optional: Class Label column for imbalance summary
+        # -------------------------------------------------------------------------
+        st.subheader("D) Optional: Class Label Column for Imbalance Summary")
+        label_column = st.selectbox(
+            "Label column (optional)",
+            options=["<None>"] + all_columns,
+            index=0,
+            help="If set, PhenoQC will report class distribution and flag imbalance."
+        )
+        imbalance_threshold = st.number_input(
+            "Imbalance warning threshold (minority proportion)",
+            min_value=0.0, max_value=0.5, value=0.10, step=0.01,
+            help="Warn when the minority class proportion falls below this value."
+        )
+        # Persist in config for downstream processing
+        if 'config' not in st.session_state:
+            st.session_state['config'] = {}
+        if label_column and label_column != "<None>":
+            st.session_state['config']['class_distribution'] = {
+                'label_column': label_column,
+                'warn_threshold': float(imbalance_threshold),
+            }
+        else:
+            # ensure not set if user chooses none
+            if 'class_distribution' in st.session_state.get('config', {}):
+                st.session_state['config'].pop('class_distribution', None)
+
+        # -------------------------------------------------------------------------
         # 5) Summary of mappings & Next steps
         # -------------------------------------------------------------------------
-        st.subheader("D) Summary of Mappings")
+        st.subheader("E) Summary of Mappings")
         if st.session_state['phenotype_columns']:
             st.write("**Final Column → Ontologies Mappings**")
             mapping_summary = {
@@ -702,6 +730,56 @@ def main():
                 if strategy != 'Use Default':
                     column_strategies[col] = strategy
 
+        # Global parameter inputs (common params per strategy)
+        st.subheader("Imputation Parameters")
+        params: dict = {}
+        if global_strategy == 'knn':
+            n_neighbors = st.number_input("KNN n_neighbors", min_value=1, max_value=100, value=5, step=1)
+            weights = st.selectbox("KNN weights", options=['uniform', 'distance'], index=0)
+            params.update({'n_neighbors': int(n_neighbors), 'weights': weights})
+        elif global_strategy == 'mice':
+            max_iter = st.number_input("MICE max_iter", min_value=1, max_value=100, value=10, step=1)
+            params.update({'max_iter': int(max_iter)})
+        elif global_strategy == 'svd':
+            # Optional parameters for IterativeSVD
+            rank = st.number_input("SVD rank (optional, 0=auto)", min_value=0, max_value=500, value=0, step=1)
+            if rank > 0:
+                params.update({'rank': int(rank)})
+
+        # Quick tuning controls (mask-and-score)
+        st.subheader("Quick Tuning (mask-and-score)")
+        enable_tuning = st.checkbox("Enable tuning", value=False,
+                                    help="Evaluate candidate parameters on masked observed cells and choose the best.")
+        tuning_cfg = {}
+        if enable_tuning:
+            mask_fraction = st.slider("Mask fraction", min_value=0.01, max_value=0.5, value=0.10, step=0.01)
+            scoring = st.selectbox("Scoring metric", options=['MAE', 'RMSE'], index=0)
+            max_cells = st.number_input("Max cells", min_value=1000, max_value=200000, value=50000, step=1000)
+            random_state = st.number_input("Random state", min_value=0, max_value=10**9, value=42, step=1)
+            grid_n = st.text_input("Grid for n_neighbors (comma-separated)", value="3,5,7")
+            try:
+                grid_vals = [int(x.strip()) for x in grid_n.split(',') if x.strip()]
+            except Exception:
+                grid_vals = [3, 5, 7]
+            tuning_cfg = {
+                'enable': True,
+                'mask_fraction': float(mask_fraction),
+                'scoring': scoring,
+                'max_cells': int(max_cells),
+                'random_state': int(random_state),
+                'grid': {'n_neighbors': grid_vals}
+            }
+
+        # Persist imputation block into config for ImputationEngine
+        st.session_state.setdefault('config', {})
+        st.session_state['config']['imputation'] = {
+            'strategy': None if global_strategy == 'Use Default' else global_strategy,
+            'params': params or {},
+            'per_column': {c: {'strategy': s} for c, s in column_strategies.items()},
+            'tuning': tuning_cfg or {'enable': False},
+        }
+
+        # Retain older session fields (used by legacy flow)
         st.session_state['imputation_config'] = {
             'global_strategy': global_strategy,
             'column_strategies': column_strategies
