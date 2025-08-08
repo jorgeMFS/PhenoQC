@@ -1,4 +1,4 @@
-## [Unreleased]
+## [1.1.0] - 2025-01-13
 - feat: Optional class-distribution summary (label-aware)
   - CLI: `--label-column`, `--imbalance-threshold`
   - GUI: label column selector and threshold input
