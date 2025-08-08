@@ -85,6 +85,22 @@ def run_phenoqc(data_path: str, cfg_path: str, output_dir: str) -> None:
     print("[STDERR]\n", proc.stderr)
     print("[INFO] Exit code:", proc.returncode)
 
+    # Assert exit code is 0
+    assert proc.returncode == 0, f"CLI exited with non-zero code: {proc.returncode}"
+
+    # Assert expected output files exist
+    import os
+
+    expected_files = [
+        os.path.join(output_dir, "quality_metrics_report.tsv"),
+        os.path.join(output_dir, "quality_metrics_summary.json"),
+    ]
+    for f in expected_files:
+        assert os.path.exists(f), f"Expected output file not found: {f}"
+
+    # Optionally, check that stderr is empty or does not contain 'error'
+    assert "error" not in proc.stderr.lower(), f"Error found in stderr: {proc.stderr}"
+
 
 def main() -> None:
     out_dir = os.path.join(SCRIPT_DIR, "output", "quality_metrics")
