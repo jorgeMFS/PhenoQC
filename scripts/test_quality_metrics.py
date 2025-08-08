@@ -45,14 +45,18 @@ def run_phenoqc_cli(data_path, schema_path, config_path, unique_id,
     proc = subprocess.run(cmd, capture_output=True, text=True)
     return proc.returncode, proc.stdout, proc.stderr
 
+import re
+
 def check_metrics_in_stdout(stdout_text, metrics):
-    """Check whether each metric keyword appears in stdout."""
-    stdout_lower = stdout_text.lower()
+    """Check whether each metric keyword appears in stdout as a whole word (case-insensitive)."""
     results = {}
     for metric in metrics:
         if metric.lower() == "all":
             continue
-        results[metric] = metric.lower() in stdout_lower
+        # Use regex to match the metric as a whole word, case-insensitive
+        pattern = r"\b{}\b".format(re.escape(metric))
+        found = re.search(pattern, stdout_text, flags=re.IGNORECASE) is not None
+        results[metric] = found
     return results
 
 def write_summary(output_dir, summary_file, metrics_found, exit_code):
