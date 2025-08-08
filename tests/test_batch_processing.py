@@ -173,5 +173,11 @@ synonym: "Bronchial disease" EXACT []
             with self.assertRaises(RuntimeError):
                 _safe_md5_hexdigest(data)
 
+        # Test with empty data input
+        empty_data = b''
+        expected_empty = hashlib.md5(empty_data).hexdigest()
+        with patch('hashlib.new', side_effect=TypeError):
+            self.assertEqual(_safe_md5_hexdigest(empty_data), expected_empty)
+
 if __name__ == '__main__':
     unittest.main()
