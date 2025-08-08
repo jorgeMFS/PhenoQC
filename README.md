@@ -43,18 +43,29 @@
 
 PhenoQC requires Python 3.9+.
 
-**Using `pip`:**
+### Fresh install
+
+Install from PyPI:
 
 ```bash
 pip install phenoqc
 ```
 
-Or **manually** from source:
+### From source
+
+Clone the repository and install in editable mode:
 
 ```bash
 git clone https://github.com/jorgeMFS/PhenoQC.git
 cd PhenoQC
 pip install -e .
+```
+
+Running the CLI directly from the uninstalled `src/` tree will fail. For local
+development without installation you can use:
+
+```bash
+python -m phenoqc.cli
 ```
 
 **Dependencies** are listed in `requirements.txt` and include:
