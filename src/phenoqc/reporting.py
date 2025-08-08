@@ -43,7 +43,8 @@ def generate_qc_report(
     quality_scores,
     output_path_or_buffer,
     report_format='pdf',
-    file_identifier=None
+    file_identifier=None,
+    class_distribution=None,
 ):
     """
     Generates a quality control report (PDF or Markdown).
@@ -265,6 +266,42 @@ def generate_qc_report(
         story.append(Spacer(1, SPACING_L))
         story.append(hr())
         story.append(Spacer(1, SPACING_L))
+
+        # Class Distribution (optional)
+        if class_distribution:
+            story.append(Paragraph("Class Distribution", section_header_style))
+            counts = class_distribution.counts if hasattr(class_distribution, 'counts') else {}
+            proportions = class_distribution.proportions if hasattr(class_distribution, 'proportions') else {}
+            warn_threshold = getattr(class_distribution, 'warn_threshold', 0.10)
+            warning = getattr(class_distribution, 'warning', False)
+            rows = [[
+                Paragraph("Class", table_header_style),
+                Paragraph("Count", table_header_style),
+                Paragraph("Proportion", table_header_style),
+            ]]
+            for cls, cnt in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])):
+                prop = proportions.get(cls, 0.0)
+                rows.append([
+                    Paragraph(str(cls), table_cell_style),
+                    Paragraph(str(int(cnt)), table_cell_style),
+                    Paragraph(f"{prop:.2%}", table_cell_style),
+                ])
+            cd_table = Table(rows, colWidths=[available_width * 0.5, available_width * 0.2, available_width * 0.3])
+            cd_table.setStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTSIZE', (0, 0), (-1, -1), 8),
+                ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#B0B7BF')),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.whitesmoke, colors.HexColor('#ECF0F1')]),
+            ])
+            story.append(cd_table)
+            if warning:
+                story.append(Spacer(1, 6))
+                story.append(Paragraph(
+                    f"Severe imbalance flagged (minority < {warn_threshold:.0%}).",
+                    styles['Normal']
+                ))
+            story.append(Spacer(1, SPACING_L))
 
         # Missing Data Summary (table)
         story.append(Paragraph("Missing Data Summary", section_header_style))

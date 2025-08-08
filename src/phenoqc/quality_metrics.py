@@ -1,5 +1,7 @@
 import pandas as pd
 import hashlib
+import collections
+from dataclasses import dataclass
 from typing import List, Optional, Dict, Any
 
 # Central list of quality metric identifiers used across the application.
@@ -210,3 +212,77 @@ def check_timeliness(df: pd.DataFrame, date_col: str, max_lag_days: int) -> pd.D
     _tag_issue(stale_mask, "lag_exceeded")
     _tag_issue(invalid_mask, "missing_or_invalid_date")
     return pd.concat(results) if results else df.iloc[0:0].copy()
+
+
+# -----------------------------
+# Class distribution (imbalance)
+# -----------------------------
+
+@dataclass
+class ClassDistributionResult:
+    counts: Dict[str, int]
+    proportions: Dict[str, float]
+    minority_class: Optional[str]
+    minority_prop: Optional[float]
+    warn_threshold: float
+    warning: bool
+
+
+def report_class_distribution(
+    df: pd.DataFrame,
+    label_column: str,
+    warn_threshold: float = 0.10,
+) -> ClassDistributionResult:
+    if label_column not in df.columns:
+        return ClassDistributionResult({}, {}, None, None, warn_threshold, False)
+    series = df[label_column].dropna().astype(str)
+    counts = series.value_counts().to_dict()
+    total = sum(counts.values())
+    proportions = {k: (v / total) for k, v in counts.items()} if total else {}
+    if proportions:
+        minority_class, minority_prop = min(proportions.items(), key=lambda kv: kv[1])
+    else:
+        minority_class, minority_prop = None, None
+    warning_flag = bool(minority_prop is not None and minority_prop < warn_threshold)
+    return ClassDistributionResult(
+        counts=counts,
+        proportions=proportions,
+        minority_class=minority_class,
+        minority_prop=minority_prop,
+        warn_threshold=warn_threshold,
+        warning=warning_flag,
+    )
+
+
+class ClassCounter:
+    """Chunk-friendly class counter for streaming aggregation."""
+
+    def __init__(self) -> None:
+        self._counts = collections.Counter()
+        self._n = 0
+
+    def update(self, series: pd.Series) -> None:
+        if series is None:
+            return
+        s = series.dropna().astype(str)
+        if not s.empty:
+            self._counts.update(s)
+            self._n += len(s)
+
+    def finalize(self, warn_threshold: float = 0.10) -> ClassDistributionResult:
+        counts = dict(self._counts)
+        total = sum(counts.values())
+        proportions = {k: (v / total) for k, v in counts.items()} if total else {}
+        if proportions:
+            minority_class, minority_prop = min(proportions.items(), key=lambda kv: kv[1])
+        else:
+            minority_class, minority_prop = None, None
+        warning_flag = bool(minority_prop is not None and minority_prop < warn_threshold)
+        return ClassDistributionResult(
+            counts=counts,
+            proportions=proportions,
+            minority_class=minority_class,
+            minority_prop=minority_prop,
+            warn_threshold=warn_threshold,
+            warning=warning_flag,
+        )

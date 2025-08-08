@@ -48,6 +48,17 @@ def parse_arguments():
         help='Additional quality metrics to evaluate',
         default=None
     )
+    parser.add_argument(
+        '--label-column',
+        help='Optional label column name for class distribution summary',
+        default=None,
+    )
+    parser.add_argument(
+        '--imbalance-threshold',
+        type=float,
+        default=0.10,
+        help='Minority class proportion threshold to flag imbalance (default: 0.10)'
+    )
     args = parser.parse_args()
     
     # Convert old phenotype_column to new format if specified
@@ -166,7 +177,9 @@ def main():
         target_ontologies=args.ontologies,
         phenotype_columns=args.phenotype_columns,
         log_file_for_children=single_log_filename,
-        quality_metrics=args.quality_metrics
+        quality_metrics=args.quality_metrics,
+        class_label_column=args.label_column,
+        imbalance_threshold=args.imbalance_threshold,
     )
     
     for result in results:

@@ -16,7 +16,7 @@ from .configuration import load_config
 from .logging_module import log_activity, setup_logging
 from tqdm import tqdm
 import hashlib
-from .quality_metrics import QUALITY_METRIC_CHOICES
+from .quality_metrics import QUALITY_METRIC_CHOICES, ClassCounter
 
 
 def _safe_md5_hexdigest(data: bytes) -> str:
@@ -267,6 +267,18 @@ def process_file(
             # NEW aggregator: track row indices that fail JSON schema
             schema_fail_indices_global = set()
 
+            # Optional class distribution config
+            class_counter = None
+            class_dist_cfg = None
+            if cfg and isinstance(cfg, dict):
+                class_dist_cfg = cfg.get("class_distribution")
+                label_col_present = (
+                    isinstance(class_dist_cfg, dict)
+                    and class_dist_cfg.get("label_column") is not None
+                )
+                if label_col_present:
+                    class_counter = ClassCounter()
+
             # 3) Process each chunk
             for chunk in all_chunks:
                 if chunk is None or chunk.empty:
@@ -492,6 +504,12 @@ def process_file(
                                                                              for t in valid_terms)
 
 
+                # (G0) Class distribution aggregation (label column only)
+                if class_counter is not None and isinstance(class_dist_cfg, dict):
+                    label_col = class_dist_cfg.get("label_column")
+                    if label_col in chunk.columns:
+                        class_counter.update(chunk[label_col])
+
                 # (F) Accumulate sample df
                 if len(sample_df) < max_total_samples:
                     remaining = max_total_samples - len(sample_df)
@@ -693,6 +711,15 @@ def process_file(
             report_path = unique_output_name(
                 file_path, output_dir, suffix="_report.pdf"
             )
+            # Finalize class distribution (if any)
+            class_distribution_result = None
+            if class_counter is not None:
+                warn_thr = 0.10
+                try:
+                    warn_thr = float(class_dist_cfg.get("warn_threshold", 0.10))
+                except Exception:
+                    warn_thr = 0.10
+                class_distribution_result = class_counter.finalize(warn_threshold=warn_thr)
             figs = create_visual_summary(
                 sample_df, phenotype_columns=phenotype_columns, output_image_path=None
             )
@@ -720,6 +747,7 @@ def process_file(
                 output_path_or_buffer=report_path,
                 report_format=report_format,
                 file_identifier=base_display_name,
+                class_distribution=class_distribution_result,
             )
             log_activity(f"{file_path}: QC report generated at {report_path}.")
             pbar.update(5)
@@ -740,6 +768,11 @@ def process_file(
                 "mapping_success_rates": mapping_success_rates,
                 "visualization_images": visualization_images,
                 "quality_scores": quality_scores,
+                "class_distribution": (
+                    class_distribution_result.__dict__
+                    if class_distribution_result is not None
+                    else None
+                ),
             }
 
     except Exception as e:
@@ -762,6 +795,8 @@ def batch_process(
     phenotype_column=None,
     log_file_for_children=None,
     quality_metrics=None,
+    class_label_column=None,
+    imbalance_threshold: float = 0.10,
 ):
     log_activity(f"[ParentProcess] Starting on: {files}", level="info")
 
@@ -779,6 +814,15 @@ def batch_process(
                 f"Invalid quality_metrics: {invalid_metrics}. Allowed metrics are: {sorted(allowed_metrics)}"
             )
         config["quality_metrics"] = quality_metrics
+
+    # Configure optional class distribution summary
+    if class_label_column:
+        config.setdefault("quality_metrics", [])
+        config.setdefault("class_distribution", {})
+        config["class_distribution"] = {
+            "label_column": class_label_column,
+            "warn_threshold": float(imbalance_threshold),
+        }
 
     # 3) Create OntologyMapper
     ontology_mapper = OntologyMapper(config)
