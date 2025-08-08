@@ -1,6 +1,8 @@
 from typing import List, Dict
 
-QUALITY_OPTIONS = ["accuracy", "redundancy", "traceability", "timeliness", "all"]
+from ..quality_metrics import QUALITY_METRIC_CHOICES
+
+QUALITY_OPTIONS = QUALITY_METRIC_CHOICES + ["all"]
 
 def build_quality_metrics_widget(cfg: Dict) -> Dict:
     """Return widget configuration for quality metrics selection.

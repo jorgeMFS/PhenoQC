@@ -2,6 +2,14 @@ import pandas as pd
 import hashlib
 from typing import List, Optional, Dict, Any
 
+# Central list of quality metric identifiers used across the application.
+QUALITY_METRIC_CHOICES = [
+    "accuracy",
+    "redundancy",
+    "traceability",
+    "timeliness",
+]
+
 
 def check_accuracy(df: pd.DataFrame, schema_cfg: Dict[str, Any]) -> pd.DataFrame:
     """Check values fall within schema-defined ranges.

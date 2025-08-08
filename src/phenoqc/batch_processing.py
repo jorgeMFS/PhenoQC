@@ -16,6 +16,7 @@ from .configuration import load_config
 from .logging_module import log_activity, setup_logging
 from tqdm import tqdm
 import hashlib
+from .quality_metrics import QUALITY_METRIC_CHOICES
 
 
 def _safe_md5_hexdigest(data: bytes) -> str:
@@ -724,12 +725,7 @@ def batch_process(
     # 2) Load config
     config = load_config(config_path)
     if quality_metrics is not None:
-        allowed_metrics = {
-            "precision",
-            "recall",
-            "f1",
-            "accuracy",
-        }  # <-- update as needed
+        allowed_metrics = set(QUALITY_METRIC_CHOICES)
         invalid_metrics = [m for m in quality_metrics if m not in allowed_metrics]
         if invalid_metrics:
             raise ValueError(

@@ -20,6 +20,8 @@ from datetime import datetime, timedelta
 import pandas as pd
 import yaml
 
+from phenoqc.quality_metrics import QUALITY_METRIC_CHOICES
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_CONFIG = os.path.join(SCRIPT_DIR, "config", "config.yaml")
 SCHEMA_PATH = os.path.join(SCRIPT_DIR, "config", "schema.json")
@@ -74,11 +76,7 @@ def run_phenoqc(data_path: str, cfg_path: str, output_dir: str) -> None:
         "--output",
         output_dir,
         "--quality-metrics",
-        "accuracy",
-        "redundancy",
-        "traceability",
-        "timeliness",
-    ]
+    ] + QUALITY_METRIC_CHOICES
     print("[INFO] Running:", " ".join(cmd))
     proc = subprocess.run(cmd, capture_output=True, text=True)
     print("[STDOUT]\n", proc.stdout)
