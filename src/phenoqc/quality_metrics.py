@@ -32,6 +32,7 @@ def check_accuracy(df: pd.DataFrame, schema_cfg: Dict[str, Any]) -> pd.DataFrame
         if no issues are found.
     """
     records = []
+    seen_pairs = set()
     props = schema_cfg.get("properties", {})
     for col, rules in props.items():
         if col not in df.columns:
@@ -84,25 +85,24 @@ def detect_redundancy(df: pd.DataFrame, threshold: float = 0.98) -> pd.DataFrame
         ``value`` describing redundant column pairs. Empty if none detected.
     """
     records = []
+    seen_pairs = set()
 
     # Pearson correlation for numeric columns
     numeric_cols = df.select_dtypes(include="number").columns
     if len(numeric_cols) >= 2:
         corr = df[numeric_cols].corr(method="pearson").abs()
-        records.extend(
-            {
-                "column_1": col1,
-                "column_2": col2,
-                "metric": "correlation",
-                "value": float(corr.loc[col1, col2]),
-            }
-            for i, col1 in enumerate(numeric_cols)
-            for col2 in numeric_cols[i + 1:]
-            if (
-                pd.notna(corr.loc[col1, col2])
-                and corr.loc[col1, col2] >= threshold
-            )
-        )
+        for i, col1 in enumerate(numeric_cols):
+            for col2 in numeric_cols[i + 1:]:
+                val = corr.loc[col1, col2]
+                if pd.notna(val) and val >= threshold:
+                    key = (col1, col2)
+                    seen_pairs.add(key)
+                    records.append({
+                        "column_1": col1,
+                        "column_2": col2,
+                        "metric": "correlation",
+                        "value": float(val),
+                    })
 
     # Hash-based check for identical columns
     hashes: Dict[str, List[str]] = {}
@@ -115,15 +115,22 @@ def detect_redundancy(df: pd.DataFrame, threshold: float = 0.98) -> pd.DataFrame
     for cols in hashes.values():
         if len(cols) > 1:
             first = cols[0]
-            records.extend(
-                {
+            for other in cols[1:]:
+                key = (first, other) if first < other else (other, first)
+                # Prefer marking as identical; skip if already recorded as correlation
+                if key in seen_pairs:
+                    # Replace the existing correlation entry with identical
+                    for rec in records:
+                        if {rec.get("column_1"), rec.get("column_2")} == set(key):
+                            rec["metric"] = "identical"
+                            rec["value"] = 1.0
+                    continue
+                records.append({
                     "column_1": first,
                     "column_2": other,
                     "metric": "identical",
                     "value": 1.0,
-                }
-                for other in cols[1:]
-            )
+                })
     return pd.DataFrame(records)
 
 
