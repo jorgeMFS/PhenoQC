@@ -2,7 +2,16 @@ import unittest
 import os
 import json
 import tempfile
-from phenoqc.batch_processing import batch_process, unique_output_name
+import hashlib
+from unittest.mock import patch
+
+from phenoqc.batch_processing import (
+    batch_process,
+    unique_output_name,
+    convert_nans_to_none_for_string_cols,
+    get_file_type,
+    _safe_md5_hexdigest,
+)
 from phenoqc.configuration import load_config
 import pandas as pd
 
@@ -132,6 +141,37 @@ synonym: "Bronchial disease" EXACT []
         self.assertEqual(config['imputation_strategies']['Age'], 'median')
         self.assertEqual(config['imputation_strategies']['Gender'], 'mode')
         self.assertEqual(config['imputation_strategies']['Measurement'], 'mean')
+
+    def test_get_file_type(self):
+        self.assertEqual(get_file_type('data.csv'), 'csv')
+        self.assertEqual(get_file_type('data.tsv'), 'tsv')
+        self.assertEqual(get_file_type('data.json'), 'json')
+        with self.assertRaises(ValueError):
+            get_file_type('data.txt')
+
+    def test_convert_nans_to_none_for_string_cols(self):
+        df = pd.DataFrame({'name': ['Alice', float('nan')], 'age': [30, float('nan')]})
+        schema = {'properties': {'name': {'type': ['string', 'null']}, 'age': {'type': 'number'}}}
+        converted = convert_nans_to_none_for_string_cols(df, schema)
+        self.assertIsNone(converted.loc[1, 'name'])
+        self.assertTrue(pd.isna(converted.loc[1, 'age']))
+
+    def test_unique_output_name_stability(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = '/any/path/sample.json'
+            first = unique_output_name(path, tmpdir, suffix='_report.pdf')
+            second = unique_output_name(path, tmpdir, suffix='_report.pdf')
+            self.assertEqual(first, second)
+            self.assertTrue(first.endswith('_json_report.pdf'))
+
+    def test_safe_md5_hexdigest_fallback(self):
+        data = b'test-data'
+        expected = hashlib.md5(data).hexdigest()
+        with patch('hashlib.new', side_effect=TypeError):
+            self.assertEqual(_safe_md5_hexdigest(data), expected)
+        with patch('hashlib.new', side_effect=TypeError), patch('hashlib.md5', side_effect=ValueError):
+            with self.assertRaises(RuntimeError):
+                _safe_md5_hexdigest(data)
 
 if __name__ == '__main__':
     unittest.main()
