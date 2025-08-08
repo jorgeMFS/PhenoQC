@@ -150,11 +150,32 @@ synonym: "Bronchial disease" EXACT []
             get_file_type('data.txt')
 
     def test_convert_nans_to_none_for_string_cols(self):
+        # Standard case: string column with 'null' in schema
         df = pd.DataFrame({'name': ['Alice', float('nan')], 'age': [30, float('nan')]})
         schema = {'properties': {'name': {'type': ['string', 'null']}, 'age': {'type': 'number'}}}
         converted = convert_nans_to_none_for_string_cols(df, schema)
         self.assertIsNone(converted.loc[1, 'name'])
         self.assertTrue(pd.isna(converted.loc[1, 'age']))
+
+        # Case: string column without 'null' in schema
+        df2 = pd.DataFrame({'city': ['Paris', float('nan')]})
+        schema2 = {'properties': {'city': {'type': 'string'}}}
+        converted2 = convert_nans_to_none_for_string_cols(df2, schema2)
+        # Should not convert NaN to None, remains NaN
+        self.assertTrue(pd.isna(converted2.loc[1, 'city']))
+
+        # Case: column missing from schema
+        df3 = pd.DataFrame({'country': ['France', float('nan')]})
+        schema3 = {'properties': {}}  # 'country' not present
+        converted3 = convert_nans_to_none_for_string_cols(df3, schema3)
+        # Should not convert NaN to None, remains NaN
+        self.assertTrue(pd.isna(converted3.loc[1, 'country']))
+
+        # Case: schema property present but type is not string
+        df4 = pd.DataFrame({'score': [1, float('nan')]})
+        schema4 = {'properties': {'score': {'type': 'number'}}}
+        converted4 = convert_nans_to_none_for_string_cols(df4, schema4)
+        self.assertTrue(pd.isna(converted4.loc[1, 'score']))
 
     def test_unique_output_name_stability(self):
         with tempfile.TemporaryDirectory() as tmpdir:
