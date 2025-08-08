@@ -979,6 +979,30 @@ def main():
                         st.info("**Summary of Key Findings**\n\n" + "\n".join(summary_text))
 
                         # ---------------------------------------------------------
+                        # Class Distribution (if available)
+                        # ---------------------------------------------------------
+                        class_dist = result_dict.get('class_distribution')
+                        if class_dist:
+                            st.write("### Class Distribution")
+                            counts = class_dist.get('counts', {})
+                            proportions = class_dist.get('proportions', {})
+                            if counts:
+                                cd_rows = [
+                                    {"Class": k, "Count": int(v), "Proportion": f"{proportions.get(k, 0.0):.2%}"}
+                                    for k, v in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+                                ]
+                                st.dataframe(pd.DataFrame(cd_rows))
+                                try:
+                                    import plotly.express as px
+                                    fig_cd = px.bar(x=list(counts.keys()), y=list(counts.values()), labels={'x': 'Class', 'y': 'Count'}, title='Class Counts')
+                                    st.plotly_chart(fig_cd, use_container_width=True)
+                                except Exception:
+                                    pass
+                            if class_dist.get('warning'):
+                                thr = class_dist.get('warn_threshold', 0.10)
+                                st.warning(f"Severe imbalance flagged (minority < {thr:.0%}).")
+
+                        # ---------------------------------------------------------
                         # Additional Quality Dimensions (only if enabled in config)
                         # ---------------------------------------------------------
                         active_metrics = st.session_state.get('config', {}).get('quality_metrics', []) or []
@@ -1062,12 +1086,26 @@ def main():
                                     st.plotly_chart(fig, use_container_width=True, key=f"{file_name}_plot_{i}")
 
                         # ======================
-                        # Quality Scores + Downloads
+                        # Imputation Summary + Quality Scores + Downloads
                         # ======================
                         st.write("### Quality Scores")
                         q_scores = result_dict.get('quality_scores', {})
                         for score_name, score_val in q_scores.items():
                             st.write(f"- **{score_name}**: {score_val:.2f}%")
+                        imp_sum = result_dict.get('imputation_summary') or {}
+                        if imp_sum:
+                            st.write("### Imputation Settings")
+                            glob_cfg = imp_sum.get('global', {})
+                            if glob_cfg:
+                                st.write(f"- Strategy: {glob_cfg.get('strategy')}")
+                                st.write(f"- Params: {glob_cfg.get('params')}")
+                            tuning = imp_sum.get('tuning', {})
+                            if tuning and tuning.get('enabled'):
+                                st.write("### Tuning Summary")
+                                if 'best' in tuning:
+                                    st.write(f"- Best Params: {tuning.get('best')}")
+                                if 'score' in tuning and 'metric' in tuning:
+                                    st.write(f"- Score: {tuning['score']:.4f} ({tuning['metric']})")
 
                         st.write("### Downloads")
                         report_buffer = io.BytesIO()
@@ -1080,7 +1118,9 @@ def main():
                             impute_strategy=impute_strategy_value,
                             quality_scores=q_scores,
                             output_path_or_buffer=report_buffer,
-                            report_format='pdf'
+                            report_format='pdf',
+                            class_distribution=result_dict.get('class_distribution'),
+                            imputation_summary=result_dict.get('imputation_summary'),
                         )
                         report_buffer.seek(0)
                         st.download_button(
