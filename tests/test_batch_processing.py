@@ -146,6 +146,14 @@ synonym: "Bronchial disease" EXACT []
         self.assertEqual(get_file_type('data.csv'), 'csv')
         self.assertEqual(get_file_type('data.tsv'), 'tsv')
         self.assertEqual(get_file_type('data.json'), 'json')
+        # Test uppercase extensions
+        self.assertEqual(get_file_type('data.CSV'), 'csv')
+        self.assertEqual(get_file_type('data.TSV'), 'tsv')
+        self.assertEqual(get_file_type('data.JSON'), 'json')
+        # Test mixed-case extensions
+        self.assertEqual(get_file_type('data.CsV'), 'csv')
+        self.assertEqual(get_file_type('data.TsV'), 'tsv')
+        self.assertEqual(get_file_type('data.JsOn'), 'json')
         with self.assertRaises(ValueError):
             get_file_type('data.txt')
 
