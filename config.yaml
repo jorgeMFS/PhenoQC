@@ -34,3 +34,13 @@ advanced_imputation_methods:
   - IterativeSVD
 
 cache_expiry_days: 30
+
+quality_metrics:
+  - accuracy
+  - redundancy
+  - traceability
+  - timeliness
+
+date_col: VisitDate
+max_lag_days: 5
+source_column: SampleID
