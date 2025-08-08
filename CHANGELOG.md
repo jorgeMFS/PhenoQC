@@ -1,3 +1,15 @@
+## [Unreleased]
+- feat: Optional class-distribution summary (label-aware)
+  - CLI: `--label-column`, `--imbalance-threshold`
+  - GUI: label column selector and threshold input
+  - PDF/MD report: Class Distribution section with imbalance warning
+- feat: Config-driven imputation parameters with optional quick tuning (mask-and-score)
+  - CLI: `--impute-params`, `--impute-tuning`
+  - GUI: strategy params and tuning controls; persisted in config
+  - Engine: KNN param passthrough and tuning; label column excluded from numeric matrix
+  - PDF/MD: Imputation Settings and Tuning Summary sections
+- fix: Redundancy metric deduplication (prefer identical over correlation)
+- test: Added unit tests for class distribution, imputation params, tuning skeleton, and config load
 # Changelog
 
 All notable changes to PhenoQC will be documented in this file.

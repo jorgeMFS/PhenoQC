@@ -37,6 +37,12 @@
 - **Extensibility:**  
   Modular design supports easy customization of validation rules, mapping expansions, or new ontologies.
 
+- **Class Distribution (Optional):**  
+  Provide a label column to get a class-imbalance summary and warning if the minority proportion falls below a threshold.
+
+- **Imputation Parameters and Quick Tuning:**  
+  Configure imputation parameters (e.g., KNN `n_neighbors`) and optionally run a mask-and-score tuner to select good parameters on observed entries.
+
 ---
 
 ## Installation
