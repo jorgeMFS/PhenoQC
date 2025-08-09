@@ -27,6 +27,14 @@ Missing Data Module
    :undoc-members:
    :show-inheritance:
 
+Quality Metrics Module
+----------------------
+
+.. automodule:: phenoqc.quality_metrics
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Batch Processing Module
 ---------------------
 
@@ -61,6 +69,13 @@ Configuration Module
 
 Logging Module
 -------------
+GUI Module
+----------
+
+.. automodule:: phenoqc.gui.gui
+   :members:
+   :undoc-members:
+   :show-inheritance:
 
 .. automodule:: phenoqc.logging_module
    :members:
