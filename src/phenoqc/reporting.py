@@ -1,6 +1,7 @@
 import os
 import hashlib
 import inspect
+import logging
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
@@ -120,7 +121,7 @@ def generate_qc_report(
         story.append(hr())
         story.append(Spacer(1, SPACING_M))
 
-        # Summary section (kept together to avoid splitting across pages)
+        # Summary section (kept together where feasible to avoid splitting across pages)
         summary_block = []
         summary_block.append(Paragraph("Summary", section_header_style))
         # Imputation Strategy + Quality Scores as label/value pairs (no header row)
@@ -183,7 +184,11 @@ def generate_qc_report(
                 summary_block.append(imp_table)
                 summary_block.append(Spacer(1, SPACING_L))
 
-        story.append(KeepTogether(summary_block))
+        # Heuristic: keep together only if block is small enough; otherwise allow normal flow
+        if len(summary_block) <= 6:
+            story.append(KeepTogether(summary_block))
+        else:
+            story.extend(summary_block)
 
         # Data Quality Scores
         story.append(Paragraph("Data Quality Scores:", styles['Heading2']))
@@ -431,9 +436,10 @@ def generate_qc_report(
         story.append(Spacer(1, SPACING_L))
 
         # Visualizations (grid, two per row)
-        # Always start visualizations on a new page to preserve earlier section ordering
-        story.append(PageBreak())
-        story.append(Paragraph("Visualizations", section_header_style))
+        # Start visualizations on a new page only when there are images to show
+        if visualization_images:
+            story.append(PageBreak())
+            story.append(Paragraph("Visualizations", section_header_style))
         if visualization_images:
             col_w = (available_width - 12) / 2  # small gutter
             rows = []
