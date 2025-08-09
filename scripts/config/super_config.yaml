@@ -1,0 +1,56 @@
+
+ontologies:
+  HPO:
+    name: Human Phenotype Ontology
+    source: url
+    url: http://purl.obolibrary.org/obo/hp.obo
+    format: obo
+  DO:
+    name: Disease Ontology
+    source: url
+    url: http://purl.obolibrary.org/obo/doid.obo
+    format: obo
+  MPO:
+    name: Mammalian Phenotype Ontology
+    source: url
+    url: http://purl.obolibrary.org/obo/mp.obo
+    format: obo
+
+default_ontologies:
+  - HPO
+  - DO
+  - MPO
+
+fuzzy_threshold: 80
+cache_expiry_days: 30
+
+imputation:
+  strategy: knn
+  params:
+    n_neighbors: 5
+    weights: uniform
+  per_column:
+    Creatinine_mgdl:
+      strategy: mice
+      params:
+        max_iter: 5
+    Cholesterol_mgdl:
+      strategy: svd
+      params:
+        rank: 2
+  tuning:
+    enable: true
+    mask_fraction: 0.1
+    scoring: MAE
+    max_cells: 10000
+    random_state: 42
+    grid:
+      n_neighbors: [3, 5, 7]
+
+quality_metrics:
+  imputation_bias:
+    enable: true
+    smd_threshold: 0.10
+    var_ratio_low: 0.5
+    var_ratio_high: 2.0
+    ks_alpha: 0.05

@@ -1,0 +1,27 @@
+{
+  "file": "quality_metrics_input.csv",
+  "quality_scores": {
+    "Schema Validation Score": 33.33333333333333,
+    "Missing Data Score": 97.43589743589743,
+    "Mapping Success Score": 0.0,
+    "Overall Quality Score": 43.58974358974359
+  },
+  "imputation": {
+    "global": {
+      "strategy": "knn",
+      "params": {
+        "n_neighbors": 5,
+        "weights": "uniform"
+      }
+    },
+    "tuning": {
+      "enabled": true,
+      "best": {
+        "n_neighbors": 3
+      },
+      "score": 90.075,
+      "metric": "MAE"
+    }
+  },
+  "class_distribution": null
+}

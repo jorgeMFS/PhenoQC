@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-super_comprehensive_cli_test.py
+end_to_end_e2e_cli_test.py
 
 Generates a large, heterogeneous dataset with extensive edge cases, writes a
 dedicated schema and config, runs the PhenoQC CLI (module mode), and verifies
 all expected artifacts including the QC JSON with imputation-bias diagnostics.
 
 Usage:
-  python scripts/super_comprehensive_cli_test.py
+  python scripts/end_to_end_e2e_cli_test.py
 """
 
 import os
@@ -26,18 +26,18 @@ SRC_PATH = os.path.join(PROJECT_ROOT, "src")
 if SRC_PATH not in sys.path:
     sys.path.insert(0, SRC_PATH)
 
-OUT_DIR = os.path.join(SCRIPT_DIR, "output", "super_comprehensive")
+OUT_DIR = os.path.join(SCRIPT_DIR, "output", "end_to_end")
 os.makedirs(OUT_DIR, exist_ok=True)
 
-DATA_PATH = os.path.join(OUT_DIR, "super_input.csv")
-SCHEMA_PATH = os.path.join(SCRIPT_DIR, "config", "super_schema.json")
-CONFIG_PATH = os.path.join(SCRIPT_DIR, "config", "super_config.yaml")
+DATA_PATH = os.path.join(OUT_DIR, "e2e_input.csv")
+SCHEMA_PATH = os.path.join(SCRIPT_DIR, "config", "e2e_schema.json")
+CONFIG_PATH = os.path.join(SCRIPT_DIR, "config", "e2e_config.yaml")
 
 
 def write_schema() -> None:
     schema = {
         "$schema": "http://json-schema.org/draft-07/schema#",
-        "title": "Super Comprehensive Schema",
+        "title": "End-to-End E2E Schema",
         "type": "object",
         "properties": {
             "SampleID": {"type": ["string", "null"]},
@@ -122,7 +122,7 @@ quality_metrics:
         fh.write(cfg)
 
 
-def create_super_comprehensive_data(n: int = 5000, seed: int = 7) -> pd.DataFrame:
+def create_e2e_dataset(n: int = 5000, seed: int = 7) -> pd.DataFrame:
     rng = np.random.RandomState(seed)
     sample_ids = [f"S{str(i+1).zfill(6)}" for i in range(n)]
 
@@ -157,6 +157,11 @@ def create_super_comprehensive_data(n: int = 5000, seed: int = 7) -> pd.DataFram
     # Dates: valid and invalid
     base_date = pd.to_datetime('2021-01-01')
     dates = (base_date + pd.to_timedelta(rng.randint(0, 365*2, size=n), unit='D')).astype(str)
+    # Ensure mutable array (not an Index)
+    if hasattr(dates, 'to_numpy'):
+        dates = dates.to_numpy(copy=True)
+    else:
+        dates = np.array(dates)
     for ix in rng.choice(np.arange(n), size=max(10, n // 200), replace=False):
         dates[ix] = "not_a_date"
 
@@ -190,7 +195,7 @@ def unique_output_name(base_path: str, output_dir: str, suffix: str) -> str:
 
 
 def run_cli() -> Tuple[str, str, str, str, str]:
-    df = create_super_comprehensive_data()
+    df = create_e2e_dataset()
     df.to_csv(DATA_PATH, index=False)
     write_schema()
     write_config()

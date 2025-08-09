@@ -60,6 +60,11 @@ def parse_arguments():
         help='Additional quality metrics to evaluate',
         default=None
     )
+    # Optional thresholds for imputation-bias diagnostic
+    parser.add_argument('--bias-smd-threshold', type=float, default=0.10, help='SMD threshold for bias warning (default 0.10)')
+    parser.add_argument('--bias-var-low', type=float, default=0.5, help='Variance ratio lower bound (default 0.5)')
+    parser.add_argument('--bias-var-high', type=float, default=2.0, help='Variance ratio upper bound (default 2.0)')
+    parser.add_argument('--bias-ks-alpha', type=float, default=0.05, help='KS-test alpha (default 0.05)')
     parser.add_argument(
         '--label-column',
         help='Optional label column name for class distribution summary',
@@ -194,6 +199,10 @@ def main():
         quality_metrics=args.quality_metrics,
         class_label_column=args.label_column,
         imbalance_threshold=args.imbalance_threshold,
+        bias_smd_threshold=args.bias_smd_threshold,
+        bias_var_low=args.bias_var_low,
+        bias_var_high=args.bias_var_high,
+        bias_ks_alpha=args.bias_ks_alpha,
     )
     
     for result in results:

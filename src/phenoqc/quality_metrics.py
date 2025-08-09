@@ -365,4 +365,7 @@ def imputation_bias_report(
         except Exception:
             continue
 
-    return pd.DataFrame([r.__dict__ for r in rows]).sort_values(by=["warn", "column"], ascending=[False, True])
+    df_out = pd.DataFrame([r.__dict__ for r in rows])
+    if not df_out.empty:
+        return df_out.sort_values(by=["warn", "column"], ascending=[False, True])
+    return df_out

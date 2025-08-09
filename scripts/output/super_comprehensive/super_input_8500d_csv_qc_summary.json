@@ -1,0 +1,123 @@
+{
+  "file": "super_input.csv",
+  "quality_scores": {
+    "Schema Validation Score": 99.42,
+    "Missing Data Score": 93.47125,
+    "Mapping Success Score": 0.0,
+    "Overall Quality Score": 64.29708333333333
+  },
+  "imputation": {
+    "global": {
+      "strategy": "knn",
+      "params": {
+        "n_neighbors": 5,
+        "weights": "uniform"
+      }
+    },
+    "tuning": {
+      "enabled": true,
+      "best": {
+        "n_neighbors": 7
+      },
+      "score": 16.847943554419825,
+      "metric": "MAE"
+    }
+  },
+  "class_distribution": {
+    "counts": {
+      "majority": 4338,
+      "minority": 662
+    },
+    "proportions": {
+      "majority": 0.8676,
+      "minority": 0.1324
+    },
+    "minority_class": "minority",
+    "minority_prop": 0.1324,
+    "warn_threshold": 0.1,
+    "warning": false
+  },
+  "quality_metrics": {
+    "imputation_bias": {
+      "rows": [
+        {
+          "column": "BP_diastolic",
+          "n_obs": 4776,
+          "n_imp": 224,
+          "mean_diff": 0.031887427462777396,
+          "smd": 0.05909002616836657,
+          "var_ratio": 0.9608073769719354,
+          "ks_stat": 0.2660175879396985,
+          "ks_p": 7.529550004628928e-14,
+          "warn": true
+        },
+        {
+          "column": "BP_systolic",
+          "n_obs": 4754,
+          "n_imp": 246,
+          "mean_diff": -0.04027741991976086,
+          "smd": -0.05486055799592758,
+          "var_ratio": 0.95669460185557,
+          "ks_stat": 0.2587500128261695,
+          "ks_p": 2.709431178573061e-14,
+          "warn": true
+        },
+        {
+          "column": "Cholesterol_mgdl",
+          "n_obs": 4510,
+          "n_imp": 490,
+          "mean_diff": 1.2789769243681803e-12,
+          "smd": -1.938088883003017e-15,
+          "var_ratio": 0.9019803960792157,
+          "ks_stat": 0.551219512195122,
+          "ks_p": 1.0780517874952773e-125,
+          "warn": true
+        },
+        {
+          "column": "Creatinine_mgdl",
+          "n_obs": 3984,
+          "n_imp": 1016,
+          "mean_diff": 2.886579864025407e-15,
+          "smd": -7.404830917917644e-16,
+          "var_ratio": 0.7967593518703742,
+          "ks_stat": 0.5020080321285141,
+          "ks_p": 3.529707643901842e-187,
+          "warn": true
+        },
+        {
+          "column": "Glucose_mgdl",
+          "n_obs": 4423,
+          "n_imp": 577,
+          "mean_diff": -0.42437276056011797,
+          "smd": -0.05786342131307206,
+          "var_ratio": 0.8948390887468082,
+          "ks_stat": 0.23981777936428886,
+          "ks_p": 2.724324838272602e-26,
+          "warn": true
+        },
+        {
+          "column": "Height_cm",
+          "n_obs": 4619,
+          "n_imp": 381,
+          "mean_diff": -0.014949168736791307,
+          "smd": -0.019738247839581304,
+          "var_ratio": 0.9343135669978108,
+          "ks_stat": 0.24624298018170981,
+          "ks_p": 2.8764429541155443e-19,
+          "warn": true
+        },
+        {
+          "column": "Weight_kg",
+          "n_obs": 4275,
+          "n_imp": 725,
+          "mean_diff": -0.015233098115274402,
+          "smd": -0.008705163931656256,
+          "var_ratio": 0.8789862756798885,
+          "ks_stat": 0.22458560193587418,
+          "ks_p": 6.420597319468521e-28,
+          "warn": true
+        }
+      ]
+    }
+  }
+}

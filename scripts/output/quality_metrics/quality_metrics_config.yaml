@@ -9,9 +9,31 @@ default_ontologies:
 - DO
 - MPO
 fuzzy_threshold: 80
-imputation_strategies:
-  Height_cm: median
-  Weight_kg: mean
+imputation:
+  params:
+    n_neighbors: 5
+    weights: uniform
+  per_column:
+    Cholesterol_mgdl:
+      params:
+        rank: 3
+      strategy: svd
+    Creatinine_mgdl:
+      params:
+        max_iter: 15
+      strategy: mice
+  strategy: knn
+  tuning:
+    enable: true
+    grid:
+      n_neighbors:
+      - 3
+      - 5
+      - 7
+    mask_fraction: 0.1
+    max_cells: 20000
+    random_state: 42
+    scoring: MAE
 max_lag_days: 5
 ontologies:
   DO:

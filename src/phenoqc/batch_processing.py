@@ -810,6 +810,13 @@ def process_file(
                 file_identifier=base_display_name,
                 class_distribution=class_distribution_result,
                 imputation_summary=imputation_summary,
+                bias_diagnostics=bias_df,
+                bias_thresholds={
+                    'smd_threshold': float(metrics_cfg.get('imputation_bias', {}).get('smd_threshold', 0.10)) if isinstance(metrics_cfg, dict) else 0.10,
+                    'var_ratio_low': float(metrics_cfg.get('imputation_bias', {}).get('var_ratio_low', 0.5)) if isinstance(metrics_cfg, dict) else 0.5,
+                    'var_ratio_high': float(metrics_cfg.get('imputation_bias', {}).get('var_ratio_high', 2.0)) if isinstance(metrics_cfg, dict) else 2.0,
+                    'ks_alpha': float(metrics_cfg.get('imputation_bias', {}).get('ks_alpha', 0.05)) if isinstance(metrics_cfg, dict) else 0.05,
+                },
             )
             log_activity(f"{file_path}: QC report generated at {report_path}.")
             pbar.update(5)
@@ -884,6 +891,10 @@ def batch_process(
     quality_metrics=None,
     class_label_column=None,
     imbalance_threshold: float = 0.10,
+    bias_smd_threshold: float = 0.10,
+    bias_var_low: float = 0.5,
+    bias_var_high: float = 2.0,
+    bias_ks_alpha: float = 0.05,
 ):
     log_activity(f"[ParentProcess] Starting on: {files}", level="info")
 
