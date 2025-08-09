@@ -182,13 +182,13 @@ class ImputationEngine:
 
     Expected cfg structure:
     {
-      'strategy': 'knn' | 'mean' | 'median' | 'mode' | 'mice' | 'svd',
+      'strategy': one of ['knn','mean','median','mode','mice','svd'],
       'params': { ... },                 # optional passthrough
       'per_column': { 'col': { 'strategy': 'mice', 'params': {...} } },
       'tuning': {
           'enable': bool,
           'mask_fraction': 0.1,
-          'scoring': 'MAE' | 'RMSE',
+          'scoring': 'MAE' or 'RMSE',
           'max_cells': 50000,
           'random_state': 42,
           'grid': { 'n_neighbors': [3,5,7] }
@@ -200,7 +200,9 @@ class ImputationEngine:
         self.cfg = cfg or {}
         self.exclude_columns = set(exclude_columns or [])
         self.chosen_params: dict = {}
-        self.tuning_summary: dict | None = None
+        # Python 3.9 compatibility: avoid PEP 604 union types
+        from typing import Optional as _OptionalDictType
+        self.tuning_summary: _OptionalDictType[dict] = None
         self._tuned_once: bool = False
 
     def _numeric_columns(self, df: pd.DataFrame) -> list[str]:
@@ -372,8 +374,9 @@ class ImputationEngine:
 
     TUNERS = {
         'knn': _tune_knn,
-        # 'mice': _tune_mice,  # pluggable structure; implement as needed
-        # 'svd': _tune_svd,
+        # Use generic grid tuner for strategies with simple numeric grids
+        'mice': _tune_grid,
+        'svd': _tune_grid,
     }
 
     def _apply_strategy(self, df: pd.DataFrame, strategy: str, cols: List[str], params: Optional[dict]) -> pd.DataFrame:

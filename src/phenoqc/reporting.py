@@ -1,9 +1,11 @@
 import os
 import hashlib
 import inspect
+import logging
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
+from PIL import Image as PILImage
 
 # ``reportlab`` internally calls ``hashlib.md5(usedforsecurity=False)``,
 # but Python versions prior to 3.9 do not accept the ``usedforsecurity``
@@ -27,6 +29,7 @@ from reportlab.platypus import (
     Table,
     KeepTogether,
     HRFlowable,
+    PageBreak,
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
@@ -81,6 +84,7 @@ def generate_qc_report(
         page_size = landscape(letter)
         left_margin = right_margin = top_margin = bottom_margin = 36  # 0.5 inch
         available_width = page_size[0] - left_margin - right_margin
+        available_height = page_size[1] - top_margin - bottom_margin
 
         story = []
 
@@ -117,8 +121,9 @@ def generate_qc_report(
         story.append(hr())
         story.append(Spacer(1, SPACING_M))
 
-        # Summary section
-        story.append(Paragraph("Summary", section_header_style))
+        # Summary section (kept together where feasible to avoid splitting across pages)
+        summary_block = []
+        summary_block.append(Paragraph("Summary", section_header_style))
         # Imputation Strategy + Quality Scores as label/value pairs (no header row)
         strategy_display = "(No Imputation Strategy)" if impute_strategy is None else impute_strategy.capitalize()
         label_style = ParagraphStyle(
@@ -151,12 +156,12 @@ def generate_qc_report(
             ('TOPPADDING', (0, 0), (-1, -1), 3),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
         ])
-        story.append(scores_table)
-        story.append(Spacer(1, SPACING_L))
+        summary_block.append(scores_table)
+        summary_block.append(Spacer(1, SPACING_L))
 
         # Imputation settings (if provided)
         if isinstance(imputation_summary, dict) and imputation_summary:
-            story.append(Paragraph("Imputation Settings", subsection_header_style))
+            summary_block.append(Paragraph("Imputation Settings", subsection_header_style))
             rows = []
             global_cfg = imputation_summary.get('global', {})
             if global_cfg:
@@ -176,8 +181,14 @@ def generate_qc_report(
                     ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#B0B7BF')),
                     ('ROWBACKGROUNDS', (0, 0), (-1, -1), [colors.whitesmoke, colors.HexColor('#ECF0F1')]),
                 ])
-                story.append(imp_table)
-                story.append(Spacer(1, SPACING_L))
+                summary_block.append(imp_table)
+                summary_block.append(Spacer(1, SPACING_L))
+
+        # Heuristic: keep together only if block is small enough; otherwise allow normal flow
+        if len(summary_block) <= 6:
+            story.append(KeepTogether(summary_block))
+        else:
+            story.extend(summary_block)
 
         # Data Quality Scores
         story.append(Paragraph("Data Quality Scores:", styles['Heading2']))
@@ -328,6 +339,36 @@ def generate_qc_report(
                 ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.whitesmoke, colors.HexColor('#ECF0F1')]),
             ])
             story.append(cd_table)
+            # Optional class distribution bar plot (counts)
+            try:
+                if counts:
+                    import plotly.express as _px_cd
+                    _df_cd = pd.DataFrame({
+                        'Class': list(counts.keys()),
+                        'Count': [int(v) for v in counts.values()],
+                    }).sort_values('Count', ascending=False)
+                    _fig_cd = _px_cd.bar(_df_cd, x='Class', y='Count', title='Class Distribution (Counts)', template='plotly_white')
+                    # Render at high resolution to avoid pixelation
+                    _img_name = f"{os.path.splitext(os.path.basename(file_identifier or 'report'))[0]}_class_dist.png"
+                    _img_dir = os.path.dirname(output_path_or_buffer) if isinstance(output_path_or_buffer, str) else '.'
+                    _img_path = os.path.join(_img_dir, _img_name)
+                    _fig_cd.write_image(_img_path, format='png', width=1600, height=800, scale=1)
+                    story.append(Spacer(1, 6))
+                    # Preserve aspect ratio with hard caps to avoid layout breakage
+                    try:
+                        _pil_img = PILImage.open(_img_path)
+                        _w, _h = _pil_img.size
+                        _max_w = available_width * 0.85
+                        _max_h = available_height * 0.35
+                        _scale = min(_max_w / float(_w), _max_h / float(_h))
+                        _disp_w = max(1.0, _w * _scale)
+                        _disp_h = max(1.0, _h * _scale)
+                        story.append(Image(_img_path, width=_disp_w, height=_disp_h))
+                    except Exception:
+                        story.append(Image(_img_path, width=available_width * 0.8, height=available_height * 0.3))
+            except Exception:
+                # Keep report generation resilient if image export fails
+                pass
             if warning:
                 story.append(Spacer(1, 6))
                 story.append(Paragraph(
@@ -395,15 +436,25 @@ def generate_qc_report(
         story.append(Spacer(1, SPACING_L))
 
         # Visualizations (grid, two per row)
-        story.append(Paragraph("Visualizations", section_header_style))
+        # Start visualizations on a new page only when there are images to show
+        if visualization_images:
+            story.append(PageBreak())
+            story.append(Paragraph("Visualizations", section_header_style))
         if visualization_images:
             col_w = (available_width - 12) / 2  # small gutter
             rows = []
             row = []
             for idx, image_path in enumerate(visualization_images):
                 if os.path.exists(image_path):
-                    # Keep aspect by setting width and a reasonable height
-                    img = Image(image_path, width=col_w, height=col_w * 0.6)
+                    # Preserve aspect ratio: compute height based on image dimensions
+                    try:
+                        pil_img = PILImage.open(image_path)
+                        iw, ih = pil_img.size
+                        # Cap height to avoid overflows
+                        disp_h = min(col_w * (ih / iw), available_height * 0.38)
+                        img = Image(image_path, width=col_w, height=disp_h)
+                    except Exception:
+                        img = Image(image_path, width=col_w, height=col_w * 0.6)
                     row.append(img)
                 else:
                     row.append(Paragraph(f"Image not found: {image_path}", styles['Normal']))
@@ -465,6 +516,26 @@ def generate_qc_report(
                 md_lines.append(f"- {cls}: {cnt} ({proportions.get(cls, 0.0):.2%})")
             if getattr(class_distribution, 'warning', False):
                 md_lines.append(f"\n> Severe imbalance flagged (minority < {warn_threshold:.0%}).\n")
+            # Save and embed a class distribution bar chart next to the MD file
+            try:
+                if isinstance(output_path_or_buffer, str) and counts:
+                    import plotly.express as _px_cd_md
+                    _df_cd_md = pd.DataFrame({
+                        'Class': list(counts.keys()),
+                        'Count': [int(v) for v in counts.values()],
+                    }).sort_values('Count', ascending=False)
+                    _fig_cd_md = _px_cd_md.bar(_df_cd_md, x='Class', y='Count', title='Class Distribution (Counts)', template='plotly_white')
+                    _out_dir_md = os.path.dirname(output_path_or_buffer)
+                    _base_md = os.path.splitext(os.path.basename(file_identifier or 'report'))[0]
+                    _img_name_md = f"{_base_md}_class_dist.png"
+                    _img_path_md = os.path.join(_out_dir_md, _img_name_md)
+                    _fig_cd_md.write_image(_img_path_md, format='png', width=1800, height=900, scale=1)
+                    md_lines.append("")
+                    md_lines.append(f"![Class Distribution]({_img_name_md})")
+                    md_lines.append("")
+            except Exception:
+                # Keep MD generation resilient if image export fails
+                pass
             md_lines.append("")
 
         md_lines.append("## Schema Validation Results")

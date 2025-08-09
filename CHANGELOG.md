@@ -1,3 +1,9 @@
+## [1.1.1] - 2025-01-13
+- feat: add class distribution bar chart to PDF and Markdown reports
+- feat: persist per-file *_qc_summary.json with quality_scores, imputation, class_distribution
+- fix: Python 3.9 typing compatibility in ImputationEngine (avoid PEP 604 unions)
+- chore: docs and scripts updated to assert and document new artifact
+
 ## [1.1.0] - 2025-01-13
 - feat: Optional class-distribution summary (label-aware)
   - CLI: `--label-column`, `--imbalance-threshold`

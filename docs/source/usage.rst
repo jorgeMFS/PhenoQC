@@ -135,6 +135,10 @@ PhenoQC generates:
    - Additional Quality Dimensions (only when computed)
 3. Visual summaries of data quality
 4. Detailed logs of the QC process
+5. A machine-readable JSON summary per processed file (``*_qc_summary.json``) containing:
+   - ``quality_scores``: overall and component scores
+   - ``imputation``: selected strategy, parameters, and (if enabled) tuning best params and score
+   - ``class_distribution``: counts, proportions, warning flag, and threshold
 
 Troubleshooting
 --------------

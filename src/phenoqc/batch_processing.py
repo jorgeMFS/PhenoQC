@@ -789,6 +789,23 @@ def process_file(
             pbar.update(5)
             pbar.close()
 
+            # Persist machine-readable QC summary JSON
+            try:
+                qc_json_path = unique_output_name(file_path, output_dir, suffix="_qc_summary.json")
+                qc_payload = {
+                    'file': base_display_name,
+                    'quality_scores': quality_scores,
+                    'imputation': imputation_summary or {},
+                    'class_distribution': (
+                        class_distribution_result.__dict__ if class_distribution_result is not None else None
+                    ),
+                }
+                with open(qc_json_path, 'w', encoding='utf-8') as _jf:
+                    json.dump(qc_payload, _jf, indent=2)
+                log_activity(f"{file_path}: QC summary JSON saved at {qc_json_path}")
+            except Exception as _qc_json_ex:
+                log_activity(f"{file_path}: Failed to write QC summary JSON: {_qc_json_ex}", level="warning")
+
             return {
                 "file": file_path,
                 "status": final_status,

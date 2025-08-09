@@ -3,6 +3,14 @@ Changelog
 
 Version 1.1.0 (2025-01-13)
 ----------------------------------------------------
+Version 1.1.1 (2025-01-13)
+----------------------------------------------------
+
+* Reports: added Class Distribution bar chart to PDF and Markdown
+* Artifacts: new ``*_qc_summary.json`` per processed file (quality_scores, imputation, class_distribution)
+* Compatibility: Python 3.9 typing cleanup in ``ImputationEngine``
+* Docs/Scripts: updated usage and CLI scripts to cover new artifact
+
 
 Highlights:
 

@@ -126,14 +126,17 @@ def run_cli() -> Tuple[str, str, str, str]:
     report_pdf = unique_output_name(DATA_PATH, OUT_DIR, suffix="_report.pdf")
     metrics_tsv = unique_output_name(DATA_PATH, OUT_DIR, suffix="_quality_metrics.tsv")
     metrics_json = unique_output_name(DATA_PATH, OUT_DIR, suffix="_quality_metrics_summary.json")
-    return processed_csv, report_pdf, metrics_tsv, metrics_json
+    # QC summary JSON
+    qc_json = unique_output_name(DATA_PATH, OUT_DIR, suffix="_qc_summary.json")
+    return processed_csv, report_pdf, metrics_tsv, metrics_json, qc_json
 
 
-def verify_outputs(processed_csv: str, report_pdf: str, metrics_tsv: str, metrics_json: str) -> None:
+def verify_outputs(processed_csv: str, report_pdf: str, metrics_tsv: str, metrics_json: str, qc_json: str) -> None:
     assert os.path.exists(processed_csv), processed_csv
     assert os.path.exists(report_pdf), report_pdf
     assert os.path.exists(metrics_tsv), metrics_tsv
     assert os.path.exists(metrics_json), metrics_json
+    assert os.path.exists(qc_json), qc_json
 
     df = pd.read_csv(processed_csv)
     # Imputation sanity: numeric missingness should be lower than raw

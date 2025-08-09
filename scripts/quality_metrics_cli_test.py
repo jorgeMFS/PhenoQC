@@ -118,6 +118,10 @@ def run_phenoqc(data_path: str, cfg_path: str, output_dir: str) -> None:
     assert os.path.exists(metrics_tsv), f"Quality metrics TSV not found: {metrics_tsv}"
     assert os.path.exists(metrics_json), f"Quality metrics summary JSON not found: {metrics_json}"
 
+    # Verify QC summary JSON exists
+    qc_summary = unique_output_name(data_path, output_dir, suffix="_qc_summary.json")
+    assert os.path.exists(qc_summary), f"QC summary JSON not found: {qc_summary}"
+
     # Validate JSON counts vs TSV rows per metric
     import json
     import pandas as pd
