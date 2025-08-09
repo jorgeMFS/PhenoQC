@@ -182,13 +182,13 @@ class ImputationEngine:
 
     Expected cfg structure:
     {
-      'strategy': 'knn' | 'mean' | 'median' | 'mode' | 'mice' | 'svd',
+      'strategy': one of ['knn','mean','median','mode','mice','svd'],
       'params': { ... },                 # optional passthrough
       'per_column': { 'col': { 'strategy': 'mice', 'params': {...} } },
       'tuning': {
           'enable': bool,
           'mask_fraction': 0.1,
-          'scoring': 'MAE' | 'RMSE',
+          'scoring': 'MAE' or 'RMSE',
           'max_cells': 50000,
           'random_state': 42,
           'grid': { 'n_neighbors': [3,5,7] }

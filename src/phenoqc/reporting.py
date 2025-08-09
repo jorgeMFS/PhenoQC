@@ -461,7 +461,7 @@ def generate_qc_report(
 
         doc.build(story, onFirstPage=_add_page_number, onLaterPages=_add_page_number)
 
-    elif report_format == 'md':
+        elif report_format == 'md':
         md_lines = [
             "# PhenoQC Quality Control Report\n",
             "## Imputation Strategy Used",
@@ -473,23 +473,34 @@ def generate_qc_report(
             md_lines.append(f"- **{score_name}**: {score_value:.2f}%")
         md_lines.append("")
         # Optional class distribution
-        if class_distribution:
+            if class_distribution:
             md_lines.append("## Class Distribution")
-            counts = getattr(class_distribution, 'counts', {})
-            proportions = getattr(class_distribution, 'proportions', {})
-            warn_threshold = getattr(class_distribution, 'warn_threshold', 0.10)
+                counts = getattr(class_distribution, 'counts', {})
+                proportions = getattr(class_distribution, 'proportions', {})
+                warn_threshold = getattr(class_distribution, 'warn_threshold', 0.10)
             for cls, cnt in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])):
                 md_lines.append(f"- {cls}: {cnt} ({proportions.get(cls, 0.0):.2%})")
             if getattr(class_distribution, 'warning', False):
                 md_lines.append(f"\n> Severe imbalance flagged (minority < {warn_threshold:.0%}).\n")
-                # If a class distribution PNG exists next to the PDF, embed it
+                # Save and embed a class distribution bar chart next to the MD file
                 try:
-                    base = os.path.splitext(os.path.basename(file_identifier or 'report'))[0]
-                    img_name = f"{base}_class_dist.png"
-                    md_lines.append("")
-                    md_lines.append(f"![Class Distribution]({img_name})")
-                    md_lines.append("")
+                    if isinstance(output_path_or_buffer, str) and counts:
+                        import plotly.express as _px_cd_md
+                        _df_cd_md = pd.DataFrame({
+                            'Class': list(counts.keys()),
+                            'Count': [int(v) for v in counts.values()],
+                        }).sort_values('Count', ascending=False)
+                        _fig_cd_md = _px_cd_md.bar(_df_cd_md, x='Class', y='Count', title='Class Distribution (Counts)', template='plotly_white')
+                        _out_dir_md = os.path.dirname(output_path_or_buffer)
+                        _base_md = os.path.splitext(os.path.basename(file_identifier or 'report'))[0]
+                        _img_name_md = f"{_base_md}_class_dist.png"
+                        _img_path_md = os.path.join(_out_dir_md, _img_name_md)
+                        _fig_cd_md.write_image(_img_path_md, format='png', scale=2)
+                        md_lines.append("")
+                        md_lines.append(f"![Class Distribution]({_img_name_md})")
+                        md_lines.append("")
                 except Exception:
+                    # Keep MD generation resilient if image export fails
                     pass
             md_lines.append("")
 
