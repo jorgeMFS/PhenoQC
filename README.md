@@ -43,6 +43,37 @@
 - **Imputation Parameters and Quick Tuning:**  
   Configure imputation parameters (e.g., KNN `n_neighbors`) and optionally run a mask-and-score tuner to select good parameters on observed entries.
 
+### CLI additions
+
+- `--impute-params '{"n_neighbors": 5}'` (JSON)
+- `--impute-tuning on|off`
+- `--label-column class` and `--imbalance-threshold 0.10`
+
+### Config (new `imputation:` block)
+
+```yaml
+imputation:
+  strategy: knn
+  params:
+    n_neighbors: 5
+    weights: uniform
+  per_column:
+    Creatinine_mgdl:
+      strategy: mice
+      params: {max_iter: 15}
+    Cholesterol_mgdl:
+      strategy: svd
+      params: {rank: 3}
+  tuning:
+    enable: true
+    mask_fraction: 0.1
+    scoring: MAE
+    max_cells: 20000
+    random_state: 42
+    grid:
+      n_neighbors: [3, 5, 7]
+```
+
 ---
 
 ## Installation

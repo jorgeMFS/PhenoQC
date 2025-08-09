@@ -48,9 +48,13 @@ Parameters
 - ``--config``: YAML config file defining ontologies and settings
 - ``--custom_mappings``: Path to custom term-mapping JSON (optional)
 - ``--impute``: Strategy for missing data (mean, median, mode, knn, mice, svd, none)
+- ``--impute-params``: JSON object of parameters for the imputation strategy (e.g. ``{"n_neighbors": 5}``)
+- ``--impute-tuning {on,off}``: Enable quick tuning (mask-and-score) for imputation
 - ``--unique_identifiers``: Columns that uniquely identify each record
 - ``--phenotype_columns``: JSON mapping of columns to ontologies
 - ``--ontologies``: List of ontology IDs
+- ``--label-column``: Optional class/label column to report class distribution
+- ``--imbalance-threshold``: Minority proportion threshold to flag imbalance (default 0.10)
 - ``--recursive``: Enable recursive scanning of directories
 
 Graphical User Interface
@@ -96,10 +100,28 @@ PhenoQC uses a YAML configuration file to define settings. Example ``config.yaml
     fuzzy_threshold: 80
     cache_expiry_days: 30
 
-    imputation_strategies:
-      Age: mean
-      Gender: mode
-      Height: median
+    imputation:
+      strategy: knn
+      params:
+        n_neighbors: 5
+        weights: uniform
+      per_column:
+        Creatinine_mgdl:
+          strategy: mice
+          params:
+            max_iter: 15
+        Cholesterol_mgdl:
+          strategy: svd
+          params:
+            rank: 3
+      tuning:
+        enable: true
+        mask_fraction: 0.1
+        scoring: MAE
+        max_cells: 20000
+        random_state: 42
+        grid:
+          n_neighbors: [3, 5, 7]
 
 Output
 ------
