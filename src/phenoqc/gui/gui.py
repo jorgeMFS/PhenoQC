@@ -1051,6 +1051,53 @@ def main():
                                 st.warning(f"Severe imbalance flagged (minority < {thr:.0%}).")
 
                         # ---------------------------------------------------------
+                        # Imputation-bias diagnostics (if available)
+                        # ---------------------------------------------------------
+                        bias_cfg_gui = st.session_state.get('config', {}).get('quality_metrics', {})
+                        bias_cfg_gui = bias_cfg_gui.get('imputation_bias', {}) if isinstance(bias_cfg_gui, dict) else {}
+                        bias_rows = (
+                            result_dict.get('quality_metrics', {})
+                                      .get('imputation_bias', {})
+                                      .get('rows', [])
+                        )
+                        df_bias_gui = pd.DataFrame(bias_rows) if bias_rows else pd.DataFrame()
+                        if not df_bias_gui.empty:
+                            st.write("### Imputation-bias diagnostics")
+                            smd_thr = float(bias_cfg_gui.get('smd_threshold', 0.10))
+                            var_lo = float(bias_cfg_gui.get('var_ratio_low', 0.5))
+                            var_hi = float(bias_cfg_gui.get('var_ratio_high', 2.0))
+                            ks_alpha = float(bias_cfg_gui.get('ks_alpha', 0.05))
+
+                            def _trig_gui(row):
+                                reasons = []
+                                try:
+                                    v = float(row.get('smd'))
+                                    if abs(v) >= smd_thr:
+                                        reasons.append(f"SMD≥{smd_thr}")
+                                except Exception:
+                                    pass
+                                try:
+                                    vr = float(row.get('var_ratio'))
+                                    if vr < var_lo or vr > var_hi:
+                                        reasons.append(f"Var-ratio∉[{var_lo},{var_hi}]")
+                                except Exception:
+                                    pass
+                                try:
+                                    p = float(row.get('ks_p'))
+                                    if p < ks_alpha:
+                                        reasons.append(f"KS p<{ks_alpha}")
+                                except Exception:
+                                    pass
+                                return "; ".join(reasons)
+
+                            try:
+                                df_bias_gui['triggers'] = df_bias_gui.apply(_trig_gui, axis=1)
+                            except Exception:
+                                df_bias_gui['triggers'] = ""
+                            show_cols = [c for c in ['column','n_obs','n_imp','smd','var_ratio','ks_p','triggers','warn'] if c in df_bias_gui.columns]
+                            st.dataframe(df_bias_gui[show_cols].sort_values(by=['warn','smd'], ascending=[False, False]))
+
+                        # ---------------------------------------------------------
                         # Additional Quality Dimensions (only if enabled in config)
                         # ---------------------------------------------------------
                         active_metrics = st.session_state.get('config', {}).get('quality_metrics', []) or []
@@ -1176,6 +1223,8 @@ def main():
                             report_format='pdf',
                             class_distribution=result_dict.get('class_distribution'),
                             imputation_summary=result_dict.get('imputation_summary'),
+                            bias_diagnostics=(df_bias_gui if 'df_bias_gui' in locals() and not df_bias_gui.empty else None),
+                            bias_thresholds=(bias_cfg_gui if isinstance(bias_cfg_gui, dict) else None),
                         )
                         report_buffer.seek(0)
                         st.download_button(
