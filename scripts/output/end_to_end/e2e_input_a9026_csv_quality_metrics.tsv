@@ -1,0 +1,33 @@
+row	column	value	minimum	maximum	metric	issue
+202	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+205	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+438	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+507	Glucose_mgdl	12.71008343025686	20.0	800.0	accuracy	
+582	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+717	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+1058	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+1087	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+2124	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+2410	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+2486	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+2667	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+2717	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+2826	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+2871	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+2955	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+3480	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+3519	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+3627	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+3717	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+3755	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+3796	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+3911	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+4630	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+4853	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+4900	Glucose_mgdl	900.0	20.0	800.0	accuracy	
+205	Creatinine_mgdl	0.0627359405240941	0.1	20.0	accuracy	
+1696	Creatinine_mgdl	0.0302860408006981	0.1	20.0	accuracy	
+2752	Creatinine_mgdl	0.0067007532035059	0.1	20.0	accuracy	
+4848	Creatinine_mgdl	0.0204195667640463	0.1	20.0	accuracy	
+0					traceability	duplicate_identifier
+1					traceability	duplicate_identifier
