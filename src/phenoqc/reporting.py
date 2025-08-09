@@ -4,6 +4,7 @@ import inspect
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
+from PIL import Image as PILImage
 
 # ``reportlab`` internally calls ``hashlib.md5(usedforsecurity=False)``,
 # but Python versions prior to 3.9 do not accept the ``usedforsecurity``
@@ -337,11 +338,21 @@ def generate_qc_report(
                         'Count': [int(v) for v in counts.values()],
                     }).sort_values('Count', ascending=False)
                     _fig_cd = _px_cd.bar(_df_cd, x='Class', y='Count', title='Class Distribution (Counts)', template='plotly_white')
+                    # Render at high resolution to avoid pixelation
                     _img_name = f"{os.path.splitext(os.path.basename(file_identifier or 'report'))[0]}_class_dist.png"
-                    _img_path = os.path.join(os.path.dirname(output_path_or_buffer) if isinstance(output_path_or_buffer, str) else '.', _img_name)
-                    _fig_cd.write_image(_img_path, format='png', scale=2)
+                    _img_dir = os.path.dirname(output_path_or_buffer) if isinstance(output_path_or_buffer, str) else '.'
+                    _img_path = os.path.join(_img_dir, _img_name)
+                    _fig_cd.write_image(_img_path, format='png', width=1800, height=900, scale=1)
                     story.append(Spacer(1, 6))
-                    story.append(Image(_img_path, width=available_width * 0.8, height=available_width * 0.4))
+                    # Preserve aspect ratio when placing into the report
+                    try:
+                        _pil_img = PILImage.open(_img_path)
+                        _w, _h = _pil_img.size
+                        _disp_w = available_width * 0.85
+                        _disp_h = _disp_w * (_h / _w)
+                        story.append(Image(_img_path, width=_disp_w, height=_disp_h))
+                    except Exception:
+                        story.append(Image(_img_path, width=available_width * 0.85, height=available_width * 0.42))
             except Exception:
                 # Keep report generation resilient if image export fails
                 pass
@@ -419,8 +430,14 @@ def generate_qc_report(
             row = []
             for idx, image_path in enumerate(visualization_images):
                 if os.path.exists(image_path):
-                    # Keep aspect by setting width and a reasonable height
-                    img = Image(image_path, width=col_w, height=col_w * 0.6)
+                    # Preserve aspect ratio: compute height based on image dimensions
+                    try:
+                        pil_img = PILImage.open(image_path)
+                        iw, ih = pil_img.size
+                        disp_h = col_w * (ih / iw)
+                        img = Image(image_path, width=col_w, height=disp_h)
+                    except Exception:
+                        img = Image(image_path, width=col_w, height=col_w * 0.6)
                     row.append(img)
                 else:
                     row.append(Paragraph(f"Image not found: {image_path}", styles['Normal']))
@@ -461,7 +478,7 @@ def generate_qc_report(
 
         doc.build(story, onFirstPage=_add_page_number, onLaterPages=_add_page_number)
 
-        elif report_format == 'md':
+    elif report_format == 'md':
         md_lines = [
             "# PhenoQC Quality Control Report\n",
             "## Imputation Strategy Used",
@@ -473,35 +490,35 @@ def generate_qc_report(
             md_lines.append(f"- **{score_name}**: {score_value:.2f}%")
         md_lines.append("")
         # Optional class distribution
-            if class_distribution:
+        if class_distribution:
             md_lines.append("## Class Distribution")
-                counts = getattr(class_distribution, 'counts', {})
-                proportions = getattr(class_distribution, 'proportions', {})
-                warn_threshold = getattr(class_distribution, 'warn_threshold', 0.10)
+            counts = getattr(class_distribution, 'counts', {})
+            proportions = getattr(class_distribution, 'proportions', {})
+            warn_threshold = getattr(class_distribution, 'warn_threshold', 0.10)
             for cls, cnt in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])):
                 md_lines.append(f"- {cls}: {cnt} ({proportions.get(cls, 0.0):.2%})")
             if getattr(class_distribution, 'warning', False):
                 md_lines.append(f"\n> Severe imbalance flagged (minority < {warn_threshold:.0%}).\n")
-                # Save and embed a class distribution bar chart next to the MD file
-                try:
-                    if isinstance(output_path_or_buffer, str) and counts:
-                        import plotly.express as _px_cd_md
-                        _df_cd_md = pd.DataFrame({
-                            'Class': list(counts.keys()),
-                            'Count': [int(v) for v in counts.values()],
-                        }).sort_values('Count', ascending=False)
-                        _fig_cd_md = _px_cd_md.bar(_df_cd_md, x='Class', y='Count', title='Class Distribution (Counts)', template='plotly_white')
-                        _out_dir_md = os.path.dirname(output_path_or_buffer)
-                        _base_md = os.path.splitext(os.path.basename(file_identifier or 'report'))[0]
-                        _img_name_md = f"{_base_md}_class_dist.png"
-                        _img_path_md = os.path.join(_out_dir_md, _img_name_md)
-                        _fig_cd_md.write_image(_img_path_md, format='png', scale=2)
-                        md_lines.append("")
-                        md_lines.append(f"![Class Distribution]({_img_name_md})")
-                        md_lines.append("")
-                except Exception:
-                    # Keep MD generation resilient if image export fails
-                    pass
+            # Save and embed a class distribution bar chart next to the MD file
+            try:
+                if isinstance(output_path_or_buffer, str) and counts:
+                    import plotly.express as _px_cd_md
+                    _df_cd_md = pd.DataFrame({
+                        'Class': list(counts.keys()),
+                        'Count': [int(v) for v in counts.values()],
+                    }).sort_values('Count', ascending=False)
+                    _fig_cd_md = _px_cd_md.bar(_df_cd_md, x='Class', y='Count', title='Class Distribution (Counts)', template='plotly_white')
+                    _out_dir_md = os.path.dirname(output_path_or_buffer)
+                    _base_md = os.path.splitext(os.path.basename(file_identifier or 'report'))[0]
+                    _img_name_md = f"{_base_md}_class_dist.png"
+                    _img_path_md = os.path.join(_out_dir_md, _img_name_md)
+                        _fig_cd_md.write_image(_img_path_md, format='png', width=1800, height=900, scale=1)
+                    md_lines.append("")
+                    md_lines.append(f"![Class Distribution]({_img_name_md})")
+                    md_lines.append("")
+            except Exception:
+                # Keep MD generation resilient if image export fails
+                pass
             md_lines.append("")
 
         md_lines.append("## Schema Validation Results")

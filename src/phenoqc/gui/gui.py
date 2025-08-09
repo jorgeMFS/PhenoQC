@@ -1013,7 +1013,14 @@ def main():
                                 try:
                                     import plotly.express as px
                                     fig_cd = px.bar(x=list(counts.keys()), y=list(counts.values()), labels={'x': 'Class', 'y': 'Count'}, title='Class Counts')
-                                    st.plotly_chart(fig_cd, use_container_width=True)
+                                    fig_cd.update_layout(
+                                        autosize=True,
+                                        height=450,
+                                        margin=dict(l=40, r=20, t=60, b=60),
+                                    )
+                                    fig_cd.update_xaxes(automargin=True)
+                                    fig_cd.update_yaxes(automargin=True)
+                                    st.plotly_chart(fig_cd, use_container_width=True, theme=None)
                                 except Exception:
                                     pass
                             if class_dist.get('warning'):
@@ -1101,7 +1108,14 @@ def main():
                             cols = st.columns(2)
                             for i, fig in enumerate(figs):
                                 with cols[i % 2]:
-                                    st.plotly_chart(fig, use_container_width=True, key=f"{file_name}_plot_{i}")
+                                    fig.update_layout(
+                                        autosize=True,
+                                        height=450,
+                                        margin=dict(l=40, r=20, t=50, b=60),
+                                    )
+                                    fig.update_xaxes(automargin=True)
+                                    fig.update_yaxes(automargin=True)
+                                    st.plotly_chart(fig, use_container_width=True, key=f"{file_name}_plot_{i}", theme=None)
 
                         # ======================
                         # Imputation Summary + Quality Scores + Downloads
