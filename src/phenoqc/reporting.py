@@ -279,29 +279,34 @@ def generate_qc_report(
             flowables.append(Spacer(1, 18))
             return flowables
 
-        # Additional Quality Dimensions (styled tables)
-        story.append(Paragraph("Additional Quality Dimensions", section_header_style))
-        for metric in ["Accuracy Issues", "Redundancy Issues", "Traceability Issues", "Timeliness Issues"]:
-            if metric in validation_results:
+        # Additional Quality Dimensions (styled tables) - only if present in validation_results
+        present_metrics = [m for m in ["Accuracy Issues", "Redundancy Issues", "Traceability Issues", "Timeliness Issues"] if m in validation_results]
+        if present_metrics:
+            story.append(Paragraph("Additional Quality Dimensions", section_header_style))
+            for metric in present_metrics:
                 df_metric = validation_results[metric]
                 if isinstance(df_metric, pd.DataFrame):
                     block = build_dataframe_table(df_metric, metric, max_rows=50)
                     story.append(KeepTogether(block))
                 else:
                     story.append(Paragraph(f"<b>{metric}:</b> No issues found.", styles['Normal']))
-            else:
-                story.append(Paragraph(f"<b>{metric}:</b> No issues found.", styles['Normal']))
-        story.append(Spacer(1, SPACING_L))
-        story.append(hr())
-        story.append(Spacer(1, SPACING_L))
+            story.append(Spacer(1, SPACING_L))
+            story.append(hr())
+            story.append(Spacer(1, SPACING_L))
 
         # Class Distribution (optional)
         if class_distribution:
             story.append(Paragraph("Class Distribution", section_header_style))
-            counts = class_distribution.counts if hasattr(class_distribution, 'counts') else {}
-            proportions = class_distribution.proportions if hasattr(class_distribution, 'proportions') else {}
-            warn_threshold = getattr(class_distribution, 'warn_threshold', 0.10)
-            warning = getattr(class_distribution, 'warning', False)
+            if isinstance(class_distribution, dict):
+                counts = class_distribution.get('counts', {})
+                proportions = class_distribution.get('proportions', {})
+                warn_threshold = class_distribution.get('warn_threshold', 0.10)
+                warning = class_distribution.get('warning', False)
+            else:
+                counts = getattr(class_distribution, 'counts', {})
+                proportions = getattr(class_distribution, 'proportions', {})
+                warn_threshold = getattr(class_distribution, 'warn_threshold', 0.10)
+                warning = getattr(class_distribution, 'warning', False)
             rows = [[
                 Paragraph("Class", table_header_style),
                 Paragraph("Count", table_header_style),
