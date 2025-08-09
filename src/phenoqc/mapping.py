@@ -143,7 +143,9 @@ class OntologyMapper:
             term_id = term.id
             term_name = term.name.lower().strip() if term.name else ''
             synonyms = [syn.description.lower().strip() for syn in term.synonyms]
-            terms_to_map = [term_name] + synonyms
+            # Also index by the identifier itself (lowercased), so incoming IDs map directly
+            id_key = (term_id or '').lower().strip()
+            terms_to_map = [term_name] + synonyms + [id_key]
             for t in terms_to_map:
                 if t:
                     mapping[t] = term_id
@@ -180,9 +182,25 @@ class OntologyMapper:
                 mappings[ontology_id] = custom_id
             return mappings
 
+        # If the input already looks like an ontology ID, accept it directly for the matching ontology
+        # e.g., 'hp:0001250', 'doid:9352', 'mp:0000001'
+        if term_lower.startswith('hp:'):
+            direct = {'HPO': term.replace('hp:', 'HP:')}
+            # fill non-targets with None below
+        elif term_lower.startswith('doid:'):
+            direct = {'DO': term.replace('doid:', 'DOID:')}
+        elif term_lower.startswith('mp:'):
+            direct = {'MPO': term.replace('mp:', 'MP:')}
+        else:
+            direct = {}
+
         for ontology_id in target_ontologies:
             ontology_mapping = self.ontologies.get(ontology_id, {})
-            mapped_id = ontology_mapping.get(term_lower, None)
+            # Direct ID pass-through if provided and relevant
+            if ontology_id in direct:
+                mapped_id = direct[ontology_id]
+            else:
+                mapped_id = ontology_mapping.get(term_lower, None)
 
             if not mapped_id:
                 # Perform fuzzy matching
