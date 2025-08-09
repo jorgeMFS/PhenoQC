@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-quality_metrics_cli_test.py
+small_quality_metrics_cli_test.py
 
 A self-contained script demonstrating PhenoQC's ``--quality-metrics`` option.
 It synthesizes a small dataset containing issues for all supported metrics
@@ -8,7 +8,7 @@ It synthesizes a small dataset containing issues for all supported metrics
 checks enabled.
 
 Example:
-    python quality_metrics_cli_test.py
+  python small_quality_metrics_cli_test.py
 
 Outputs and temporary files are written under ``./output/quality_metrics``.
 """
@@ -138,7 +138,7 @@ def run_phenoqc(data_path: str, cfg_path: str, output_dir: str) -> None:
 
 
 def main() -> None:
-    out_dir = os.path.join(SCRIPT_DIR, "output", "quality_metrics")
+    out_dir = os.path.join(SCRIPT_DIR, "output", "e2e_small_quality_metrics")
     os.makedirs(out_dir, exist_ok=True)
 
     data_path = os.path.join(out_dir, "quality_metrics_input.csv")

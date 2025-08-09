@@ -13,10 +13,10 @@ if SRC_PATH not in sys.path:
 
 from phenoqc.batch_processing import unique_output_name
 
-DATA_PATH = os.path.join(SCRIPT_DIR, "output", "quality_metrics", "quality_metrics_input.csv")
+DATA_PATH = os.path.join(SCRIPT_DIR, "output", "e2e_small_imputation_params", "quality_metrics_input.csv")
 SCHEMA_PATH = os.path.join(SCRIPT_DIR, "config", "schema.json")
 CFG_PATH = os.path.join(SCRIPT_DIR, "config", "config.yaml")
-OUT_DIR = os.path.join(SCRIPT_DIR, "output", "quality_metrics")
+OUT_DIR = os.path.join(SCRIPT_DIR, "output", "e2e_small_imputation_params")
 
 
 def run():
