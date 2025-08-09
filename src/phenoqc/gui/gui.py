@@ -697,26 +697,41 @@ def main():
 
         all_columns = st.session_state["union_of_columns"]
         config = st.session_state['config']
-        default_strategies = config.get('imputation_strategies', {})
-        advanced_methods = config.get('advanced_imputation_methods', [])
+        # New config block aware: prefer 'imputation' over legacy keys
+        imputation_cfg = config.get('imputation', {}) or {}
+        default_strategies = config.get('imputation_strategies', {})  # legacy; used only for per-column display below
+        # Fixed supported strategies for UI; avoid case mismatch
+        supported_strategies = ['none', 'mean', 'median', 'mode', 'knn', 'mice', 'svd']
 
         st.subheader("Configure Imputation Strategy")
+        # Determine default strategy from config['imputation'] if present
+        default_strategy_value = str(imputation_cfg.get('strategy') or 'none').lower()
+        try:
+            default_idx = supported_strategies.index(default_strategy_value)
+        except ValueError:
+            default_idx = 0
         global_strategy = st.selectbox(
             "Default Imputation Strategy",
-            options=['none', 'mean', 'median', 'mode'] + advanced_methods,
-            index=0,
+            options=supported_strategies,
+            index=default_idx,
             help="Used for columns without specific overrides"
         )
 
         st.subheader("Column-Specific Overrides")
         column_strategies = {}
 
+        per_col_cfg = imputation_cfg.get('per_column', {}) if imputation_cfg else {}
+
         for col in all_columns:
             with st.expander(f"Column: {col}", expanded=False):
                 # We'll guess from config or fallback to global
-                suggested = default_strategies.get(col, global_strategy)
+                suggested = (
+                    (per_col_cfg.get(col, {}) or {}).get('strategy')
+                    or default_strategies.get(col)
+                    or global_strategy
+                )
 
-                strategy_options = ['Use Default', 'none', 'mean', 'median', 'mode'] + advanced_methods
+                strategy_options = ['Use Default'] + supported_strategies
                 default_index = 0
                 if suggested in strategy_options:
                     default_index = strategy_options.index(suggested)
@@ -733,30 +748,33 @@ def main():
         # Global parameter inputs (common params per strategy)
         st.subheader("Imputation Parameters")
         params: dict = {}
+        current_params = imputation_cfg.get('params', {}) if imputation_cfg else {}
         if global_strategy == 'knn':
-            n_neighbors = st.number_input("KNN n_neighbors", min_value=1, max_value=100, value=5, step=1)
-            weights = st.selectbox("KNN weights", options=['uniform', 'distance'], index=0)
+            n_neighbors = st.number_input("KNN n_neighbors", min_value=1, max_value=100, value=int(current_params.get('n_neighbors', 5)), step=1)
+            weights = st.selectbox("KNN weights", options=['uniform', 'distance'], index=0 if current_params.get('weights', 'uniform') == 'uniform' else 1)
             params.update({'n_neighbors': int(n_neighbors), 'weights': weights})
         elif global_strategy == 'mice':
-            max_iter = st.number_input("MICE max_iter", min_value=1, max_value=100, value=10, step=1)
+            max_iter = st.number_input("MICE max_iter", min_value=1, max_value=100, value=int(current_params.get('max_iter', 10)), step=1)
             params.update({'max_iter': int(max_iter)})
         elif global_strategy == 'svd':
             # Optional parameters for IterativeSVD
-            rank = st.number_input("SVD rank (optional, 0=auto)", min_value=0, max_value=500, value=0, step=1)
+            rank = st.number_input("SVD rank (optional, 0=auto)", min_value=0, max_value=500, value=int(current_params.get('rank', 0)), step=1)
             if rank > 0:
                 params.update({'rank': int(rank)})
 
         # Quick tuning controls (mask-and-score)
         st.subheader("Quick Tuning (mask-and-score)")
-        enable_tuning = st.checkbox("Enable tuning", value=False,
+        tuning_defaults = imputation_cfg.get('tuning', {}) if imputation_cfg else {}
+        enable_tuning = st.checkbox("Enable tuning", value=bool(tuning_defaults.get('enable', False)),
                                     help="Evaluate candidate parameters on masked observed cells and choose the best.")
         tuning_cfg = {}
         if enable_tuning:
-            mask_fraction = st.slider("Mask fraction", min_value=0.01, max_value=0.5, value=0.10, step=0.01)
-            scoring = st.selectbox("Scoring metric", options=['MAE', 'RMSE'], index=0)
-            max_cells = st.number_input("Max cells", min_value=1000, max_value=200000, value=50000, step=1000)
-            random_state = st.number_input("Random state", min_value=0, max_value=10**9, value=42, step=1)
-            grid_n = st.text_input("Grid for n_neighbors (comma-separated)", value="3,5,7")
+            mask_fraction = st.slider("Mask fraction", min_value=0.01, max_value=0.5, value=float(tuning_defaults.get('mask_fraction', 0.10)), step=0.01)
+            scoring = st.selectbox("Scoring metric", options=['MAE', 'RMSE'], index=0 if str(tuning_defaults.get('scoring', 'MAE')).upper() == 'MAE' else 1)
+            max_cells = st.number_input("Max cells", min_value=1000, max_value=200000, value=int(tuning_defaults.get('max_cells', 50000)), step=1000)
+            random_state = st.number_input("Random state", min_value=0, max_value=10**9, value=int(tuning_defaults.get('random_state', 42)), step=1)
+            default_grid = tuning_defaults.get('grid', {}).get('n_neighbors', [3, 5, 7])
+            grid_n = st.text_input("Grid for n_neighbors (comma-separated)", value=",".join(map(str, default_grid)))
             try:
                 grid_vals = [int(x.strip()) for x in grid_n.split(',') if x.strip()]
             except Exception:
@@ -773,7 +791,7 @@ def main():
         # Persist imputation block into config for ImputationEngine
         st.session_state.setdefault('config', {})
         st.session_state['config']['imputation'] = {
-            'strategy': None if global_strategy == 'Use Default' else global_strategy,
+            'strategy': None if global_strategy == 'Use Default' else str(global_strategy).lower(),
             'params': params or {},
             'per_column': {c: {'strategy': s} for c, s in column_strategies.items()},
             'tuning': tuning_cfg or {'enable': False},

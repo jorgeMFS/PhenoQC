@@ -444,7 +444,7 @@ class ImputationEngine:
                 # For advanced, allow a single params dict; if per-column differs, prefer column-specific loop
                 unique_param_sets = {tuple(sorted((col_params[c] or {}).items())) for c in cols}
                 if len(unique_param_sets) <= 1:
-                    params = next(iter(unique_param_sets), ())
+                    params = next(iter(unique_param_sets), tuple())
                     params = dict(params)
                     result = self._apply_strategy(result, strat, cols, params)
                 else:
