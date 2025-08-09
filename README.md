@@ -43,6 +43,67 @@
 - **Imputation Parameters and Quick Tuning:**  
   Configure imputation parameters (e.g., KNN `n_neighbors`) and optionally run a mask-and-score tuner to select good parameters on observed entries.
 
+---
+
+## Table of Contents
+
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [CLI](#cli)
+- [GUI](#gui)
+- [Configuration](#configuration)
+- [Reports](#reports)
+- [Examples and Scripts](#examples-and-scripts)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+
+---
+
+## Quick Start
+
+```bash
+pip install phenoqc
+phenoqc --help
+
+# Minimal run
+phenoqc \
+  --input examples/samples/sample_data.csv \
+  --schema examples/schemas/pheno_schema.json \
+  --config config.yaml \
+  --unique_identifiers SampleID \
+  --output ./reports/
+```
+
+Enable class distribution and imputation tuning:
+
+```bash
+phenoqc \
+  --input data.csv \
+  --schema schema.json \
+  --config config.yaml \
+  --unique_identifiers SampleID \
+  --label-column class --imbalance-threshold 0.10 \
+  --impute-params '{"n_neighbors": 5}' --impute-tuning on \
+  --output ./reports/
+```
+
+---
+
+## CLI
+
+New flags:
+
+- `--impute-params '{"n_neighbors": 5}'` (JSON)
+- `--impute-tuning on|off`
+- `--label-column class` and `--imbalance-threshold 0.10`
+
+Reports generated under `--output` include a PDF with:
+
+- Summary & scores
+- Optional Class Distribution (when label column is set)
+- Additional Quality Dimensions (only when computed)
+- Missing data summary, mapping success, and visuals
+
 ### CLI additions
 
 - `--impute-params '{"n_neighbors": 5}'` (JSON)
@@ -73,6 +134,42 @@ imputation:
     grid:
       n_neighbors: [3, 5, 7]
 ```
+
+Per-column overrides accept their own params. The quick tuner supports KNN, MICE (max_iter) and SVD (rank); you can pass a grid to explore.
+
+---
+
+## GUI
+
+Launch:
+
+```bash
+python run_gui.py
+```
+
+Highlights:
+
+- Step 3: Optional label column and imbalance threshold
+- Step 4: Default strategy, per-column overrides, parameters, and tuning
+- Results: Class Distribution table/plot, Imputation Settings, Tuning Summary
+
+---
+
+## Reports
+
+- Class Distribution: table and warning when minority proportion < threshold
+- Imputation Settings: global strategy/params and tuning summary
+- Additional Quality: only displayed if metrics are computed
+
+---
+
+## Examples and Scripts
+
+- `scripts/quality_metrics_cli_test.py` – small demo with metrics
+- `scripts/imputation_params_cli_test.py` – runs with config-driven imputation and label column
+- `scripts/comprehensive_cli_test.py` – generates a comprehensive dataset and runs full pipeline
+
+---
 
 ---
 

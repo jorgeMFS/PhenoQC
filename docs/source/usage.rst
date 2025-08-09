@@ -130,6 +130,9 @@ PhenoQC generates:
 
 1. Validated and processed data files
 2. Quality control reports (PDF/Markdown)
+   - Imputation Settings (strategy/params; tuning summary)
+   - Optional Class Distribution (when label column configured)
+   - Additional Quality Dimensions (only when computed)
 3. Visual summaries of data quality
 4. Detailed logs of the QC process
 
