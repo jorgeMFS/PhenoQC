@@ -631,9 +631,37 @@ def main():
         st.session_state['unique_identifiers_list'] = chosen_ids
 
         # -------------------------------------------------------------------------
+        # 4) Optional: Class Label column for imbalance summary
+        # -------------------------------------------------------------------------
+        st.subheader("D) Optional: Class Label Column for Imbalance Summary")
+        label_column = st.selectbox(
+            "Label column (optional)",
+            options=["<None>"] + all_columns,
+            index=0,
+            help="If set, PhenoQC will report class distribution and flag imbalance."
+        )
+        imbalance_threshold = st.number_input(
+            "Imbalance warning threshold (minority proportion)",
+            min_value=0.0, max_value=0.5, value=0.10, step=0.01,
+            help="Warn when the minority class proportion falls below this value."
+        )
+        # Persist in config for downstream processing
+        if 'config' not in st.session_state:
+            st.session_state['config'] = {}
+        if label_column and label_column != "<None>":
+            st.session_state['config']['class_distribution'] = {
+                'label_column': label_column,
+                'warn_threshold': float(imbalance_threshold),
+            }
+        else:
+            # ensure not set if user chooses none
+            if 'class_distribution' in st.session_state.get('config', {}):
+                st.session_state['config'].pop('class_distribution', None)
+
+        # -------------------------------------------------------------------------
         # 5) Summary of mappings & Next steps
         # -------------------------------------------------------------------------
-        st.subheader("D) Summary of Mappings")
+        st.subheader("E) Summary of Mappings")
         if st.session_state['phenotype_columns']:
             st.write("**Final Column → Ontologies Mappings**")
             mapping_summary = {
@@ -669,26 +697,41 @@ def main():
 
         all_columns = st.session_state["union_of_columns"]
         config = st.session_state['config']
-        default_strategies = config.get('imputation_strategies', {})
-        advanced_methods = config.get('advanced_imputation_methods', [])
+        # New config block aware: prefer 'imputation' over legacy keys
+        imputation_cfg = config.get('imputation', {}) or {}
+        default_strategies = config.get('imputation_strategies', {})  # legacy; used only for per-column display below
+        # Fixed supported strategies for UI; avoid case mismatch
+        supported_strategies = ['none', 'mean', 'median', 'mode', 'knn', 'mice', 'svd']
 
         st.subheader("Configure Imputation Strategy")
+        # Determine default strategy from config['imputation'] if present
+        default_strategy_value = str(imputation_cfg.get('strategy') or 'none').lower()
+        try:
+            default_idx = supported_strategies.index(default_strategy_value)
+        except ValueError:
+            default_idx = 0
         global_strategy = st.selectbox(
             "Default Imputation Strategy",
-            options=['none', 'mean', 'median', 'mode'] + advanced_methods,
-            index=0,
+            options=supported_strategies,
+            index=default_idx,
             help="Used for columns without specific overrides"
         )
 
         st.subheader("Column-Specific Overrides")
         column_strategies = {}
 
+        per_col_cfg = imputation_cfg.get('per_column', {}) if imputation_cfg else {}
+
         for col in all_columns:
             with st.expander(f"Column: {col}", expanded=False):
                 # We'll guess from config or fallback to global
-                suggested = default_strategies.get(col, global_strategy)
+                suggested = (
+                    (per_col_cfg.get(col, {}) or {}).get('strategy')
+                    or default_strategies.get(col)
+                    or global_strategy
+                )
 
-                strategy_options = ['Use Default', 'none', 'mean', 'median', 'mode'] + advanced_methods
+                strategy_options = ['Use Default'] + supported_strategies
                 default_index = 0
                 if suggested in strategy_options:
                     default_index = strategy_options.index(suggested)
@@ -702,6 +745,59 @@ def main():
                 if strategy != 'Use Default':
                     column_strategies[col] = strategy
 
+        # Global parameter inputs (common params per strategy)
+        st.subheader("Imputation Parameters")
+        params: dict = {}
+        current_params = imputation_cfg.get('params', {}) if imputation_cfg else {}
+        if global_strategy == 'knn':
+            n_neighbors = st.number_input("KNN n_neighbors", min_value=1, max_value=100, value=int(current_params.get('n_neighbors', 5)), step=1)
+            weights = st.selectbox("KNN weights", options=['uniform', 'distance'], index=0 if current_params.get('weights', 'uniform') == 'uniform' else 1)
+            params.update({'n_neighbors': int(n_neighbors), 'weights': weights})
+        elif global_strategy == 'mice':
+            max_iter = st.number_input("MICE max_iter", min_value=1, max_value=100, value=int(current_params.get('max_iter', 10)), step=1)
+            params.update({'max_iter': int(max_iter)})
+        elif global_strategy == 'svd':
+            # Optional parameters for IterativeSVD
+            rank = st.number_input("SVD rank (optional, 0=auto)", min_value=0, max_value=500, value=int(current_params.get('rank', 0)), step=1)
+            if rank > 0:
+                params.update({'rank': int(rank)})
+
+        # Quick tuning controls (mask-and-score)
+        st.subheader("Quick Tuning (mask-and-score)")
+        tuning_defaults = imputation_cfg.get('tuning', {}) if imputation_cfg else {}
+        enable_tuning = st.checkbox("Enable tuning", value=bool(tuning_defaults.get('enable', False)),
+                                    help="Evaluate candidate parameters on masked observed cells and choose the best.")
+        tuning_cfg = {}
+        if enable_tuning:
+            mask_fraction = st.slider("Mask fraction", min_value=0.01, max_value=0.5, value=float(tuning_defaults.get('mask_fraction', 0.10)), step=0.01)
+            scoring = st.selectbox("Scoring metric", options=['MAE', 'RMSE'], index=0 if str(tuning_defaults.get('scoring', 'MAE')).upper() == 'MAE' else 1)
+            max_cells = st.number_input("Max cells", min_value=1000, max_value=200000, value=int(tuning_defaults.get('max_cells', 50000)), step=1000)
+            random_state = st.number_input("Random state", min_value=0, max_value=10**9, value=int(tuning_defaults.get('random_state', 42)), step=1)
+            default_grid = tuning_defaults.get('grid', {}).get('n_neighbors', [3, 5, 7])
+            grid_n = st.text_input("Grid for n_neighbors (comma-separated)", value=",".join(map(str, default_grid)))
+            try:
+                grid_vals = [int(x.strip()) for x in grid_n.split(',') if x.strip()]
+            except Exception:
+                grid_vals = [3, 5, 7]
+            tuning_cfg = {
+                'enable': True,
+                'mask_fraction': float(mask_fraction),
+                'scoring': scoring,
+                'max_cells': int(max_cells),
+                'random_state': int(random_state),
+                'grid': {'n_neighbors': grid_vals}
+            }
+
+        # Persist imputation block into config for ImputationEngine
+        st.session_state.setdefault('config', {})
+        st.session_state['config']['imputation'] = {
+            'strategy': None if global_strategy == 'Use Default' else str(global_strategy).lower(),
+            'params': params or {},
+            'per_column': {c: {'strategy': s} for c, s in column_strategies.items()},
+            'tuning': tuning_cfg or {'enable': False},
+        }
+
+        # Retain older session fields (used by legacy flow)
         st.session_state['imputation_config'] = {
             'global_strategy': global_strategy,
             'column_strategies': column_strategies
@@ -901,6 +997,30 @@ def main():
                         st.info("**Summary of Key Findings**\n\n" + "\n".join(summary_text))
 
                         # ---------------------------------------------------------
+                        # Class Distribution (if available)
+                        # ---------------------------------------------------------
+                        class_dist = result_dict.get('class_distribution')
+                        if class_dist:
+                            st.write("### Class Distribution")
+                            counts = class_dist.get('counts', {})
+                            proportions = class_dist.get('proportions', {})
+                            if counts:
+                                cd_rows = [
+                                    {"Class": k, "Count": int(v), "Proportion": f"{proportions.get(k, 0.0):.2%}"}
+                                    for k, v in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+                                ]
+                                st.dataframe(pd.DataFrame(cd_rows))
+                                try:
+                                    import plotly.express as px
+                                    fig_cd = px.bar(x=list(counts.keys()), y=list(counts.values()), labels={'x': 'Class', 'y': 'Count'}, title='Class Counts')
+                                    st.plotly_chart(fig_cd, use_container_width=True)
+                                except Exception:
+                                    pass
+                            if class_dist.get('warning'):
+                                thr = class_dist.get('warn_threshold', 0.10)
+                                st.warning(f"Severe imbalance flagged (minority < {thr:.0%}).")
+
+                        # ---------------------------------------------------------
                         # Additional Quality Dimensions (only if enabled in config)
                         # ---------------------------------------------------------
                         active_metrics = st.session_state.get('config', {}).get('quality_metrics', []) or []
@@ -984,12 +1104,26 @@ def main():
                                     st.plotly_chart(fig, use_container_width=True, key=f"{file_name}_plot_{i}")
 
                         # ======================
-                        # Quality Scores + Downloads
+                        # Imputation Summary + Quality Scores + Downloads
                         # ======================
                         st.write("### Quality Scores")
                         q_scores = result_dict.get('quality_scores', {})
                         for score_name, score_val in q_scores.items():
                             st.write(f"- **{score_name}**: {score_val:.2f}%")
+                        imp_sum = result_dict.get('imputation_summary') or {}
+                        if imp_sum:
+                            st.write("### Imputation Settings")
+                            glob_cfg = imp_sum.get('global', {})
+                            if glob_cfg:
+                                st.write(f"- Strategy: {glob_cfg.get('strategy')}")
+                                st.write(f"- Params: {glob_cfg.get('params')}")
+                            tuning = imp_sum.get('tuning', {})
+                            if tuning and tuning.get('enabled'):
+                                st.write("### Tuning Summary")
+                                if 'best' in tuning:
+                                    st.write(f"- Best Params: {tuning.get('best')}")
+                                if 'score' in tuning and 'metric' in tuning:
+                                    st.write(f"- Score: {tuning['score']:.4f} ({tuning['metric']})")
 
                         st.write("### Downloads")
                         report_buffer = io.BytesIO()
@@ -1002,7 +1136,9 @@ def main():
                             impute_strategy=impute_strategy_value,
                             quality_scores=q_scores,
                             output_path_or_buffer=report_buffer,
-                            report_format='pdf'
+                            report_format='pdf',
+                            class_distribution=result_dict.get('class_distribution'),
+                            imputation_summary=result_dict.get('imputation_summary'),
                         )
                         report_buffer.seek(0)
                         st.download_button(

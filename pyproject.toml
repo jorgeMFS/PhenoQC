@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "phenoqc"
-version = "1.0.0"
+version = "1.1.0"
 requires-python = ">=3.9"
 description = "Phenotypic Data Quality Control Toolkit for Genomic Data Infrastructure (GDI)"
 readme = "README.md"

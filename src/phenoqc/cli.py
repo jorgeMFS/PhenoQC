@@ -29,6 +29,18 @@ def parse_arguments():
         default='mean',
         help='Imputation strategy for missing data'
     )
+    parser.add_argument(
+        '--impute-params',
+        type=json.loads,
+        default=None,
+        help='JSON object of parameters for the imputation strategy (e.g., {"n_neighbors": 5})'
+    )
+    parser.add_argument(
+        '--impute-tuning',
+        choices=['on', 'off'],
+        default='off',
+        help='Enable quick tuning for imputation (mask-and-score)'
+    )
     parser.add_argument('--recursive', action='store_true', help='Enable recursive directory scanning for nested files')
     parser.add_argument('--unique_identifiers', nargs='+', required=True, help='List of column names that uniquely identify a record')
     parser.add_argument('--ontologies', nargs='+', help='List of ontologies to map to (e.g., HPO DO MPO)', default=None)
@@ -47,6 +59,17 @@ def parse_arguments():
         choices=QUALITY_METRIC_CHOICES + ['all'],
         help='Additional quality metrics to evaluate',
         default=None
+    )
+    parser.add_argument(
+        '--label-column',
+        help='Optional label column name for class distribution summary',
+        default=None,
+    )
+    parser.add_argument(
+        '--imbalance-threshold',
+        type=float,
+        default=0.10,
+        help='Minority class proportion threshold to flag imbalance (default: 0.10)'
     )
     args = parser.parse_args()
     
@@ -162,11 +185,15 @@ def main():
         unique_identifiers=args.unique_identifiers,
         custom_mappings_path=args.custom_mappings,
         impute_strategy=args.impute,
+        impute_params=args.impute_params,
+        impute_tuning_enable=(args.impute_tuning == 'on'),
         output_dir=args.output,
         target_ontologies=args.ontologies,
         phenotype_columns=args.phenotype_columns,
         log_file_for_children=single_log_filename,
-        quality_metrics=args.quality_metrics
+        quality_metrics=args.quality_metrics,
+        class_label_column=args.label_column,
+        imbalance_threshold=args.imbalance_threshold,
     )
     
     for result in results:

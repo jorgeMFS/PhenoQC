@@ -14,16 +14,21 @@ Outputs and temporary files are written under ``./output/quality_metrics``.
 """
 
 import os
+import sys
 import subprocess
 from datetime import datetime, timedelta
 
 import pandas as pd
 import yaml
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+SRC_PATH = os.path.join(PROJECT_ROOT, "src")
+if SRC_PATH not in sys.path:
+    sys.path.insert(0, SRC_PATH)
+
 from phenoqc.quality_metrics import QUALITY_METRIC_CHOICES
 from phenoqc.batch_processing import unique_output_name
-
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_CONFIG = os.path.join(SCRIPT_DIR, "config", "config.yaml")
 SCHEMA_PATH = os.path.join(SCRIPT_DIR, "config", "schema.json")
 
@@ -63,6 +68,8 @@ def create_quality_config(cfg_path: str) -> None:
 def run_phenoqc(data_path: str, cfg_path: str, output_dir: str) -> None:
     """Execute the PhenoQC CLI with all quality metrics enabled."""
     cmd = [
+        sys.executable,
+        "-m",
         "phenoqc",
         "--input",
         data_path,
@@ -79,7 +86,10 @@ def run_phenoqc(data_path: str, cfg_path: str, output_dir: str) -> None:
         "--quality-metrics",
     ] + QUALITY_METRIC_CHOICES
     print("[INFO] Running:", " ".join(cmd))
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    env = os.environ.copy()
+    # Ensure the module can be resolved when running as -m
+    env["PYTHONPATH"] = SRC_PATH + (os.pathsep + env["PYTHONPATH"] if "PYTHONPATH" in env and env["PYTHONPATH"] else "")
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
     print("[STDOUT]\n", proc.stdout)
     print("[STDERR]\n", proc.stderr)
     print("[INFO] Exit code:", proc.returncode)
@@ -88,7 +98,6 @@ def run_phenoqc(data_path: str, cfg_path: str, output_dir: str) -> None:
     assert proc.returncode == 0, f"CLI exited with non-zero code: {proc.returncode}"
 
     # Assert expected output artifacts created by the CLI
-    import os
     processed_csv = unique_output_name(data_path, output_dir, suffix=".csv")
     report_pdf = unique_output_name(data_path, output_dir, suffix="_report.pdf")
 
@@ -102,6 +111,26 @@ def run_phenoqc(data_path: str, cfg_path: str, output_dir: str) -> None:
     import pandas as pd
     df = pd.read_csv(processed_csv)
     assert "HPO_ID" in df.columns, "Expected 'HPO_ID' column in processed CSV after mapping"
+
+    # Verify per-file quality metrics artifacts exist
+    metrics_tsv = unique_output_name(data_path, output_dir, suffix="_quality_metrics.tsv")
+    metrics_json = unique_output_name(data_path, output_dir, suffix="_quality_metrics_summary.json")
+    assert os.path.exists(metrics_tsv), f"Quality metrics TSV not found: {metrics_tsv}"
+    assert os.path.exists(metrics_json), f"Quality metrics summary JSON not found: {metrics_json}"
+
+    # Validate JSON counts vs TSV rows per metric
+    import json
+    import pandas as pd
+    with open(metrics_json, "r", encoding="utf-8") as jf:
+        summary = json.load(jf)
+    tsv_df = pd.read_csv(metrics_tsv, sep="\t") if os.path.getsize(metrics_tsv) > 0 else pd.DataFrame()
+    if not tsv_df.empty and "metric" in tsv_df.columns:
+        for m in ["accuracy", "redundancy", "traceability", "timeliness"]:
+            if m in summary:
+                # Count rows for this metric in TSV
+                tsv_count = int((tsv_df["metric"] == m).sum())
+                json_count = int(summary.get(m, 0))
+                assert tsv_count == json_count, f"Mismatch for {m}: TSV={tsv_count}, JSON={json_count}"
 
 
 def main() -> None:

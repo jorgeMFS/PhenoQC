@@ -10,13 +10,37 @@ from .missing_data import (
     detect_missing_data,
     flag_missing_data_records,
     impute_missing_data,
+    ImputationEngine,
 )
 from .reporting import generate_qc_report, create_visual_summary
 from .configuration import load_config
 from .logging_module import log_activity, setup_logging
 from tqdm import tqdm
 import hashlib
-from .quality_metrics import QUALITY_METRIC_CHOICES
+from .quality_metrics import QUALITY_METRIC_CHOICES, ClassCounter
+def _finalize_class_distribution(cfg: dict, counter: ClassCounter):
+    if not counter:
+        return None
+    warn_thr = 0.10
+    try:
+        warn_thr = float((cfg or {}).get('class_distribution', {}).get('warn_threshold', 0.10))
+    except Exception:
+        warn_thr = 0.10
+    return counter.finalize(warn_threshold=warn_thr)
+
+
+def _build_imputation_summary(cfg: dict, engine: ImputationEngine):
+    try:
+        imp_cfg = (cfg or {}).get('imputation') or {}
+        return {
+            'global': {
+                'strategy': imp_cfg.get('strategy'),
+                'params': imp_cfg.get('params'),
+            },
+            'tuning': (engine.tuning_summary if engine and engine.tuning_summary else {'enabled': False}),
+        }
+    except Exception:
+        return None
 
 
 def _safe_md5_hexdigest(data: bytes) -> str:
@@ -267,6 +291,18 @@ def process_file(
             # NEW aggregator: track row indices that fail JSON schema
             schema_fail_indices_global = set()
 
+            # Optional class distribution config
+            class_counter = None
+            class_dist_cfg = None
+            if cfg and isinstance(cfg, dict):
+                class_dist_cfg = cfg.get("class_distribution")
+                label_col_present = (
+                    isinstance(class_dist_cfg, dict)
+                    and class_dist_cfg.get("label_column") is not None
+                )
+                if label_col_present:
+                    class_counter = ClassCounter()
+
             # 3) Process each chunk
             for chunk in all_chunks:
                 if chunk is None or chunk.empty:
@@ -443,11 +479,23 @@ def process_file(
 
                 # Impute
                 try:
-                    chunk = impute_missing_data(
-                        chunk,
-                        strategy=impute_strategy,
-                        field_strategies=field_strategies,
-                    )
+                    # Build engine from cfg if provided; exclude label column from numeric space
+                    exclude_cols = []
+                    if class_dist_cfg and class_dist_cfg.get("label_column"):
+                        exclude_cols.append(class_dist_cfg.get("label_column"))
+                    impute_cfg = None
+                    if cfg and isinstance(cfg, dict):
+                        impute_cfg = cfg.get('imputation')
+                        # CLI-impute strategy override (legacy arg)
+                        if not impute_cfg and impute_strategy:
+                            impute_cfg = {'strategy': impute_strategy}
+                        elif impute_cfg and impute_strategy and impute_cfg.get('strategy') is None:
+                            impute_cfg['strategy'] = impute_strategy
+                    else:
+                        impute_cfg = {'strategy': impute_strategy}
+
+                    engine = ImputationEngine(impute_cfg, exclude_columns=exclude_cols)
+                    chunk = engine.fit_transform(chunk)
                 except Exception as ex_impute:
                     final_status = "ProcessedWithWarnings"
                     msg3 = f"Error in imputation: {str(ex_impute)}"
@@ -491,6 +539,12 @@ def process_file(
                         cumulative_mapping_stats[onto_id]["mapped_terms"] += sum(bool(mappings.get(str(t), {}).get(onto_id) is not None)
                                                                              for t in valid_terms)
 
+
+                # (G0) Class distribution aggregation (label column only)
+                if class_counter is not None and isinstance(class_dist_cfg, dict):
+                    label_col = class_dist_cfg.get("label_column")
+                    if label_col in chunk.columns:
+                        class_counter.update(chunk[label_col])
 
                 # (F) Accumulate sample df
                 if len(sample_df) < max_total_samples:
@@ -594,6 +648,53 @@ def process_file(
                     "Timeliness Issues": all_timeliness,
                 }
 
+            # 5a) Persist quality metrics artifacts (per-file) when requested
+            if cfg and cfg.get("quality_metrics"):
+                try:
+                    # Per-file TSV with all issues combined and a 'metric' column
+                    metrics_rows = []
+                    def _append_metric(df_in: pd.DataFrame, metric_name: str) -> None:
+                        if isinstance(df_in, pd.DataFrame) and not df_in.empty:
+                            df_copy = df_in.copy()
+                            df_copy["metric"] = metric_name
+                            metrics_rows.append(df_copy)
+
+                    _append_metric(all_accuracy, "accuracy")
+                    _append_metric(all_redundancy, "redundancy")
+                    _append_metric(all_traceability, "traceability")
+                    _append_metric(all_timeliness, "timeliness")
+
+                    metrics_tsv_path = unique_output_name(
+                        file_path, output_dir, suffix="_quality_metrics.tsv"
+                    )
+                    if metrics_rows:
+                        pd.concat(metrics_rows, ignore_index=True).to_csv(
+                            metrics_tsv_path, sep="\t", index=False
+                        )
+                    else:
+                        # Create an empty file with header to indicate no issues
+                        pd.DataFrame(columns=["metric"]).to_csv(
+                            metrics_tsv_path, sep="\t", index=False
+                        )
+
+                    # Per-file JSON summary with counts per metric
+                    metrics_summary = {
+                        "accuracy": int(len(all_accuracy)) if isinstance(all_accuracy, pd.DataFrame) else 0,
+                        "redundancy": int(len(all_redundancy)) if isinstance(all_redundancy, pd.DataFrame) else 0,
+                        "traceability": int(len(all_traceability)) if isinstance(all_traceability, pd.DataFrame) else 0,
+                        "timeliness": int(len(all_timeliness)) if isinstance(all_timeliness, pd.DataFrame) else 0,
+                    }
+                    metrics_json_path = unique_output_name(
+                        file_path, output_dir, suffix="_quality_metrics_summary.json"
+                    )
+                    with open(metrics_json_path, "w", encoding="utf-8") as jf:
+                        json.dump(metrics_summary, jf, indent=2)
+                except Exception as _persist_ex:
+                    log_activity(
+                        f"{file_path}: Failed to persist quality metrics artifacts: {_persist_ex}",
+                        level="warning",
+                    )
+
             # 5) Mapping stats
             mapping_success_rates = {}
             for onto_id, stats in cumulative_mapping_stats.items():
@@ -646,6 +747,8 @@ def process_file(
             report_path = unique_output_name(
                 file_path, output_dir, suffix="_report.pdf"
             )
+            # Finalize class distribution (if any)
+            class_distribution_result = _finalize_class_distribution(cfg, class_counter) if class_counter is not None else None
             figs = create_visual_summary(
                 sample_df, phenotype_columns=phenotype_columns, output_image_path=None
             )
@@ -662,6 +765,9 @@ def process_file(
                     )
 
             base_display_name = os.path.basename(file_path)
+            # Prepare imputation summary for report
+            imputation_summary = _build_imputation_summary(cfg, engine)
+
             generate_qc_report(
                 validation_results=validation_results,
                 missing_data=missing_counts,
@@ -673,6 +779,8 @@ def process_file(
                 output_path_or_buffer=report_path,
                 report_format=report_format,
                 file_identifier=base_display_name,
+                class_distribution=class_distribution_result,
+                imputation_summary=imputation_summary,
             )
             log_activity(f"{file_path}: QC report generated at {report_path}.")
             pbar.update(5)
@@ -693,6 +801,12 @@ def process_file(
                 "mapping_success_rates": mapping_success_rates,
                 "visualization_images": visualization_images,
                 "quality_scores": quality_scores,
+                "class_distribution": (
+                    class_distribution_result.__dict__
+                    if class_distribution_result is not None
+                    else None
+                ),
+                "imputation_summary": imputation_summary,
             }
 
     except Exception as e:
@@ -707,6 +821,8 @@ def batch_process(
     unique_identifiers,
     custom_mappings_path=None,
     impute_strategy="mean",
+    impute_params=None,
+    impute_tuning_enable=False,
     output_dir="reports",
     target_ontologies=None,
     report_format="pdf",
@@ -715,6 +831,8 @@ def batch_process(
     phenotype_column=None,
     log_file_for_children=None,
     quality_metrics=None,
+    class_label_column=None,
+    imbalance_threshold: float = 0.10,
 ):
     log_activity(f"[ParentProcess] Starting on: {files}", level="info")
 
@@ -732,6 +850,32 @@ def batch_process(
                 f"Invalid quality_metrics: {invalid_metrics}. Allowed metrics are: {sorted(allowed_metrics)}"
             )
         config["quality_metrics"] = quality_metrics
+
+    # Configure optional class distribution summary
+    if class_label_column:
+        config.setdefault("quality_metrics", [])
+        config.setdefault("class_distribution", {})
+        config["class_distribution"] = {
+            "label_column": class_label_column,
+            "warn_threshold": float(imbalance_threshold),
+        }
+
+    # Merge CLI imputation overrides (CLI > YAML)
+    if impute_params is not None or impute_tuning_enable:
+        cfg_imp = config.setdefault('imputation', {})
+        if impute_params is not None:
+            # ensure dict
+            try:
+                if isinstance(impute_params, dict):
+                    params = impute_params
+                else:
+                    params = {}
+            except Exception:
+                params = {}
+            cfg_imp['params'] = {**cfg_imp.get('params', {}), **params}
+        if impute_tuning_enable:
+            tun = cfg_imp.setdefault('tuning', {})
+            tun['enable'] = True
 
     # 3) Create OntologyMapper
     ontology_mapper = OntologyMapper(config)

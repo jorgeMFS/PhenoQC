@@ -31,7 +31,9 @@ from reportlab.platypus import (
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import inch
-from reportlab.lib.units import inch
+
+from typing import Optional, Dict
+
 
 def generate_qc_report(
     validation_results,
@@ -43,7 +45,9 @@ def generate_qc_report(
     quality_scores,
     output_path_or_buffer,
     report_format='pdf',
-    file_identifier=None
+    file_identifier=None,
+    class_distribution=None,
+    imputation_summary: Optional[Dict] = None,
 ):
     """
     Generates a quality control report (PDF or Markdown).
@@ -123,9 +127,9 @@ def generate_qc_report(
             fontName='Helvetica-Bold',
             textColor=colors.black,
         )
-        scores_items = [
-            [Paragraph("Imputation Strategy", label_style), Paragraph(strategy_display, table_cell_style)]
-        ]
+        scores_items = [[Paragraph("Imputation Strategy", label_style), Paragraph(strategy_display, table_cell_style)]]
+        # If available, include a concise imputation tuning summary
+        # Expectation: quality_scores may be augmented elsewhere; keep resilient here
         for score_name, score_value in quality_scores.items():
             scores_items.append([
                 Paragraph(score_name, label_style),
@@ -149,6 +153,31 @@ def generate_qc_report(
         ])
         story.append(scores_table)
         story.append(Spacer(1, SPACING_L))
+
+        # Imputation settings (if provided)
+        if isinstance(imputation_summary, dict) and imputation_summary:
+            story.append(Paragraph("Imputation Settings", subsection_header_style))
+            rows = []
+            global_cfg = imputation_summary.get('global', {})
+            if global_cfg:
+                rows.append([Paragraph("Global Strategy", label_style), Paragraph(str(global_cfg.get('strategy')), table_cell_style)])
+                rows.append([Paragraph("Global Params", label_style), Paragraph(str(global_cfg.get('params')), table_cell_style)])
+            tuning = imputation_summary.get('tuning', {})
+            if tuning:
+                rows.append([Paragraph("Tuning Enabled", label_style), Paragraph(str(tuning.get('enabled')), table_cell_style)])
+                if 'best' in tuning:
+                    rows.append([Paragraph("Best Params", label_style), Paragraph(str(tuning.get('best')), table_cell_style)])
+                if 'score' in tuning and 'metric' in tuning:
+                    rows.append([Paragraph("Tuning Score", label_style), Paragraph(f"{tuning['score']:.4f} ({tuning['metric']})", table_cell_style)])
+            if rows:
+                imp_table = Table(rows, colWidths=[available_width * 0.35, available_width * 0.65])
+                imp_table.setStyle([
+                    ('FONTSIZE', (0, 0), (-1, -1), 8),
+                    ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#B0B7BF')),
+                    ('ROWBACKGROUNDS', (0, 0), (-1, -1), [colors.whitesmoke, colors.HexColor('#ECF0F1')]),
+                ])
+                story.append(imp_table)
+                story.append(Spacer(1, SPACING_L))
 
         # Data Quality Scores
         story.append(Paragraph("Data Quality Scores:", styles['Heading2']))
@@ -250,21 +279,62 @@ def generate_qc_report(
             flowables.append(Spacer(1, 18))
             return flowables
 
-        # Additional Quality Dimensions (styled tables)
-        story.append(Paragraph("Additional Quality Dimensions", section_header_style))
-        for metric in ["Accuracy Issues", "Redundancy Issues", "Traceability Issues", "Timeliness Issues"]:
-            if metric in validation_results:
+        # Additional Quality Dimensions (styled tables) - only if present in validation_results
+        present_metrics = [m for m in ["Accuracy Issues", "Redundancy Issues", "Traceability Issues", "Timeliness Issues"] if m in validation_results]
+        if present_metrics:
+            story.append(Paragraph("Additional Quality Dimensions", section_header_style))
+            for metric in present_metrics:
                 df_metric = validation_results[metric]
                 if isinstance(df_metric, pd.DataFrame):
                     block = build_dataframe_table(df_metric, metric, max_rows=50)
                     story.append(KeepTogether(block))
                 else:
                     story.append(Paragraph(f"<b>{metric}:</b> No issues found.", styles['Normal']))
+            story.append(Spacer(1, SPACING_L))
+            story.append(hr())
+            story.append(Spacer(1, SPACING_L))
+
+        # Class Distribution (optional)
+        if class_distribution:
+            story.append(Paragraph("Class Distribution", section_header_style))
+            if isinstance(class_distribution, dict):
+                counts = class_distribution.get('counts', {})
+                proportions = class_distribution.get('proportions', {})
+                warn_threshold = class_distribution.get('warn_threshold', 0.10)
+                warning = class_distribution.get('warning', False)
             else:
-                story.append(Paragraph(f"<b>{metric}:</b> No issues found.", styles['Normal']))
-        story.append(Spacer(1, SPACING_L))
-        story.append(hr())
-        story.append(Spacer(1, SPACING_L))
+                counts = getattr(class_distribution, 'counts', {})
+                proportions = getattr(class_distribution, 'proportions', {})
+                warn_threshold = getattr(class_distribution, 'warn_threshold', 0.10)
+                warning = getattr(class_distribution, 'warning', False)
+            rows = [[
+                Paragraph("Class", table_header_style),
+                Paragraph("Count", table_header_style),
+                Paragraph("Proportion", table_header_style),
+            ]]
+            for cls, cnt in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])):
+                prop = proportions.get(cls, 0.0)
+                rows.append([
+                    Paragraph(str(cls), table_cell_style),
+                    Paragraph(str(int(cnt)), table_cell_style),
+                    Paragraph(f"{prop:.2%}", table_cell_style),
+                ])
+            cd_table = Table(rows, colWidths=[available_width * 0.5, available_width * 0.2, available_width * 0.3])
+            cd_table.setStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTSIZE', (0, 0), (-1, -1), 8),
+                ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#B0B7BF')),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.whitesmoke, colors.HexColor('#ECF0F1')]),
+            ])
+            story.append(cd_table)
+            if warning:
+                story.append(Spacer(1, 6))
+                story.append(Paragraph(
+                    f"Severe imbalance flagged (minority < {warn_threshold:.0%}).",
+                    styles['Normal']
+                ))
+            story.append(Spacer(1, SPACING_L))
 
         # Missing Data Summary (table)
         story.append(Paragraph("Missing Data Summary", section_header_style))
@@ -385,6 +455,18 @@ def generate_qc_report(
         for score_name, score_value in quality_scores.items():
             md_lines.append(f"- **{score_name}**: {score_value:.2f}%")
         md_lines.append("")
+        # Optional class distribution
+        if class_distribution:
+            md_lines.append("## Class Distribution")
+            counts = getattr(class_distribution, 'counts', {})
+            proportions = getattr(class_distribution, 'proportions', {})
+            warn_threshold = getattr(class_distribution, 'warn_threshold', 0.10)
+            for cls, cnt in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])):
+                md_lines.append(f"- {cls}: {cnt} ({proportions.get(cls, 0.0):.2%})")
+            if getattr(class_distribution, 'warning', False):
+                md_lines.append(f"\n> Severe imbalance flagged (minority < {warn_threshold:.0%}).\n")
+            md_lines.append("")
+
         md_lines.append("## Schema Validation Results")
         for key, value in validation_results.items():
             if isinstance(value, pd.DataFrame):
