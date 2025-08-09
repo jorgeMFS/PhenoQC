@@ -236,14 +236,18 @@ class ImputationEngine:
         result = df.copy()
         if cols:
             imputer = KNNImputer(**(params or {}))
+            before = result[cols].copy()
             result[cols] = imputer.fit_transform(result[cols])
+            self._update_imputation_mask(before, result, cols)
         return result
 
     def _apply_mice(self, df: pd.DataFrame, cols: List[str], params: Optional[dict]) -> pd.DataFrame:
         result = df.copy()
         if cols:
             imputer = IterativeImputer(**(params or {}))
+            before = result[cols].copy()
             result[cols] = imputer.fit_transform(result[cols])
+            self._update_imputation_mask(before, result, cols)
         return result
 
     def _apply_svd(self, df: pd.DataFrame, cols: List[str], params: Optional[dict]) -> pd.DataFrame:
@@ -258,7 +262,9 @@ class ImputationEngine:
                 logging.warning("Insufficient dimensions for SVD; falling back to mean")
                 return self._apply_mean(result, cols, None)
             imputer = IterativeSVD(**(params or {}))
+            before = result[cols].copy()
             result[cols] = imputer.fit_transform(result[cols])
+            self._update_imputation_mask(before, result, cols)
         return result
 
     STRATEGY_APPLIERS = {
@@ -462,3 +468,15 @@ class ImputationEngine:
             'per_column': per_column,
         }
         return result
+
+    def _update_imputation_mask(self, before: pd.DataFrame, after: pd.DataFrame, cols: List[str]) -> None:
+        """Track which numeric cells were imputed: True where value was NaN before and filled after."""
+        if not hasattr(self, 'imputation_mask'):
+            self.imputation_mask: Dict[str, pd.Series] = {}
+        for c in cols:
+            try:
+                was_na = before[c].isna()
+                now_filled = after[c].notna()
+                self.imputation_mask[c] = was_na & now_filled
+            except Exception:
+                continue

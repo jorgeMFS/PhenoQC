@@ -17,7 +17,7 @@ from .configuration import load_config
 from .logging_module import log_activity, setup_logging
 from tqdm import tqdm
 import hashlib
-from .quality_metrics import QUALITY_METRIC_CHOICES, ClassCounter
+from .quality_metrics import QUALITY_METRIC_CHOICES, ClassCounter, imputation_bias_report
 def _finalize_class_distribution(cfg: dict, counter: ClassCounter):
     if not counter:
         return None
@@ -767,6 +767,35 @@ def process_file(
             base_display_name = os.path.basename(file_path)
             # Prepare imputation summary for report
             imputation_summary = _build_imputation_summary(cfg, engine)
+            # Optional imputation-bias diagnostic
+            bias_df = None
+            try:
+                metrics_cfg = cfg.get('quality_metrics') if isinstance(cfg, dict) else None
+                enable_bias = (
+                    isinstance(metrics_cfg, list) and ('imputation_bias' in metrics_cfg)
+                ) or (
+                    isinstance(metrics_cfg, dict) and metrics_cfg.get('imputation_bias', {}).get('enable')
+                )
+                bias_thresholds = {}
+                if isinstance(metrics_cfg, dict):
+                    bias_thresholds = metrics_cfg.get('imputation_bias', {})
+                if enable_bias and hasattr(engine, 'imputation_mask'):
+                    # Use concatenated data as original if available; else sample_df fallback
+                    try:
+                        original_df = pd.concat(all_chunks) if all_chunks else sample_df
+                    except Exception:
+                        original_df = sample_df
+                    bias_df = imputation_bias_report(
+                        original_df=original_df if not original_df.empty else chunk,
+                        imputed_df=chunk,
+                        imputation_mask=getattr(engine, 'imputation_mask', {}),
+                        smd_threshold=float(bias_thresholds.get('smd_threshold', 0.10)),
+                        var_ratio_low=float(bias_thresholds.get('var_ratio_low', 0.5)),
+                        var_ratio_high=float(bias_thresholds.get('var_ratio_high', 2.0)),
+                        ks_alpha=float(bias_thresholds.get('ks_alpha', 0.05)),
+                    )
+            except Exception as _bias_ex:
+                log_activity(f"{file_path}: imputation-bias diagnostic failed: {_bias_ex}", level="warning")
 
             generate_qc_report(
                 validation_results=validation_results,
@@ -799,6 +828,11 @@ def process_file(
                     'class_distribution': (
                         class_distribution_result.__dict__ if class_distribution_result is not None else None
                     ),
+                    'quality_metrics': {
+                        'imputation_bias': {
+                            'rows': (bias_df.to_dict(orient='records') if isinstance(bias_df, pd.DataFrame) else [])
+                        }
+                    },
                 }
                 with open(qc_json_path, 'w', encoding='utf-8') as _jf:
                     json.dump(qc_payload, _jf, indent=2)
