@@ -200,7 +200,9 @@ class ImputationEngine:
         self.cfg = cfg or {}
         self.exclude_columns = set(exclude_columns or [])
         self.chosen_params: dict = {}
-        self.tuning_summary: dict | None = None
+        # Python 3.9 compatibility: avoid PEP 604 union types
+        from typing import Optional as _OptionalDictType
+        self.tuning_summary: _OptionalDictType[dict] = None
         self._tuned_once: bool = False
 
     def _numeric_columns(self, df: pd.DataFrame) -> list[str]:

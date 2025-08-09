@@ -328,6 +328,23 @@ def generate_qc_report(
                 ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.whitesmoke, colors.HexColor('#ECF0F1')]),
             ])
             story.append(cd_table)
+            # Optional class distribution bar plot (counts)
+            try:
+                if counts:
+                    import plotly.express as _px_cd
+                    _df_cd = pd.DataFrame({
+                        'Class': list(counts.keys()),
+                        'Count': [int(v) for v in counts.values()],
+                    }).sort_values('Count', ascending=False)
+                    _fig_cd = _px_cd.bar(_df_cd, x='Class', y='Count', title='Class Distribution (Counts)', template='plotly_white')
+                    _img_name = f"{os.path.splitext(os.path.basename(file_identifier or 'report'))[0]}_class_dist.png"
+                    _img_path = os.path.join(os.path.dirname(output_path_or_buffer) if isinstance(output_path_or_buffer, str) else '.', _img_name)
+                    _fig_cd.write_image(_img_path, format='png', scale=2)
+                    story.append(Spacer(1, 6))
+                    story.append(Image(_img_path, width=available_width * 0.8, height=available_width * 0.4))
+            except Exception:
+                # Keep report generation resilient if image export fails
+                pass
             if warning:
                 story.append(Spacer(1, 6))
                 story.append(Paragraph(

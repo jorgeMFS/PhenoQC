@@ -309,20 +309,33 @@ default_ontologies:
   - MPO
 
 fuzzy_threshold: 80
-
-imputation_strategies:
-  Age: mean
-  Gender: mode
-  Height: median
-  Phenotype: mode
-
-advanced_imputation_methods:
-  - MICE
-  - KNN
-  - IterativeSVD
-
 cache_expiry_days: 30
+
+imputation:
+  strategy: knn
+  params:
+    n_neighbors: 5
+    weights: uniform
+  per_column:
+    Creatinine_mgdl:
+      strategy: mice
+      params:
+        max_iter: 15
+    Cholesterol_mgdl:
+      strategy: svd
+      params:
+        rank: 3
+  tuning:
+    enable: true
+    mask_fraction: 0.1
+    scoring: MAE
+    max_cells: 20000
+    random_state: 42
+    grid:
+      n_neighbors: [3, 5, 7]
 ```
+
+Note: Labels are never modified and are excluded from the imputation matrix when a `label_column` is provided.
 
 ## Troubleshooting
 
