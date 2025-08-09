@@ -26,6 +26,27 @@ To install PhenoQC from source:
     cd PhenoQC
     pip install -e .
 
+Development without install
+---------------------------
+
+When running directly from the source tree during development, prefer invoking as a module and ensuring the ``src/`` directory is on the Python path:
+
+.. code-block:: bash
+
+    # In the project root
+    export PYTHONPATH=src:$PYTHONPATH
+    python -m phenoqc --help
+    python -m phenoqc.cli  # alternative explicit module
+
+GUI
+---
+
+Launch the Streamlit-based GUI:
+
+.. code-block:: bash
+
+    python run_gui.py
+
 Dependencies
 -----------
 
