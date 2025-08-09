@@ -53,6 +53,7 @@ def generate_qc_report(
     imputation_summary: Optional[Dict] = None,
     bias_diagnostics: Optional[pd.DataFrame] = None,
     bias_thresholds: Optional[Dict] = None,
+    quality_metrics_enabled: Optional[object] = None,
 ):
     """
     Generates a quality control report (PDF or Markdown).
@@ -200,7 +201,11 @@ def generate_qc_report(
 
         # Schema Validation Results
         story.append(Paragraph("Schema Validation Results", subsection_header_style))
+        quality_metric_keys = {"Accuracy Issues", "Redundancy Issues", "Traceability Issues", "Timeliness Issues"}
         for key, value in validation_results.items():
+            # Skip quality metric entries here; they will be rendered in a dedicated section below
+            if key in quality_metric_keys:
+                continue
             if isinstance(value, pd.DataFrame):
                 if not value.empty:
                     story.append(Paragraph(
@@ -292,12 +297,31 @@ def generate_qc_report(
             flowables.append(Spacer(1, 18))
             return flowables
 
-        # Additional Quality Dimensions (styled tables) - only if present in validation_results
-        present_metrics = [m for m in ["Accuracy Issues", "Redundancy Issues", "Traceability Issues", "Timeliness Issues"] if m in validation_results]
-        if present_metrics:
+        # Additional Quality Dimensions (styled tables) - only if explicitly enabled
+        enabled_ids = set()
+        if isinstance(quality_metrics_enabled, list):
+            enabled_ids = {str(m).lower() for m in quality_metrics_enabled}
+        elif isinstance(quality_metrics_enabled, dict):
+            # dictionary style not typically used for these metrics; treat any truthy flag as enabled
+            for mid in ["accuracy", "redundancy", "traceability", "timeliness"]:
+                try:
+                    if quality_metrics_enabled.get(mid):
+                        enabled_ids.add(mid)
+                except Exception:
+                    pass
+        if enabled_ids:
             story.append(Paragraph("Additional Quality Dimensions", section_header_style))
-            for metric in present_metrics:
-                df_metric = validation_results[metric]
+            id_to_key = {
+                "accuracy": "Accuracy Issues",
+                "redundancy": "Redundancy Issues",
+                "traceability": "Traceability Issues",
+                "timeliness": "Timeliness Issues",
+            }
+            for metric_id in ["accuracy", "redundancy", "traceability", "timeliness"]:
+                if metric_id not in enabled_ids:
+                    continue
+                metric = id_to_key[metric_id]
+                df_metric = validation_results.get(metric, pd.DataFrame())
                 if isinstance(df_metric, pd.DataFrame):
                     block = build_dataframe_table(df_metric, metric, max_rows=50)
                     story.append(KeepTogether(block))

@@ -817,6 +817,7 @@ def process_file(
                     'var_ratio_high': float(metrics_cfg.get('imputation_bias', {}).get('var_ratio_high', 2.0)) if isinstance(metrics_cfg, dict) else 2.0,
                     'ks_alpha': float(metrics_cfg.get('imputation_bias', {}).get('ks_alpha', 0.05)) if isinstance(metrics_cfg, dict) else 0.05,
                 },
+                quality_metrics_enabled=(cfg.get('quality_metrics') if isinstance(cfg, dict) else None),
             )
             log_activity(f"{file_path}: QC report generated at {report_path}.")
             pbar.update(5)
@@ -865,6 +866,11 @@ def process_file(
                     else None
                 ),
                 "imputation_summary": imputation_summary,
+                "quality_metrics": {
+                    "imputation_bias": {
+                        "rows": (bias_df.to_dict(orient='records') if isinstance(bias_df, pd.DataFrame) else [])
+                    }
+                },
             }
 
     except Exception as e:
