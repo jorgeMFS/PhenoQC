@@ -799,16 +799,28 @@ def main():
 
         # Imputation-bias diagnostics (optional)
         st.subheader("Imputation-bias diagnostic (optional)")
-        bias_cfg = (st.session_state['config'].get('quality_metrics', {}) if isinstance(st.session_state['config'].get('quality_metrics'), dict) else {})
-        existing_bias = bias_cfg.get('imputation_bias', {}) if isinstance(bias_cfg, dict) else {}
+        # Support both storage styles: legacy list in config['quality_metrics'] and
+        # thresholds stored at top-level config['imputation_bias'].
+        _qm_val = st.session_state['config'].get('quality_metrics')
+        if isinstance(_qm_val, dict):
+            existing_bias = _qm_val.get('imputation_bias', {}) or {}
+        else:
+            existing_bias = st.session_state['config'].get('imputation_bias', {}) or {}
         bias_enable = st.checkbox("Enable imputation-bias diagnostic", value=bool(existing_bias.get('enable', False)))
         smd_thr = st.number_input("SMD threshold", min_value=0.0, max_value=1.0, value=float(existing_bias.get('smd_threshold', 0.10)), step=0.01)
         var_low = st.number_input("Variance ratio lower bound", min_value=0.01, max_value=1.0, value=float(existing_bias.get('var_ratio_low', 0.50)), step=0.01)
         var_high = st.number_input("Variance ratio upper bound", min_value=1.0, max_value=10.0, value=float(existing_bias.get('var_ratio_high', 2.0)), step=0.1)
         ks_alpha = st.number_input("KS alpha", min_value=0.001, max_value=0.5, value=float(existing_bias.get('ks_alpha', 0.05)), step=0.001, format="%0.3f")
         if bias_enable:
-            st.session_state['config'].setdefault('quality_metrics', {})
-            st.session_state['config']['quality_metrics']['imputation_bias'] = {
+            # Ensure list-style metrics include 'imputation_bias'
+            qm_val = st.session_state['config'].get('quality_metrics')
+            if isinstance(qm_val, list):
+                if 'imputation_bias' not in qm_val:
+                    qm_val.append('imputation_bias')
+            elif qm_val is None:
+                st.session_state['config']['quality_metrics'] = ['imputation_bias']
+            # Store thresholds at top level for compatibility across code paths
+            st.session_state['config']['imputation_bias'] = {
                 'enable': True,
                 'smd_threshold': float(smd_thr),
                 'var_ratio_low': float(var_low),
@@ -817,8 +829,11 @@ def main():
             }
         else:
             qm = st.session_state['config'].get('quality_metrics')
-            if isinstance(qm, dict) and 'imputation_bias' in qm:
-                qm.pop('imputation_bias', None)
+            if isinstance(qm, list) and 'imputation_bias' in qm:
+                qm.remove('imputation_bias')
+            # Remove top-level thresholds when disabled
+            if 'imputation_bias' in st.session_state['config']:
+                st.session_state['config'].pop('imputation_bias', None)
 
         # Retain older session fields (used by legacy flow)
         st.session_state['imputation_config'] = {
@@ -1053,8 +1068,12 @@ def main():
                         # ---------------------------------------------------------
                         # Imputation-bias diagnostics (if available)
                         # ---------------------------------------------------------
-                        bias_cfg_gui = st.session_state.get('config', {}).get('quality_metrics', {})
-                        bias_cfg_gui = bias_cfg_gui.get('imputation_bias', {}) if isinstance(bias_cfg_gui, dict) else {}
+                        # Retrieve thresholds from top-level if present, else from dict style
+                        bias_cfg_gui = st.session_state.get('config', {}).get('imputation_bias', {}) or {}
+                        if not bias_cfg_gui:
+                            _qm_val2 = st.session_state.get('config', {}).get('quality_metrics', {})
+                            if isinstance(_qm_val2, dict):
+                                bias_cfg_gui = _qm_val2.get('imputation_bias', {}) or {}
                         bias_rows = (
                             result_dict.get('quality_metrics', {})
                                       .get('imputation_bias', {})
