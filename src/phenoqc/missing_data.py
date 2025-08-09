@@ -374,8 +374,9 @@ class ImputationEngine:
 
     TUNERS = {
         'knn': _tune_knn,
-        # 'mice': _tune_mice,  # pluggable structure; implement as needed
-        # 'svd': _tune_svd,
+        # Use generic grid tuner for strategies with simple numeric grids
+        'mice': _tune_grid,
+        'svd': _tune_grid,
     }
 
     def _apply_strategy(self, df: pd.DataFrame, strategy: str, cols: List[str], params: Optional[dict]) -> pd.DataFrame:

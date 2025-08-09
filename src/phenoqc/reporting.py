@@ -482,6 +482,15 @@ def generate_qc_report(
                 md_lines.append(f"- {cls}: {cnt} ({proportions.get(cls, 0.0):.2%})")
             if getattr(class_distribution, 'warning', False):
                 md_lines.append(f"\n> Severe imbalance flagged (minority < {warn_threshold:.0%}).\n")
+                # If a class distribution PNG exists next to the PDF, embed it
+                try:
+                    base = os.path.splitext(os.path.basename(file_identifier or 'report'))[0]
+                    img_name = f"{base}_class_dist.png"
+                    md_lines.append("")
+                    md_lines.append(f"![Class Distribution]({img_name})")
+                    md_lines.append("")
+                except Exception:
+                    pass
             md_lines.append("")
 
         md_lines.append("## Schema Validation Results")
