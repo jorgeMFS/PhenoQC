@@ -62,3 +62,29 @@ def test_imputation_bias_knn_changes_with_k():
     if smd_small is not None and smd_large is not None:
         assert smd_large <= smd_small or abs(smd_large - smd_small) < 0.05
 
+
+def test_imputation_bias_all_strategies_basic():
+    rng = np.random.RandomState(2)
+    n = 120
+    df = pd.DataFrame({
+        'a': rng.normal(0, 1, size=n),
+        'b': rng.normal(5, 2, size=n)
+    })
+    miss_mask = rng.rand(n) < 0.25
+    dfm = df.copy()
+    dfm.loc[miss_mask, 'a'] = np.nan
+    strategies = [
+        {'strategy': 'mean'},
+        {'strategy': 'median'},
+        {'strategy': 'mode'},
+        {'strategy': 'knn', 'params': {'n_neighbors': 3}},
+        {'strategy': 'mice', 'params': {'max_iter': 5}},
+        {'strategy': 'svd', 'params': {'rank': 2}},
+    ]
+    for cfg in strategies:
+        eng = ImputationEngine(cfg)
+        df_imp = eng.fit_transform(dfm)
+        mask = getattr(eng, 'imputation_mask', {})
+        bias = imputation_bias_report(dfm, df_imp, mask, columns=['a'])
+        assert isinstance(bias, pd.DataFrame)
+

@@ -408,6 +408,35 @@ def generate_qc_report(
             block.append(Paragraph(f"<b>Variables evaluated:</b> {len(df_bias)}", styles['Normal']))
             block.extend(build_dataframe_table(df_bias, title="", max_rows=50))
             story.append(KeepTogether(block))
+
+            # Traffic-light status bar for top variables (red=warn, green=ok)
+            try:
+                status_rows = []
+                header = [Paragraph("Variable", table_header_style), Paragraph("Status", table_header_style)]
+                status_rows.append(header)
+                show_df = bias_diagnostics.sort_values(by=['warn', 'smd'], ascending=[False, False]).head(20)
+                for _, r in show_df.iterrows():
+                    var = str(r.get('column'))
+                    warn_flag = bool(r.get('warn', False))
+                    status_cell = Paragraph("WARN" if warn_flag else "OK", table_cell_style)
+                    status_rows.append([Paragraph(var, table_cell_style), status_cell])
+                status_tbl = Table(status_rows, colWidths=[available_width * 0.6, available_width * 0.4])
+                status_tbl.setStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                    ('FONTSIZE', (0, 0), (-1, -1), 8),
+                    ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#B0B7BF')),
+                ])
+                # Color status cells
+                for i in range(1, len(status_rows)):
+                    warn_flag = bool(show_df.iloc[i-1].get('warn', False))
+                    color = colors.red if warn_flag else colors.green
+                    status_tbl.setStyle([('BACKGROUND', (1, i), (1, i), color), ('TEXTCOLOR', (1, i), (1, i), colors.white)])
+                story.append(Spacer(1, 6))
+                story.append(status_tbl)
+            except Exception:
+                logging.exception("Failed to render traffic-light status table for bias diagnostics.")
+
             story.append(Spacer(1, SPACING_L))
 
         # Missing Data Summary (table)
