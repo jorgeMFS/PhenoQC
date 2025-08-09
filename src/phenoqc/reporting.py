@@ -28,6 +28,7 @@ from reportlab.platypus import (
     Table,
     KeepTogether,
     HRFlowable,
+    PageBreak,
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
@@ -82,6 +83,7 @@ def generate_qc_report(
         page_size = landscape(letter)
         left_margin = right_margin = top_margin = bottom_margin = 36  # 0.5 inch
         available_width = page_size[0] - left_margin - right_margin
+        available_height = page_size[1] - top_margin - bottom_margin
 
         story = []
 
@@ -118,8 +120,9 @@ def generate_qc_report(
         story.append(hr())
         story.append(Spacer(1, SPACING_M))
 
-        # Summary section
-        story.append(Paragraph("Summary", section_header_style))
+        # Summary section (kept together to avoid splitting across pages)
+        summary_block = []
+        summary_block.append(Paragraph("Summary", section_header_style))
         # Imputation Strategy + Quality Scores as label/value pairs (no header row)
         strategy_display = "(No Imputation Strategy)" if impute_strategy is None else impute_strategy.capitalize()
         label_style = ParagraphStyle(
@@ -152,12 +155,12 @@ def generate_qc_report(
             ('TOPPADDING', (0, 0), (-1, -1), 3),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
         ])
-        story.append(scores_table)
-        story.append(Spacer(1, SPACING_L))
+        summary_block.append(scores_table)
+        summary_block.append(Spacer(1, SPACING_L))
 
         # Imputation settings (if provided)
         if isinstance(imputation_summary, dict) and imputation_summary:
-            story.append(Paragraph("Imputation Settings", subsection_header_style))
+            summary_block.append(Paragraph("Imputation Settings", subsection_header_style))
             rows = []
             global_cfg = imputation_summary.get('global', {})
             if global_cfg:
@@ -177,8 +180,10 @@ def generate_qc_report(
                     ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#B0B7BF')),
                     ('ROWBACKGROUNDS', (0, 0), (-1, -1), [colors.whitesmoke, colors.HexColor('#ECF0F1')]),
                 ])
-                story.append(imp_table)
-                story.append(Spacer(1, SPACING_L))
+                summary_block.append(imp_table)
+                summary_block.append(Spacer(1, SPACING_L))
+
+        story.append(KeepTogether(summary_block))
 
         # Data Quality Scores
         story.append(Paragraph("Data Quality Scores:", styles['Heading2']))
@@ -342,17 +347,20 @@ def generate_qc_report(
                     _img_name = f"{os.path.splitext(os.path.basename(file_identifier or 'report'))[0]}_class_dist.png"
                     _img_dir = os.path.dirname(output_path_or_buffer) if isinstance(output_path_or_buffer, str) else '.'
                     _img_path = os.path.join(_img_dir, _img_name)
-                    _fig_cd.write_image(_img_path, format='png', width=1800, height=900, scale=1)
+                    _fig_cd.write_image(_img_path, format='png', width=1600, height=800, scale=1)
                     story.append(Spacer(1, 6))
-                    # Preserve aspect ratio when placing into the report
+                    # Preserve aspect ratio with hard caps to avoid layout breakage
                     try:
                         _pil_img = PILImage.open(_img_path)
                         _w, _h = _pil_img.size
-                        _disp_w = available_width * 0.85
-                        _disp_h = _disp_w * (_h / _w)
+                        _max_w = available_width * 0.85
+                        _max_h = available_height * 0.35
+                        _scale = min(_max_w / float(_w), _max_h / float(_h))
+                        _disp_w = max(1.0, _w * _scale)
+                        _disp_h = max(1.0, _h * _scale)
                         story.append(Image(_img_path, width=_disp_w, height=_disp_h))
                     except Exception:
-                        story.append(Image(_img_path, width=available_width * 0.85, height=available_width * 0.42))
+                        story.append(Image(_img_path, width=available_width * 0.8, height=available_height * 0.3))
             except Exception:
                 # Keep report generation resilient if image export fails
                 pass
@@ -423,6 +431,8 @@ def generate_qc_report(
         story.append(Spacer(1, SPACING_L))
 
         # Visualizations (grid, two per row)
+        # Always start visualizations on a new page to preserve earlier section ordering
+        story.append(PageBreak())
         story.append(Paragraph("Visualizations", section_header_style))
         if visualization_images:
             col_w = (available_width - 12) / 2  # small gutter
@@ -434,7 +444,8 @@ def generate_qc_report(
                     try:
                         pil_img = PILImage.open(image_path)
                         iw, ih = pil_img.size
-                        disp_h = col_w * (ih / iw)
+                        # Cap height to avoid overflows
+                        disp_h = min(col_w * (ih / iw), available_height * 0.38)
                         img = Image(image_path, width=col_w, height=disp_h)
                     except Exception:
                         img = Image(image_path, width=col_w, height=col_w * 0.6)
@@ -512,7 +523,7 @@ def generate_qc_report(
                     _base_md = os.path.splitext(os.path.basename(file_identifier or 'report'))[0]
                     _img_name_md = f"{_base_md}_class_dist.png"
                     _img_path_md = os.path.join(_out_dir_md, _img_name_md)
-                        _fig_cd_md.write_image(_img_path_md, format='png', width=1800, height=900, scale=1)
+                    _fig_cd_md.write_image(_img_path_md, format='png', width=1800, height=900, scale=1)
                     md_lines.append("")
                     md_lines.append(f"![Class Distribution]({_img_name_md})")
                     md_lines.append("")
