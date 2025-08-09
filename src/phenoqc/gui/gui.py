@@ -797,6 +797,29 @@ def main():
             'tuning': tuning_cfg or {'enable': False},
         }
 
+        # Imputation-bias diagnostics (optional)
+        st.subheader("Imputation-bias diagnostic (optional)")
+        bias_cfg = (st.session_state['config'].get('quality_metrics', {}) if isinstance(st.session_state['config'].get('quality_metrics'), dict) else {})
+        existing_bias = bias_cfg.get('imputation_bias', {}) if isinstance(bias_cfg, dict) else {}
+        bias_enable = st.checkbox("Enable imputation-bias diagnostic", value=bool(existing_bias.get('enable', False)))
+        smd_thr = st.number_input("SMD threshold", min_value=0.0, max_value=1.0, value=float(existing_bias.get('smd_threshold', 0.10)), step=0.01)
+        var_low = st.number_input("Variance ratio lower bound", min_value=0.01, max_value=1.0, value=float(existing_bias.get('var_ratio_low', 0.50)), step=0.01)
+        var_high = st.number_input("Variance ratio upper bound", min_value=1.0, max_value=10.0, value=float(existing_bias.get('var_ratio_high', 2.0)), step=0.1)
+        ks_alpha = st.number_input("KS alpha", min_value=0.001, max_value=0.5, value=float(existing_bias.get('ks_alpha', 0.05)), step=0.001, format="%0.3f")
+        if bias_enable:
+            st.session_state['config'].setdefault('quality_metrics', {})
+            st.session_state['config']['quality_metrics']['imputation_bias'] = {
+                'enable': True,
+                'smd_threshold': float(smd_thr),
+                'var_ratio_low': float(var_low),
+                'var_ratio_high': float(var_high),
+                'ks_alpha': float(ks_alpha),
+            }
+        else:
+            qm = st.session_state['config'].get('quality_metrics')
+            if isinstance(qm, dict) and 'imputation_bias' in qm:
+                qm.pop('imputation_bias', None)
+
         # Retain older session fields (used by legacy flow)
         st.session_state['imputation_config'] = {
             'global_strategy': global_strategy,

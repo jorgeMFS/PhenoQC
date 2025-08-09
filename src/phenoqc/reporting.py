@@ -51,6 +51,8 @@ def generate_qc_report(
     file_identifier=None,
     class_distribution=None,
     imputation_summary: Optional[Dict] = None,
+    bias_diagnostics: Optional[pd.DataFrame] = None,
+    bias_thresholds: Optional[Dict] = None,
 ):
     """
     Generates a quality control report (PDF or Markdown).
@@ -377,6 +379,37 @@ def generate_qc_report(
                 ))
             story.append(Spacer(1, SPACING_L))
 
+        # Imputation-bias diagnostics (optional)
+        if isinstance(bias_diagnostics, pd.DataFrame) and not bias_diagnostics.empty:
+            story.append(Paragraph("Imputation-bias diagnostics", section_header_style))
+            # Show thresholds if provided
+            if isinstance(bias_thresholds, dict) and bias_thresholds:
+                thr_text = \
+                    f"SMD≥{bias_thresholds.get('smd_threshold', 0.10)} | " \
+                    f"Var-ratio∉[{bias_thresholds.get('var_ratio_low', 0.5)},{bias_thresholds.get('var_ratio_high', 2.0)}] | " \
+                    f"KS p<{bias_thresholds.get('ks_alpha', 0.05)}"
+                story.append(Paragraph(f"<b>Warning rules:</b> {thr_text}", styles['Normal']))
+                story.append(Spacer(1, 6))
+            cols_desired = [
+                ("column", "Variable"), ("n_obs", "n_obs"), ("n_imp", "n_imp"),
+                ("smd", "SMD"), ("var_ratio", "Var-ratio"), ("ks_p", "KS p"), ("warn", "Warn")
+            ]
+            df_bias = bias_diagnostics.copy()
+            present = [src for src, _ in cols_desired if src in df_bias.columns]
+            df_bias = df_bias[present]
+            # Rename headers for readability
+            rename_map = {src: label for src, label in cols_desired if src in df_bias.columns}
+            df_bias = df_bias.rename(columns=rename_map)
+            # Round numeric columns
+            for c in df_bias.columns:
+                if c in ("SMD", "Var-ratio", "KS p"):
+                    df_bias[c] = pd.to_numeric(df_bias[c], errors='coerce').round(3)
+            block = []
+            block.append(Paragraph(f"<b>Variables evaluated:</b> {len(df_bias)}", styles['Normal']))
+            block.extend(build_dataframe_table(df_bias, title="", max_rows=50))
+            story.append(KeepTogether(block))
+            story.append(Spacer(1, SPACING_L))
+
         # Missing Data Summary (table)
         story.append(Paragraph("Missing Data Summary", section_header_style))
         if isinstance(missing_data, pd.Series) or isinstance(missing_data, dict):
@@ -536,6 +569,21 @@ def generate_qc_report(
             except Exception:
                 # Keep MD generation resilient if image export fails
                 pass
+            md_lines.append("")
+
+        # Imputation-bias diagnostics (optional)
+        if isinstance(bias_diagnostics, pd.DataFrame) and not bias_diagnostics.empty:
+            md_lines.append("## Imputation-bias diagnostics")
+            if isinstance(bias_thresholds, dict) and bias_thresholds:
+                md_lines.append(
+                    f"- Thresholds: SMD≥{bias_thresholds.get('smd_threshold', 0.10)}, "
+                    f"Var-ratio outside [{bias_thresholds.get('var_ratio_low', 0.5)},{bias_thresholds.get('var_ratio_high', 2.0)}], "
+                    f"KS p<{bias_thresholds.get('ks_alpha', 0.05)}"
+                )
+            try:
+                md_lines.append(bias_diagnostics.to_markdown(index=False))
+            except Exception:
+                md_lines.append(bias_diagnostics.to_csv(index=False))
             md_lines.append("")
 
         md_lines.append("## Schema Validation Results")
