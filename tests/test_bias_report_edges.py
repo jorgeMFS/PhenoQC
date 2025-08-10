@@ -10,10 +10,10 @@ def test_bias_report_low_n_sets_ks_none_and_includes_wdist():
     mask = {"x": pd.Series([True, False])}
     df = imputation_bias_report(original, imputed, mask, columns=["x"], smd_threshold=0.0)
     assert isinstance(df, pd.DataFrame)
-    if not df.empty:
-        row = df.iloc[0].to_dict()
-        # ks_p should be None
-        assert row.get("ks_p", None) in (None, np.nan)
+    assert not df.empty
+    row = df.iloc[0].to_dict()
+    # ks_p should be None
+    assert row.get("ks_p", None) in (None, np.nan)
 
 
 def test_bias_report_warn_logic_and_columns():
