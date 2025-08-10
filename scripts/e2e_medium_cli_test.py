@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate a comprehensive synthetic dataset and run PhenoQC with
+Generate a mid-sized synthetic dataset and run PhenoQC with
 config-driven imputation and class-imbalance reporting.
 
 This script verifies that:
@@ -29,12 +29,12 @@ if SRC_PATH not in sys.path:
 from phenoqc.batch_processing import unique_output_name
 
 
-OUT_DIR = os.path.join(SCRIPT_DIR, "output", "comprehensive")
+OUT_DIR = os.path.join(SCRIPT_DIR, "output", "e2e_medium")
 os.makedirs(OUT_DIR, exist_ok=True)
 
 SCHEMA_PATH = os.path.join(SCRIPT_DIR, "config", "schema.json")
 CONFIG_PATH = os.path.join(SCRIPT_DIR, "config", "config.yaml")
-DATA_PATH = os.path.join(OUT_DIR, "comprehensive_input.csv")
+DATA_PATH = os.path.join(OUT_DIR, "e2e_medium_input.csv")
 
 
 def create_comprehensive_data(n: int = 1000, seed: int = 42) -> pd.DataFrame:

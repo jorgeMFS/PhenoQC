@@ -212,38 +212,51 @@ class ImputationEngine:
     # ---- Strategy helper registry ----
     def _apply_mean(self, df: pd.DataFrame, cols: List[str], params: Optional[dict]) -> pd.DataFrame:
         result = df.copy()
+        before = result[cols].copy() if cols else None
         for c in cols:
             if pd.api.types.is_numeric_dtype(result[c]):
                 result[c] = result[c].fillna(result[c].mean())
+        if cols and before is not None:
+            self._update_imputation_mask(before, result, cols)
         return result
 
     def _apply_median(self, df: pd.DataFrame, cols: List[str], params: Optional[dict]) -> pd.DataFrame:
         result = df.copy()
+        before = result[cols].copy() if cols else None
         for c in cols:
             if pd.api.types.is_numeric_dtype(result[c]):
                 result[c] = result[c].fillna(result[c].median())
+        if cols and before is not None:
+            self._update_imputation_mask(before, result, cols)
         return result
 
     def _apply_mode(self, df: pd.DataFrame, cols: List[str], params: Optional[dict]) -> pd.DataFrame:
         result = df.copy()
+        before = result[cols].copy() if cols else None
         for c in cols:
             mode_vals = result[c].mode(dropna=True)
             if not mode_vals.empty:
                 result[c] = result[c].fillna(mode_vals[0])
+        if cols and before is not None:
+            self._update_imputation_mask(before, result, cols)
         return result
 
     def _apply_knn(self, df: pd.DataFrame, cols: List[str], params: Optional[dict]) -> pd.DataFrame:
         result = df.copy()
         if cols:
             imputer = KNNImputer(**(params or {}))
+            before = result[cols].copy()
             result[cols] = imputer.fit_transform(result[cols])
+            self._update_imputation_mask(before, result, cols)
         return result
 
     def _apply_mice(self, df: pd.DataFrame, cols: List[str], params: Optional[dict]) -> pd.DataFrame:
         result = df.copy()
         if cols:
             imputer = IterativeImputer(**(params or {}))
+            before = result[cols].copy()
             result[cols] = imputer.fit_transform(result[cols])
+            self._update_imputation_mask(before, result, cols)
         return result
 
     def _apply_svd(self, df: pd.DataFrame, cols: List[str], params: Optional[dict]) -> pd.DataFrame:
@@ -258,7 +271,9 @@ class ImputationEngine:
                 logging.warning("Insufficient dimensions for SVD; falling back to mean")
                 return self._apply_mean(result, cols, None)
             imputer = IterativeSVD(**(params or {}))
+            before = result[cols].copy()
             result[cols] = imputer.fit_transform(result[cols])
+            self._update_imputation_mask(before, result, cols)
         return result
 
     STRATEGY_APPLIERS = {
@@ -462,3 +477,15 @@ class ImputationEngine:
             'per_column': per_column,
         }
         return result
+
+    def _update_imputation_mask(self, before: pd.DataFrame, after: pd.DataFrame, cols: List[str]) -> None:
+        """Track which numeric cells were imputed: True where value was NaN before and filled after."""
+        if not hasattr(self, 'imputation_mask'):
+            self.imputation_mask: Dict[str, pd.Series] = {}
+        for c in cols:
+            try:
+                was_na = before[c].isna()
+                now_filled = after[c].notna()
+                self.imputation_mask[c] = was_na & now_filled
+            except Exception:
+                continue

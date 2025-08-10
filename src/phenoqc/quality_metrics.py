@@ -3,6 +3,8 @@ import hashlib
 import collections
 from dataclasses import dataclass
 from typing import List, Optional, Dict, Any
+import numpy as np
+from scipy import stats
 
 # Central list of quality metric identifiers used across the application.
 QUALITY_METRIC_CHOICES = [
@@ -10,6 +12,7 @@ QUALITY_METRIC_CHOICES = [
     "redundancy",
     "traceability",
     "timeliness",
+    "imputation_bias",
 ]
 
 
@@ -293,3 +296,84 @@ class ClassCounter:
             warn_threshold=warn_threshold,
             warning=warning_flag,
         )
+
+@dataclass
+class BiasRow:
+    column: str
+    n_obs: int
+    n_imp: int
+    mean_diff: float
+    smd: float
+    var_ratio: float
+    ks_stat: Optional[float]
+    ks_p: Optional[float]
+    warn: bool
+
+
+def imputation_bias_report(
+    original_df: pd.DataFrame,
+    imputed_df: pd.DataFrame,
+    imputation_mask: Dict[str, pd.Series],
+    columns: Optional[List[str]] = None,
+    smd_threshold: float = 0.10,
+    var_ratio_low: float = 0.5,
+    var_ratio_high: float = 2.0,
+    ks_alpha: float = 0.05,
+) -> pd.DataFrame:
+    cols = columns or imputed_df.select_dtypes(include=[np.number]).columns.tolist()
+    rows: List[BiasRow] = []
+
+    for col in cols:
+        mask = imputation_mask.get(col)
+        if mask is None or col not in original_df.columns or col not in imputed_df.columns:
+            continue
+        try:
+            obs = original_df.loc[~original_df[col].isna(), col].astype(float)
+            imp = imputed_df.loc[mask.fillna(False), col].astype(float)
+            post_all = imputed_df[col].dropna().astype(float)
+
+            # Skip columns with no observed values or no imputed values
+            if len(obs) == 0 or len(imp) == 0:
+                continue
+
+            if len(obs) < 3 or len(imp) < 3:
+                ks_stat = None
+                ks_p = None
+            else:
+                ks_stat, ks_p = stats.ks_2samp(obs.values, imp.values, alternative="two-sided", mode="auto")
+
+            mean_diff = float(post_all.mean() - obs.mean()) if len(obs) and len(post_all) else np.nan
+            obs_var = float(np.nanvar(obs, ddof=1)) if len(obs) > 1 else np.nan
+            post_var = float(np.nanvar(post_all, ddof=1)) if len(post_all) > 1 else np.nan
+            pooled_sd = np.sqrt(obs_var) if not np.isnan(obs_var) else np.nan
+            smd = float((np.nanmean(imp) - np.nanmean(obs)) / pooled_sd) if pooled_sd and not np.isnan(pooled_sd) else np.nan
+            var_ratio = (post_var / obs_var) if (obs_var not in (0.0, np.nan) and not np.isnan(obs_var) and not np.isnan(post_var)) else np.nan
+
+            warn = (
+                (not np.isnan(smd) and abs(smd) >= smd_threshold) or
+                (not np.isnan(var_ratio) and (var_ratio <= var_ratio_low or var_ratio >= var_ratio_high)) or
+                (ks_p is not None and ks_p < ks_alpha)
+            )
+
+            rows.append(
+                BiasRow(
+                    column=col,
+                    n_obs=len(obs),
+                    n_imp=len(imp),
+                    mean_diff=mean_diff,
+                    smd=float(smd) if not np.isnan(smd) else np.nan,
+                    var_ratio=(
+                        float(var_ratio) if not np.isnan(var_ratio) else np.nan
+                    ),
+                    ks_stat=float(ks_stat) if ks_stat is not None else None,
+                    ks_p=float(ks_p) if ks_p is not None else None,
+                    warn=warn,
+                )
+            )
+        except Exception:
+            continue
+
+    df_out = pd.DataFrame([r.__dict__ for r in rows])
+    if not df_out.empty:
+        return df_out.sort_values(by=["warn", "column"], ascending=[False, True])
+    return df_out

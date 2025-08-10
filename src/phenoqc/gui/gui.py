@@ -797,6 +797,44 @@ def main():
             'tuning': tuning_cfg or {'enable': False},
         }
 
+        # Imputation-bias diagnostics (optional)
+        st.subheader("Imputation-bias diagnostic (optional)")
+        # Support both storage styles: legacy list in config['quality_metrics'] and
+        # thresholds stored at top-level config['imputation_bias'].
+        _qm_val = st.session_state['config'].get('quality_metrics')
+        if isinstance(_qm_val, dict):
+            existing_bias = _qm_val.get('imputation_bias', {}) or {}
+        else:
+            existing_bias = st.session_state['config'].get('imputation_bias', {}) or {}
+        bias_enable = st.checkbox("Enable imputation-bias diagnostic", value=bool(existing_bias.get('enable', False)))
+        smd_thr = st.number_input("SMD threshold", min_value=0.0, max_value=1.0, value=float(existing_bias.get('smd_threshold', 0.10)), step=0.01)
+        var_low = st.number_input("Variance ratio lower bound", min_value=0.01, max_value=1.0, value=float(existing_bias.get('var_ratio_low', 0.50)), step=0.01)
+        var_high = st.number_input("Variance ratio upper bound", min_value=1.0, max_value=10.0, value=float(existing_bias.get('var_ratio_high', 2.0)), step=0.1)
+        ks_alpha = st.number_input("KS alpha", min_value=0.001, max_value=0.5, value=float(existing_bias.get('ks_alpha', 0.05)), step=0.001, format="%0.3f")
+        if bias_enable:
+            # Ensure list-style metrics include 'imputation_bias'
+            qm_val = st.session_state['config'].get('quality_metrics')
+            if isinstance(qm_val, list):
+                if 'imputation_bias' not in qm_val:
+                    qm_val.append('imputation_bias')
+            elif qm_val is None:
+                st.session_state['config']['quality_metrics'] = ['imputation_bias']
+            # Store thresholds at top level for compatibility across code paths
+            st.session_state['config']['imputation_bias'] = {
+                'enable': True,
+                'smd_threshold': float(smd_thr),
+                'var_ratio_low': float(var_low),
+                'var_ratio_high': float(var_high),
+                'ks_alpha': float(ks_alpha),
+            }
+        else:
+            qm = st.session_state['config'].get('quality_metrics')
+            if isinstance(qm, list) and 'imputation_bias' in qm:
+                qm.remove('imputation_bias')
+            # Remove top-level thresholds when disabled
+            if 'imputation_bias' in st.session_state['config']:
+                st.session_state['config'].pop('imputation_bias', None)
+
         # Retain older session fields (used by legacy flow)
         st.session_state['imputation_config'] = {
             'global_strategy': global_strategy,
@@ -1028,6 +1066,57 @@ def main():
                                 st.warning(f"Severe imbalance flagged (minority < {thr:.0%}).")
 
                         # ---------------------------------------------------------
+                        # Imputation-bias diagnostics (if available)
+                        # ---------------------------------------------------------
+                        # Retrieve thresholds from top-level if present, else from dict style
+                        bias_cfg_gui = st.session_state.get('config', {}).get('imputation_bias', {}) or {}
+                        if not bias_cfg_gui:
+                            _qm_val2 = st.session_state.get('config', {}).get('quality_metrics', {})
+                            if isinstance(_qm_val2, dict):
+                                bias_cfg_gui = _qm_val2.get('imputation_bias', {}) or {}
+                        bias_rows = (
+                            result_dict.get('quality_metrics', {})
+                                      .get('imputation_bias', {})
+                                      .get('rows', [])
+                        )
+                        df_bias_gui = pd.DataFrame(bias_rows) if bias_rows else pd.DataFrame()
+                        if not df_bias_gui.empty:
+                            st.write("### Imputation-bias diagnostics")
+                            smd_thr = float(bias_cfg_gui.get('smd_threshold', 0.10))
+                            var_lo = float(bias_cfg_gui.get('var_ratio_low', 0.5))
+                            var_hi = float(bias_cfg_gui.get('var_ratio_high', 2.0))
+                            ks_alpha = float(bias_cfg_gui.get('ks_alpha', 0.05))
+
+                            def _trig_gui(row):
+                                reasons = []
+                                try:
+                                    v = float(row.get('smd'))
+                                    if abs(v) >= smd_thr:
+                                        reasons.append(f"SMD≥{smd_thr}")
+                                except Exception:
+                                    pass
+                                try:
+                                    vr = float(row.get('var_ratio'))
+                                    if vr < var_lo or vr > var_hi:
+                                        reasons.append(f"Var-ratio∉[{var_lo},{var_hi}]")
+                                except Exception:
+                                    pass
+                                try:
+                                    p = float(row.get('ks_p'))
+                                    if p < ks_alpha:
+                                        reasons.append(f"KS p<{ks_alpha}")
+                                except Exception:
+                                    pass
+                                return "; ".join(reasons)
+
+                            try:
+                                df_bias_gui['triggers'] = df_bias_gui.apply(_trig_gui, axis=1)
+                            except Exception:
+                                df_bias_gui['triggers'] = ""
+                            show_cols = [c for c in ['column','n_obs','n_imp','smd','var_ratio','ks_p','triggers','warn'] if c in df_bias_gui.columns]
+                            st.dataframe(df_bias_gui[show_cols].sort_values(by=['warn','smd'], ascending=[False, False]))
+
+                        # ---------------------------------------------------------
                         # Additional Quality Dimensions (only if enabled in config)
                         # ---------------------------------------------------------
                         active_metrics = st.session_state.get('config', {}).get('quality_metrics', []) or []
@@ -1153,6 +1242,8 @@ def main():
                             report_format='pdf',
                             class_distribution=result_dict.get('class_distribution'),
                             imputation_summary=result_dict.get('imputation_summary'),
+                            bias_diagnostics=(df_bias_gui if 'df_bias_gui' in locals() and not df_bias_gui.empty else None),
+                            bias_thresholds=(bias_cfg_gui if isinstance(bias_cfg_gui, dict) else None),
                         )
                         report_buffer.seek(0)
                         st.download_button(

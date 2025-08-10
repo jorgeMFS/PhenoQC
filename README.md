@@ -165,9 +165,10 @@ Highlights:
 
 ## Examples and Scripts
 
-- `scripts/quality_metrics_cli_test.py` – small demo with metrics
-- `scripts/imputation_params_cli_test.py` – runs with config-driven imputation and label column
-- `scripts/comprehensive_cli_test.py` – generates a comprehensive dataset and runs full pipeline
+- `scripts/e2e_small_quality_metrics_cli_test.py` – small demo focusing on quality metrics
+- `scripts/e2e_medium_cli_test.py` – mid-sized end-to-end pipeline run
+- `scripts/end_to_end_e2e_cli_test.py` – large end-to-end pipeline run
+- `scripts/imputation_params_cli_test.py` – imputation params and optional tuning
 
 ---
 

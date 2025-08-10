@@ -43,16 +43,17 @@ except ImportError:
 # =========================================
 # CONFIG: paths to your existing scripts
 # =========================================
-GENERATE_SCRIPT = "./generate_synthetic_ontology_data.py"
-BENCHMARK_SCRIPT = "./phenoqc_benchmark.py"
+# Use paths relative to repo root (this file lives under scripts/)
+GENERATE_SCRIPT = "scripts/generate_synthetic_ontology_data.py"
+BENCHMARK_SCRIPT = "scripts/phenoqc_benchmark.py"
 
 # Where outputs go
-OUTPUT_DIR = "./unified_scenarios_outputs"
+OUTPUT_DIR = "scripts/unified_scenarios_outputs"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # Common config, schema, etc.
-CONFIG_PATH = "./config/config.yaml"
-SCHEMA_PATH = "./config/schema.json"
+CONFIG_PATH = "scripts/config/config.yaml"
+SCHEMA_PATH = "scripts/config/schema.json"
 
 # ==================================================================
 # SCENARIO DEFINITIONS

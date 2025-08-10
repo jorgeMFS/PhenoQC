@@ -51,6 +51,9 @@ def generate_qc_report(
     file_identifier=None,
     class_distribution=None,
     imputation_summary: Optional[Dict] = None,
+    bias_diagnostics: Optional[pd.DataFrame] = None,
+    bias_thresholds: Optional[Dict] = None,
+    quality_metrics_enabled: Optional[object] = None,
 ):
     """
     Generates a quality control report (PDF or Markdown).
@@ -198,7 +201,11 @@ def generate_qc_report(
 
         # Schema Validation Results
         story.append(Paragraph("Schema Validation Results", subsection_header_style))
+        quality_metric_keys = {"Accuracy Issues", "Redundancy Issues", "Traceability Issues", "Timeliness Issues"}
         for key, value in validation_results.items():
+            # Skip quality metric entries here; they will be rendered in a dedicated section below
+            if key in quality_metric_keys:
+                continue
             if isinstance(value, pd.DataFrame):
                 if not value.empty:
                     story.append(Paragraph(
@@ -290,12 +297,31 @@ def generate_qc_report(
             flowables.append(Spacer(1, 18))
             return flowables
 
-        # Additional Quality Dimensions (styled tables) - only if present in validation_results
-        present_metrics = [m for m in ["Accuracy Issues", "Redundancy Issues", "Traceability Issues", "Timeliness Issues"] if m in validation_results]
-        if present_metrics:
+        # Additional Quality Dimensions (styled tables) - only if explicitly enabled
+        enabled_ids = set()
+        if isinstance(quality_metrics_enabled, list):
+            enabled_ids = {str(m).lower() for m in quality_metrics_enabled}
+        elif isinstance(quality_metrics_enabled, dict):
+            # dictionary style not typically used for these metrics; treat any truthy flag as enabled
+            for mid in ["accuracy", "redundancy", "traceability", "timeliness"]:
+                try:
+                    if quality_metrics_enabled.get(mid):
+                        enabled_ids.add(mid)
+                except Exception:
+                    pass
+        if enabled_ids:
             story.append(Paragraph("Additional Quality Dimensions", section_header_style))
-            for metric in present_metrics:
-                df_metric = validation_results[metric]
+            id_to_key = {
+                "accuracy": "Accuracy Issues",
+                "redundancy": "Redundancy Issues",
+                "traceability": "Traceability Issues",
+                "timeliness": "Timeliness Issues",
+            }
+            for metric_id in ["accuracy", "redundancy", "traceability", "timeliness"]:
+                if metric_id not in enabled_ids:
+                    continue
+                metric = id_to_key[metric_id]
+                df_metric = validation_results.get(metric, pd.DataFrame())
                 if isinstance(df_metric, pd.DataFrame):
                     block = build_dataframe_table(df_metric, metric, max_rows=50)
                     story.append(KeepTogether(block))
@@ -377,6 +403,101 @@ def generate_qc_report(
                 ))
             story.append(Spacer(1, SPACING_L))
 
+        # Imputation-bias diagnostics (optional)
+        if isinstance(bias_diagnostics, pd.DataFrame) and not bias_diagnostics.empty:
+            story.append(Paragraph("Imputation-bias diagnostics", section_header_style))
+            # Show thresholds if provided
+            if isinstance(bias_thresholds, dict) and bias_thresholds:
+                thr_text = \
+                    f"SMD≥{bias_thresholds.get('smd_threshold', 0.10)} | " \
+                    f"Var-ratio∉[{bias_thresholds.get('var_ratio_low', 0.5)},{bias_thresholds.get('var_ratio_high', 2.0)}] | " \
+                    f"KS p<{bias_thresholds.get('ks_alpha', 0.05)}"
+                story.append(Paragraph(f"<b>Warning rules:</b> {thr_text}", styles['Normal']))
+                story.append(Spacer(1, 6))
+            # Compute rule triggers per variable for explainability
+            _smd_thr = float(bias_thresholds.get('smd_threshold', 0.10)) if isinstance(bias_thresholds, dict) else 0.10
+            _var_lo = float(bias_thresholds.get('var_ratio_low', 0.5)) if isinstance(bias_thresholds, dict) else 0.5
+            _var_hi = float(bias_thresholds.get('var_ratio_high', 2.0)) if isinstance(bias_thresholds, dict) else 2.0
+            _ks_alpha = float(bias_thresholds.get('ks_alpha', 0.05)) if isinstance(bias_thresholds, dict) else 0.05
+
+            def _trigger_text(row) -> str:
+                reasons = []
+                try:
+                    val = pd.to_numeric(row.get('smd'), errors='coerce')
+                    if pd.notnull(val) and abs(float(val)) >= _smd_thr:
+                        reasons.append(f"SMD≥{_smd_thr}")
+                except Exception:
+                    pass
+                try:
+                    vr = pd.to_numeric(row.get('var_ratio'), errors='coerce')
+                    if pd.notnull(vr) and (float(vr) < _var_lo or float(vr) > _var_hi):
+                        reasons.append(f"Var-ratio∉[{_var_lo},{_var_hi}]")
+                except Exception:
+                    pass
+                try:
+                    pval = pd.to_numeric(row.get('ks_p'), errors='coerce')
+                    if pd.notnull(pval) and float(pval) < _ks_alpha:
+                        reasons.append(f"KS p<{_ks_alpha}")
+                except Exception:
+                    pass
+                return "; ".join(reasons)
+
+            cols_desired = [
+                ("column", "Variable"), ("n_obs", "n_obs"), ("n_imp", "n_imp"),
+                ("smd", "SMD"), ("var_ratio", "Var-ratio"), ("ks_p", "KS p"),
+                ("triggers", "Triggers"), ("warn", "Warn")
+            ]
+            df_bias = bias_diagnostics.copy()
+            present = [src for src, _ in cols_desired if src in df_bias.columns]
+            # Derive triggers before column selection to ensure availability
+            try:
+                df_bias['triggers'] = df_bias.apply(_trigger_text, axis=1)
+            except Exception:
+                df_bias['triggers'] = ""
+            df_bias = df_bias[[c for c in [src for src, _ in cols_desired] if c in df_bias.columns]]
+            # Rename headers for readability
+            rename_map = {src: label for src, label in cols_desired if src in df_bias.columns}
+            df_bias = df_bias.rename(columns=rename_map)
+            # Round numeric columns
+            for c in df_bias.columns:
+                if c in ("SMD", "Var-ratio", "KS p"):
+                    df_bias[c] = pd.to_numeric(df_bias[c], errors='coerce').round(3)
+            block = []
+            block.append(Paragraph(f"<b>Variables evaluated:</b> {len(df_bias)}", styles['Normal']))
+            block.extend(build_dataframe_table(df_bias, title="", max_rows=50))
+            story.append(KeepTogether(block))
+
+            # Traffic-light status bar for top variables (red=warn, green=ok)
+            try:
+                status_rows = []
+                header = [Paragraph("Variable", table_header_style), Paragraph("Status", table_header_style), Paragraph("Triggers", table_header_style)]
+                status_rows.append(header)
+                show_df = bias_diagnostics.sort_values(by=['warn', 'smd'], ascending=[False, False]).head(20)
+                for _, r in show_df.iterrows():
+                    var = str(r.get('column'))
+                    warn_flag = bool(r.get('warn', False))
+                    status_cell = Paragraph("WARN" if warn_flag else "OK", table_cell_style)
+                    trig = _trigger_text(r)
+                    status_rows.append([Paragraph(var, table_cell_style), status_cell, Paragraph(trig or "—", table_cell_style)])
+                status_tbl = Table(status_rows, colWidths=[available_width * 0.5, available_width * 0.15, available_width * 0.35])
+                status_tbl.setStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                    ('FONTSIZE', (0, 0), (-1, -1), 8),
+                    ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#B0B7BF')),
+                ])
+                # Color status cells
+                for i in range(1, len(status_rows)):
+                    warn_flag = bool(show_df.iloc[i-1].get('warn', False))
+                    color = colors.red if warn_flag else colors.green
+                    status_tbl.setStyle([('BACKGROUND', (1, i), (1, i), color), ('TEXTCOLOR', (1, i), (1, i), colors.white)])
+                story.append(Spacer(1, 6))
+                story.append(status_tbl)
+            except Exception:
+                logging.exception("Failed to render traffic-light status table for bias diagnostics.")
+
+            story.append(Spacer(1, SPACING_L))
+
         # Missing Data Summary (table)
         story.append(Paragraph("Missing Data Summary", section_header_style))
         if isinstance(missing_data, pd.Series) or isinstance(missing_data, dict):
@@ -418,7 +539,10 @@ def generate_qc_report(
                     Paragraph(str(int(stats.get('mapped_terms', 0))), table_cell_style),
                     Paragraph(f"{float(stats.get('success_rate', 0)):.2f}%", table_cell_style),
                 ])
-            map_table = Table(map_rows, colWidths=[available_width * 0.25, available_width * 0.25, available_width * 0.2, available_width * 0.3])
+            map_table = Table(
+                map_rows,
+                colWidths=[available_width * 0.25, available_width * 0.25, available_width * 0.2, available_width * 0.3]
+            )
             map_table.setStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
@@ -536,6 +660,52 @@ def generate_qc_report(
             except Exception:
                 # Keep MD generation resilient if image export fails
                 pass
+            md_lines.append("")
+
+        # Imputation-bias diagnostics (optional)
+        if isinstance(bias_diagnostics, pd.DataFrame) and not bias_diagnostics.empty:
+            md_lines.append("## Imputation-bias diagnostics")
+            if isinstance(bias_thresholds, dict) and bias_thresholds:
+                md_lines.append(
+                    f"- Thresholds: SMD≥{bias_thresholds.get('smd_threshold', 0.10)}, "
+                    f"Var-ratio outside [{bias_thresholds.get('var_ratio_low', 0.5)},{bias_thresholds.get('var_ratio_high', 2.0)}], "
+                    f"KS p<{bias_thresholds.get('ks_alpha', 0.05)}"
+                )
+            # Add a Triggers column explaining why WARN
+            _smd_thr = float(bias_thresholds.get('smd_threshold', 0.10)) if isinstance(bias_thresholds, dict) else 0.10
+            _var_lo = float(bias_thresholds.get('var_ratio_low', 0.5)) if isinstance(bias_thresholds, dict) else 0.5
+            _var_hi = float(bias_thresholds.get('var_ratio_high', 2.0)) if isinstance(bias_thresholds, dict) else 2.0
+            _ks_alpha = float(bias_thresholds.get('ks_alpha', 0.05)) if isinstance(bias_thresholds, dict) else 0.05
+            try:
+                _df_md = bias_diagnostics.copy()
+                def _trig_md(row):
+                    rs = []
+                    try:
+                        v = float(row.get('smd'))
+                        if abs(v) >= _smd_thr:
+                            rs.append(f"SMD≥{_smd_thr}")
+                    except Exception:
+                        pass
+                    try:
+                        vr = float(row.get('var_ratio'))
+                        if vr < _var_lo or vr > _var_hi:
+                            rs.append(f"Var-ratio∉[{_var_lo},{_var_hi}]")
+                    except Exception:
+                        pass
+                    try:
+                        p = float(row.get('ks_p'))
+                        if p < _ks_alpha:
+                            rs.append(f"KS p<{_ks_alpha}")
+                    except Exception:
+                        pass
+                    return "; ".join(rs)
+                _df_md['triggers'] = _df_md.apply(_trig_md, axis=1)
+                # Reorder if possible
+                cols = [c for c in ['column','n_obs','n_imp','smd','var_ratio','ks_p','triggers','warn'] if c in _df_md.columns]
+                _df_md = _df_md[cols]
+                md_lines.append(_df_md.to_markdown(index=False))
+            except Exception:
+                md_lines.append(bias_diagnostics.to_csv(index=False))
             md_lines.append("")
 
         md_lines.append("## Schema Validation Results")
