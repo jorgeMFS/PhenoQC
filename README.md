@@ -91,12 +91,6 @@ phenoqc \
 
 ## CLI
 
-New flags:
-
-- `--impute-params '{"n_neighbors": 5}'` (JSON)
-- `--impute-tuning on|off`
-- `--label-column class` and `--imbalance-threshold 0.10`
-
 Reports generated under `--output` include a PDF with:
 
 - Summary & scores
@@ -104,7 +98,7 @@ Reports generated under `--output` include a PDF with:
 - Additional Quality Dimensions (only when computed)
 - Missing data summary, mapping success, and visuals
 
-### CLI additions
+### Useful flags
 
 - `--impute-params '{"n_neighbors": 5}'` (JSON)
 - `--impute-tuning on|off`
@@ -112,7 +106,31 @@ Reports generated under `--output` include a PDF with:
 - `--quality-metrics imputation_bias redundancy` (or `all`)
 - Imputation-bias thresholds: `--bias-smd-threshold`, `--bias-var-low`, `--bias-var-high`, `--bias-ks-alpha`
 - Imputation stability diagnostics: `--impute-diagnostics on|off`, `--diag-repeats`, `--diag-mask-fraction`, `--diag-scoring`
-- Redundancy tuning: `--redundancy-threshold`, `--redundancy-method {pearson,spearman}`
+- Protected columns: `--protected-columns label outcome`
+- Redundancy: `--redundancy-threshold`, `--redundancy-method {pearson,spearman}`
+
+### Example: Enable Stability & Bias diagnostics
+
+```bash
+phenoqc \
+  --input data.csv \
+  --schema schema.json \
+  --config config.yaml \
+  --unique_identifiers SampleID \
+  --quality-metrics imputation_bias redundancy \
+  --impute knn --impute-params '{"n_neighbors": 5}' --impute-tuning on \
+  --impute-diagnostics on --diag-repeats 5 --diag-mask-fraction 0.10 --diag-scoring MAE \
+  --bias-smd-threshold 0.10 --bias-var-low 0.5 --bias-var-high 2.0 --bias-ks-alpha 0.05 \
+  --redundancy-threshold 0.98 --redundancy-method pearson \
+  --protected-columns label outcome \
+  --output ./reports/
+```
+
+### CLI vs config precedence
+
+- CLI flags override values in the YAML config for the run.
+- If you set `--impute-params` or enable `--impute-tuning on`, these take precedence over `imputation.params`/`imputation.tuning` in `config.yaml`.
+- Same precedence applies to diagnostics thresholds and redundancy settings.
 
 ### Config (new `imputation:` block)
 
@@ -155,7 +173,8 @@ Highlights:
 
 - Step 3: Optional label column and imbalance threshold
 - Step 4: Default strategy, per-column overrides, parameters, and tuning
-- Results: Class Distribution table/plot, Imputation Settings, Tuning Summary
+- Step 4 includes: Bias thresholds, Stability diagnostics (enable, repeats, mask fraction, scoring), Protected columns, and Redundancy settings
+- Results: Class Distribution table/plot, Imputation Settings, Imputation Stability & Bias, Tuning Summary
 
 ---
 
@@ -175,10 +194,6 @@ Highlights:
 - `scripts/end_to_end_e2e_cli_test.py` – large end-to-end pipeline run
 - `scripts/imputation_params_cli_test.py` – imputation params and optional tuning
 - `scripts/end_to_end_diagnostics_demo.sh` – end-to-end example enabling stability & bias diagnostics with CLI overrides
-
----
-
----
 
 ## Installation
 
