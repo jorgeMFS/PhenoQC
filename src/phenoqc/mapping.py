@@ -183,14 +183,20 @@ class OntologyMapper:
             return mappings
 
         # If the input already looks like an ontology ID, accept it directly for the matching ontology
-        # e.g., 'hp:0001250', 'doid:9352', 'mp:0000001'
-        if term_lower.startswith('hp:'):
-            direct = {'HPO': term.replace('hp:', 'HP:')}
-            # fill non-targets with None below
-        elif term_lower.startswith('doid:'):
-            direct = {'DO': term.replace('doid:', 'DOID:')}
-        elif term_lower.startswith('mp:'):
-            direct = {'MPO': term.replace('mp:', 'MP:')}
+        # e.g., 'hp:0001250', 'doid:9352', 'mp:0000001', 'HP:0001250', 'DOID:9352', 'MP:0000001'
+        import re
+
+        direct = {}
+        hp_match = re.match(r'^(hp:|HP:)(\d+)$', term.strip())
+        doid_match = re.match(r'^(doid:|DOID:)(\d+)$', term.strip())
+        mp_match = re.match(r'^(mp:|MP:)(\d+)$', term.strip())
+
+        if hp_match:
+            direct = {'HPO': f'HP:{hp_match.group(2)}'}
+        elif doid_match:
+            direct = {'DO': f'DOID:{doid_match.group(2)}'}
+        elif mp_match:
+            direct = {'MPO': f'MP:{mp_match.group(2)}'}
         else:
             direct = {}
 
