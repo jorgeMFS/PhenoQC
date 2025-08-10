@@ -50,6 +50,10 @@ Parameters
 - ``--impute``: Strategy for missing data (mean, median, mode, knn, mice, svd, none)
 - ``--impute-params``: JSON object of parameters for the imputation strategy (e.g. ``{"n_neighbors": 5}``)
 - ``--impute-tuning {on,off}``: Enable quick tuning (mask-and-score) for imputation
+- ``--quality-metrics``: Choose metrics (e.g., ``imputation_bias``); ``all`` enables all
+- ``--bias-smd-threshold``, ``--bias-var-low``, ``--bias-var-high``, ``--bias-ks-alpha``: thresholds for bias diagnostics
+- ``--impute-diagnostics {on,off}``, ``--diag-repeats``, ``--diag-mask-fraction``, ``--diag-scoring``: stability diagnostics
+- ``--redundancy-threshold``, ``--redundancy-method {pearson,spearman}``
 - ``--unique_identifiers``: Columns that uniquely identify each record
 - ``--phenotype_columns``: JSON mapping of columns to ontologies
 - ``--ontologies``: List of ontology IDs
@@ -130,7 +134,8 @@ PhenoQC generates:
 
 1. Validated and processed data files
 2. Quality control reports (PDF/Markdown)
-   - Imputation Settings (strategy/params; tuning summary)
+   - Imputation Settings (strategy/params; tuning summary, random_state)
+   - Imputation Stability & Bias (if enabled): per-variable stability (CV of MAE/RMSE), bias metrics and thresholds
    - Optional Class Distribution (when label column configured)
    - Additional Quality Dimensions (only when computed)
 3. Visual summaries of data quality

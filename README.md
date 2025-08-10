@@ -109,6 +109,10 @@ Reports generated under `--output` include a PDF with:
 - `--impute-params '{"n_neighbors": 5}'` (JSON)
 - `--impute-tuning on|off`
 - `--label-column class` and `--imbalance-threshold 0.10`
+- `--quality-metrics imputation_bias redundancy` (or `all`)
+- Imputation-bias thresholds: `--bias-smd-threshold`, `--bias-var-low`, `--bias-var-high`, `--bias-ks-alpha`
+- Imputation stability diagnostics: `--impute-diagnostics on|off`, `--diag-repeats`, `--diag-mask-fraction`, `--diag-scoring`
+- Redundancy tuning: `--redundancy-threshold`, `--redundancy-method {pearson,spearman}`
 
 ### Config (new `imputation:` block)
 
@@ -159,6 +163,7 @@ Highlights:
 
 - Class Distribution: table and warning when minority proportion < threshold
 - Imputation Settings: global strategy/params and tuning summary
+- Imputation Stability & Bias: per-variable stability (repeatability) and bias diagnostics with thresholds and triggers
 - Additional Quality: only displayed if metrics are computed
 
 ---
@@ -169,6 +174,7 @@ Highlights:
 - `scripts/e2e_medium_cli_test.py` – mid-sized end-to-end pipeline run
 - `scripts/end_to_end_e2e_cli_test.py` – large end-to-end pipeline run
 - `scripts/imputation_params_cli_test.py` – imputation params and optional tuning
+- `scripts/end_to_end_diagnostics_demo.sh` – end-to-end example enabling stability & bias diagnostics with CLI overrides
 
 ---
 

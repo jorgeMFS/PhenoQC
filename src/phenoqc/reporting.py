@@ -53,6 +53,7 @@ def generate_qc_report(
     imputation_summary: Optional[Dict] = None,
     bias_diagnostics: Optional[pd.DataFrame] = None,
     bias_thresholds: Optional[Dict] = None,
+    stability_diagnostics: Optional[pd.DataFrame] = None,
     quality_metrics_enabled: Optional[object] = None,
 ):
     """
@@ -403,9 +404,25 @@ def generate_qc_report(
                 ))
             story.append(Spacer(1, SPACING_L))
 
-        # Imputation-bias diagnostics (optional)
+        # Imputation Stability & Bias (optional)
         if isinstance(bias_diagnostics, pd.DataFrame) and not bias_diagnostics.empty:
-            story.append(Paragraph("Imputation-bias diagnostics", section_header_style))
+            story.append(Paragraph("Imputation Stability & Bias", section_header_style))
+            # Stability summary (if provided)
+            if isinstance(stability_diagnostics, pd.DataFrame) and not stability_diagnostics.empty:
+                story.append(Spacer(1, 6))
+                story.append(Paragraph("Stability (repeatability)", subsection_header_style))
+                try:
+                    # Show top variables by worst (highest) cv_error
+                    df_stab = stability_diagnostics.copy()
+                    df_stab = df_stab.sort_values(by=['cv_error','mean_error'], ascending=[False, True]).head(20)
+                    # Round for display
+                    for c in ('mean_error','sd_error','cv_error'):
+                        if c in df_stab.columns:
+                            df_stab[c] = pd.to_numeric(df_stab[c], errors='coerce').round(4)
+                    block = build_dataframe_table(df_stab, title="Imputation Stability (top variables)", max_rows=50)
+                    story.append(KeepTogether(block))
+                except Exception:
+                    pass
             # Show thresholds if provided
             if isinstance(bias_thresholds, dict) and bias_thresholds:
                 thr_text = \
@@ -662,9 +679,23 @@ def generate_qc_report(
                 pass
             md_lines.append("")
 
-        # Imputation-bias diagnostics (optional)
+        # Imputation Stability & Bias (optional)
         if isinstance(bias_diagnostics, pd.DataFrame) and not bias_diagnostics.empty:
-            md_lines.append("## Imputation-bias diagnostics")
+            md_lines.append("## Imputation Stability & Bias")
+            # Stability snippet (if provided)
+            if isinstance(stability_diagnostics, pd.DataFrame) and not stability_diagnostics.empty:
+                try:
+                    _df_st = stability_diagnostics.copy()
+                    _df_st = _df_st.sort_values(by=['cv_error','mean_error'], ascending=[False, True]).head(20)
+                    # Select columns if present
+                    cols = [c for c in ['column','metric','repeats','mean_error','sd_error','cv_error'] if c in _df_st.columns]
+                    _df_st = _df_st[cols]
+                    md_lines.append(_df_st.to_markdown(index=False))
+                except Exception:
+                    try:
+                        md_lines.append(stability_diagnostics.to_csv(index=False))
+                    except Exception:
+                        pass
             if isinstance(bias_thresholds, dict) and bias_thresholds:
                 md_lines.append(
                     f"- Thresholds: SMD≥{bias_thresholds.get('smd_threshold', 0.10)}, "

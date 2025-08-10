@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Dict, Any
 import numpy as np
 from scipy import stats
+from .missing_data import ImputationEngine
 
 # Central list of quality metric identifiers used across the application.
 QUALITY_METRIC_CHOICES = [
@@ -66,7 +67,7 @@ def check_accuracy(df: pd.DataFrame, schema_cfg: Dict[str, Any]) -> pd.DataFrame
     return pd.DataFrame(records)
 
 
-def detect_redundancy(df: pd.DataFrame, threshold: float = 0.98) -> pd.DataFrame:
+def detect_redundancy(df: pd.DataFrame, threshold: float = 0.98, method: str = 'pearson') -> pd.DataFrame:
     """Detect highly correlated or identical columns.
 
     Numeric columns are checked using Pearson correlation. Any pair with an
@@ -90,10 +91,13 @@ def detect_redundancy(df: pd.DataFrame, threshold: float = 0.98) -> pd.DataFrame
     records = []
     seen_pairs = set()
 
-    # Pearson correlation for numeric columns
+    # Correlation for numeric columns using selected method ('pearson' or 'spearman')
     numeric_cols = df.select_dtypes(include="number").columns
     if len(numeric_cols) >= 2:
-        corr = df[numeric_cols].corr(method="pearson").abs()
+        try:
+            corr = df[numeric_cols].corr(method=str(method or 'pearson')).abs()
+        except Exception:
+            corr = df[numeric_cols].corr(method="pearson").abs()
         for i, col1 in enumerate(numeric_cols):
             for col2 in numeric_cols[i + 1:]:
                 val = corr.loc[col1, col2]
@@ -336,6 +340,7 @@ def imputation_bias_report(
             if len(obs) == 0 or len(imp) == 0:
                 continue
 
+            low_n = bool(len(obs) < 10 or len(imp) < 10)
             if len(obs) < 3 or len(imp) < 3:
                 ks_stat = None
                 ks_p = None
@@ -348,6 +353,11 @@ def imputation_bias_report(
             pooled_sd = np.sqrt(obs_var) if not np.isnan(obs_var) else np.nan
             smd = float((np.nanmean(imp) - np.nanmean(obs)) / pooled_sd) if pooled_sd and not np.isnan(pooled_sd) else np.nan
             var_ratio = (post_var / obs_var) if (obs_var not in (0.0, np.nan) and not np.isnan(obs_var) and not np.isnan(post_var)) else np.nan
+            # Optional Wasserstein distance for distributional shift (not part of warn thresholds)
+            try:
+                wdist = float(stats.wasserstein_distance(obs.values, imp.values)) if len(obs) and len(imp) else np.nan
+            except Exception:
+                wdist = np.nan
 
             warn = (
                 (not np.isnan(smd) and abs(smd) >= smd_threshold) or
@@ -370,10 +380,118 @@ def imputation_bias_report(
                     warn=warn,
                 )
             )
+            # Append auxiliary fields directly on dict export stage
+            rows[-1].__dict__['wdist'] = wdist
+            rows[-1].__dict__['low_n'] = low_n
         except Exception:
             continue
 
     df_out = pd.DataFrame([r.__dict__ for r in rows])
     if not df_out.empty:
         return df_out.sort_values(by=["warn", "column"], ascending=[False, True])
+    return df_out
+
+
+def imputation_stability_cv(
+    df: pd.DataFrame,
+    strategy: str,
+    params: Optional[Dict[str, Any]] = None,
+    repeats: int = 5,
+    mask_fraction: float = 0.10,
+    scoring: str = 'MAE',
+    random_state: int = 42,
+    columns: Optional[List[str]] = None,
+) -> pd.DataFrame:
+    """Estimate imputation repeatability via repeated mask-and-impute.
+
+    For each repeat, randomly mask a fraction of observed numeric cells, impute,
+    and compute an error per column on the masked positions using the chosen
+    scoring rule ('MAE' or 'RMSE'). Aggregate per-column across repeats to
+    obtain mean_error, sd_error, and a simple stability score (cv_error).
+
+    Returns a DataFrame with columns: column, repeats, metric, mean_error,
+    sd_error, cv_error.
+    """
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+        return pd.DataFrame(columns=[
+            'column', 'repeats', 'metric', 'mean_error', 'sd_error', 'cv_error'
+        ])
+
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    if columns is not None:
+        numeric_cols = [c for c in numeric_cols if c in set(columns)]
+    if not numeric_cols:
+        return pd.DataFrame(columns=[
+            'column', 'repeats', 'metric', 'mean_error', 'sd_error', 'cv_error'
+        ])
+
+    rng = np.random.RandomState(int(random_state))
+    metric_name = str(scoring or 'MAE').upper()
+    params = params or {}
+
+    # Precompute observed mask and coordinates per column
+    observed = df[numeric_cols].notna().to_numpy()
+    coords_all = np.argwhere(observed)
+    if coords_all.size == 0:
+        return pd.DataFrame(columns=['column', 'repeats', 'metric', 'mean_error', 'sd_error', 'cv_error'])
+    num_cells = coords_all.shape[0]
+    sample_size = max(1, int(mask_fraction * num_cells))
+
+    per_col_errors: Dict[str, list] = {c: [] for c in numeric_cols}
+
+    for r in range(int(repeats)):
+        try:
+            idxs = rng.choice(num_cells, size=sample_size, replace=False)
+            mask_coords = coords_all[idxs]
+            masked = df[numeric_cols].copy()
+            arr = masked.to_numpy().astype(float)
+            original_vals = df[numeric_cols].to_numpy().astype(float).copy()
+            # Build boolean mask for masked cells
+            mask_bool = np.zeros_like(arr, dtype=bool)
+            mask_bool[mask_coords[:, 0], mask_coords[:, 1]] = True
+            arr[mask_bool] = np.nan
+            masked.iloc[:, :] = arr
+
+            # Impute using the provided strategy/params via ImputationEngine
+            engine = ImputationEngine({'strategy': strategy, 'params': params})
+            imputed = engine.fit_transform(masked)
+            imputed_arr = imputed[numeric_cols].to_numpy().astype(float)
+
+            # Compute error on masked positions per column
+            for j, col in enumerate(numeric_cols):
+                col_mask = mask_bool[:, j]
+                if not np.any(col_mask):
+                    continue
+                true_vals = original_vals[:, j][col_mask]
+                pred_vals = imputed_arr[:, j][col_mask]
+                diffs = pred_vals - true_vals
+                if metric_name == 'RMSE':
+                    err = float(np.sqrt(np.mean(diffs ** 2)))
+                else:
+                    err = float(np.mean(np.abs(diffs)))
+                if not np.isnan(err):
+                    per_col_errors[col].append(err)
+        except Exception:
+            continue
+
+    records = []
+    for col in numeric_cols:
+        errs = per_col_errors.get(col, [])
+        if not errs:
+            continue
+        mean_err = float(np.mean(errs))
+        sd_err = float(np.std(errs, ddof=1)) if len(errs) > 1 else 0.0
+        cv_err = float(sd_err / mean_err) if mean_err != 0 else np.inf
+        records.append({
+            'column': col,
+            'repeats': int(repeats),
+            'metric': metric_name,
+            'mean_error': mean_err,
+            'sd_error': sd_err,
+            'cv_error': cv_err,
+        })
+
+    df_out = pd.DataFrame(records)
+    if not df_out.empty:
+        return df_out.sort_values(by=['cv_error', 'mean_error'], ascending=[False, True])
     return df_out

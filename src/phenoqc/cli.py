@@ -41,6 +41,16 @@ def parse_arguments():
         default='off',
         help='Enable quick tuning for imputation (mask-and-score)'
     )
+    # Optional stability diagnostics for imputation
+    parser.add_argument(
+        '--impute-diagnostics',
+        choices=['on', 'off'],
+        default='off',
+        help='Enable imputation stability diagnostics (repeatability)'
+    )
+    parser.add_argument('--diag-repeats', type=int, default=5, help='Repeats for stability diagnostic (default 5)')
+    parser.add_argument('--diag-mask-fraction', type=float, default=0.10, help='Mask fraction for stability diagnostic (default 0.10)')
+    parser.add_argument('--diag-scoring', choices=['MAE','RMSE'], default='MAE', help='Scoring metric for stability diagnostic (default MAE)')
     parser.add_argument('--recursive', action='store_true', help='Enable recursive directory scanning for nested files')
     parser.add_argument('--unique_identifiers', nargs='+', required=True, help='List of column names that uniquely identify a record')
     parser.add_argument('--ontologies', nargs='+', help='List of ontologies to map to (e.g., HPO DO MPO)', default=None)
@@ -60,6 +70,9 @@ def parse_arguments():
         help='Additional quality metrics to evaluate',
         default=None
     )
+    # Redundancy metric configuration
+    parser.add_argument('--redundancy-threshold', type=float, default=None, help='Correlation threshold for redundancy (overrides config if set)')
+    parser.add_argument('--redundancy-method', choices=['pearson','spearman'], default=None, help='Correlation method for redundancy (overrides config if set)')
     # Optional thresholds for imputation-bias diagnostic
     parser.add_argument('--bias-smd-threshold', type=float, default=0.10, help='SMD threshold for bias warning (default 0.10)')
     parser.add_argument('--bias-var-low', type=float, default=0.5, help='Variance ratio lower bound (default 0.5)')
@@ -76,6 +89,13 @@ def parse_arguments():
         default=0.10,
         help='Minority class proportion threshold to flag imbalance (default: 0.10)'
     )
+    parser.add_argument(
+        '--protected-columns', '--protected_columns',
+        nargs='+',
+        dest='protected_columns',
+        help='Columns to protect from imputation and tuning (accepts space or comma separated)',
+        default=[]
+    )
     args = parser.parse_args()
     
     # Convert old phenotype_column to new format if specified
@@ -86,6 +106,16 @@ def parse_arguments():
 
     if args.quality_metrics and 'all' in args.quality_metrics:
         args.quality_metrics = QUALITY_METRIC_CHOICES
+
+    # Normalize protected_columns: allow both space-separated and comma-separated entries
+    if isinstance(args.protected_columns, list):
+        normalized = []
+        for entry in args.protected_columns:
+            if isinstance(entry, str):
+                normalized.extend([p.strip() for p in entry.split(',') if p.strip()])
+        args.protected_columns = normalized
+    elif isinstance(args.protected_columns, str):
+        args.protected_columns = [p.strip() for p in args.protected_columns.split(',') if p.strip()]
 
     return args
 
@@ -203,6 +233,13 @@ def main():
         bias_var_low=args.bias_var_low,
         bias_var_high=args.bias_var_high,
         bias_ks_alpha=args.bias_ks_alpha,
+        protected_columns=args.protected_columns,
+        impute_diag_enable=(args.impute_diagnostics == 'on'),
+        diag_repeats=args.diag_repeats,
+        diag_mask_fraction=args.diag_mask_fraction,
+        diag_scoring=args.diag_scoring,
+        redundancy_threshold=args.redundancy_threshold,
+        redundancy_method=args.redundancy_method,
     )
     
     for result in results:

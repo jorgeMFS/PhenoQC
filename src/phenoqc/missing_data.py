@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import logging
+import warnings
 from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import KNNImputer, IterativeImputer
 import itertools
@@ -199,6 +200,16 @@ class ImputationEngine:
     def __init__(self, cfg: Optional[dict], exclude_columns: Optional[List[str]] = None) -> None:
         self.cfg = cfg or {}
         self.exclude_columns = set(exclude_columns or [])
+        
+        # Warn if protected columns are requested as imputation targets
+        if exclude_columns:
+            per_column = cfg.get('per_column', {}) if cfg else {}
+            for col in exclude_columns:
+                if col in per_column:
+                    message = f"Protected column '{col}' is configured for imputation but will be excluded"
+                    logging.warning(message)
+                    warnings.warn(message, UserWarning)
+        
         self.chosen_params: dict = {}
         # Python 3.9 compatibility: avoid PEP 604 union types
         from typing import Optional as _OptionalDictType
@@ -441,6 +452,9 @@ class ImputationEngine:
         strategy_to_cols: dict[str, list[str]] = {}
         col_params: dict[str, dict] = {}
         for c in result.columns:
+            # Skip columns that are protected from any imputation/tuning
+            if c in self.exclude_columns:
+                continue
             if result[c].isna().sum() == 0:
                 continue
             if c in per_column:
