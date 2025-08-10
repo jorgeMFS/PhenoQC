@@ -966,7 +966,10 @@ def process_file(
                 "quality_metrics": {
                     "imputation_bias": {
                         "rows": (bias_df.to_dict(orient='records') if isinstance(bias_df, pd.DataFrame) else [])
-                    }
+                        },
+                        "imputation_stability": {
+                            "rows": (stability_df.to_dict(orient='records') if isinstance(stability_df, pd.DataFrame) else [])
+                        },
                 },
             }
 

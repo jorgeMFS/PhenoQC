@@ -7,5 +7,5 @@ row	column	value	minimum	maximum	metric	column_1	column_2	issue	SampleID	Height_
 0.0					traceability			duplicate_identifier											
 1.0					traceability			duplicate_identifier											
 2.0					traceability			missing_identifier											
-					timeliness			lag_exceeded	1.0	170.0	70.0	170.0	120.0	60.0	90.0	1.0	HP:0001250	2025-07-30	False
+					timeliness			lag_exceeded	1.0	170.0	70.0	170.0	120.0	60.0	90.0	1.0	HP:0001250	2025-07-31	False
 					timeliness			missing_or_invalid_date		180.0	75.0	180.0	140.0	70.0	100.0	1.1	HP:0000001	not_a_date	True

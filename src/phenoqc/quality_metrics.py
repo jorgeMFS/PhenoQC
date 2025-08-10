@@ -1,11 +1,12 @@
 import pandas as pd
 import hashlib
 import collections
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import List, Optional, Dict, Any
 import numpy as np
 from scipy import stats
 from .missing_data import ImputationEngine
+import logging
 
 # Central list of quality metric identifiers used across the application.
 QUALITY_METRIC_CHOICES = [
@@ -97,6 +98,7 @@ def detect_redundancy(df: pd.DataFrame, threshold: float = 0.98, method: str = '
         try:
             corr = df[numeric_cols].corr(method=str(method or 'pearson')).abs()
         except Exception:
+            logging.warning("Invalid correlation method '%s' for redundancy; falling back to 'pearson'", method)
             corr = df[numeric_cols].corr(method="pearson").abs()
         for i, col1 in enumerate(numeric_cols):
             for col2 in numeric_cols[i + 1:]:
@@ -340,7 +342,7 @@ def imputation_bias_report(
             if len(obs) == 0 or len(imp) == 0:
                 continue
 
-            low_n = bool(len(obs) < 10 or len(imp) < 10)
+            low_n = (len(obs) < 10 or len(imp) < 10)
             if len(obs) < 3 or len(imp) < 3:
                 ks_stat = None
                 ks_p = None
@@ -365,28 +367,28 @@ def imputation_bias_report(
                 (ks_p is not None and ks_p < ks_alpha)
             )
 
-            rows.append(
-                BiasRow(
-                    column=col,
-                    n_obs=len(obs),
-                    n_imp=len(imp),
-                    mean_diff=mean_diff,
-                    smd=float(smd) if not np.isnan(smd) else np.nan,
-                    var_ratio=(
-                        float(var_ratio) if not np.isnan(var_ratio) else np.nan
-                    ),
-                    ks_stat=float(ks_stat) if ks_stat is not None else None,
-                    ks_p=float(ks_p) if ks_p is not None else None,
-                    warn=warn,
-                )
+            row_obj = BiasRow(
+                column=col,
+                n_obs=len(obs),
+                n_imp=len(imp),
+                mean_diff=mean_diff,
+                smd=float(smd) if not np.isnan(smd) else np.nan,
+                var_ratio=(
+                    float(var_ratio) if not np.isnan(var_ratio) else np.nan
+                ),
+                ks_stat=float(ks_stat) if ks_stat is not None else None,
+                ks_p=float(ks_p) if ks_p is not None else None,
+                warn=warn,
             )
-            # Append auxiliary fields directly on dict export stage
-            rows[-1].__dict__['wdist'] = wdist
-            rows[-1].__dict__['low_n'] = low_n
+            row_dict = asdict(row_obj)
+            row_dict['wdist'] = wdist
+            row_dict['low_n'] = low_n
+            rows.append(row_dict)
         except Exception:
             continue
 
-    df_out = pd.DataFrame([r.__dict__ for r in rows])
+    # rows is a list of dictionaries after refactor above
+    df_out = pd.DataFrame(rows)
     if not df_out.empty:
         return df_out.sort_values(by=["warn", "column"], ascending=[False, True])
     return df_out

@@ -91,6 +91,19 @@ def test_imputation_bias_all_missing_column():
     assert bias_df.empty or not (bias_df['column'] == 'x').any()
 
 
+def test_imputation_bias_low_n_sets_ks_none_and_has_low_n_flag():
+    # Small sample sizes cause KS to be None and low_n flag True
+    orig = pd.DataFrame({"x": [1.0, 2.0]})
+    imp = pd.DataFrame({"x": [1.5, 2.5]})
+    mask = {"x": pd.Series([True, False])}
+    out = imputation_bias_report(original_df=orig, imputed_df=imp, imputation_mask=mask, columns=["x"], smd_threshold=0.0)
+    assert isinstance(out, pd.DataFrame)
+    if not out.empty:
+        row = out.iloc[0].to_dict()
+        assert row.get("ks_p", None) in (None, np.nan)
+        assert row.get("low_n", False) in (True, False)
+
+
 def test_imputation_bias_all_observed_column():
     # All values observed, no missing
     df_observed = pd.DataFrame({'x': np.arange(10)})

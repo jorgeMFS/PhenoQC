@@ -36,3 +36,18 @@ def test_stability_cv_columns_filtering():
     assert set(res['column'].unique()).issubset({'a','b'})
 
 
+def test_stability_cv_empty_df():
+    empty = pd.DataFrame()
+    out = imputation_stability_cv(empty, strategy='mean')
+    assert isinstance(out, pd.DataFrame)
+    assert out.empty
+
+
+def test_stability_cv_all_missing_numeric():
+    df = pd.DataFrame({'x': [np.nan, np.nan, np.nan]})
+    out = imputation_stability_cv(df, strategy='mean')
+    assert isinstance(out, pd.DataFrame)
+    # No observed cells to mask => empty result
+    assert out.empty
+
+

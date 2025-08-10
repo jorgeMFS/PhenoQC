@@ -3,8 +3,8 @@
   "quality_scores": {
     "Schema Validation Score": 33.33333333333333,
     "Missing Data Score": 97.43589743589743,
-    "Mapping Success Score": 0.0,
-    "Overall Quality Score": 43.58974358974359
+    "Mapping Success Score": 100.0,
+    "Overall Quality Score": 76.92307692307692
   },
   "imputation": {
     "global": {

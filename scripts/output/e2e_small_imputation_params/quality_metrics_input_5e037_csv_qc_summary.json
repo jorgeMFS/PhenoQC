@@ -1,0 +1,45 @@
+{
+  "file": "quality_metrics_input.csv",
+  "quality_scores": {
+    "Schema Validation Score": 0.0,
+    "Missing Data Score": 93.75,
+    "Mapping Success Score": 100.0,
+    "Overall Quality Score": 64.58333333333333
+  },
+  "imputation": {
+    "global": {
+      "strategy": "knn",
+      "params": {
+        "n_neighbors": 5,
+        "weights": "uniform"
+      }
+    },
+    "tuning": {
+      "enabled": true,
+      "best": {
+        "n_neighbors": 3
+      },
+      "score": 0.0,
+      "metric": "MAE"
+    }
+  },
+  "class_distribution": {
+    "counts": {
+      "majority": 3,
+      "minority": 1
+    },
+    "proportions": {
+      "majority": 0.75,
+      "minority": 0.25
+    },
+    "minority_class": "minority",
+    "minority_prop": 0.25,
+    "warn_threshold": 0.1,
+    "warning": false
+  },
+  "quality_metrics": {
+    "imputation_bias": {
+      "rows": []
+    }
+  }
+}

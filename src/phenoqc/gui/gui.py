@@ -845,9 +845,8 @@ def main():
         scoring_val = st.selectbox("Scoring", options=['MAE','RMSE'], index=0 if str(stability_cfg.get('scoring','MAE')).upper()=='MAE' else 1)
         if stab_enable:
             qm_val = st.session_state['config'].get('quality_metrics')
-            if isinstance(qm_val, list):
-                if 'imputation_bias' not in qm_val:
-                    pass
+            if isinstance(qm_val, list) and 'imputation_bias' not in qm_val:
+                pass
             # store under dict style for processing integration
             if not isinstance(st.session_state['config'].get('quality_metrics'), dict):
                 st.session_state['config']['quality_metrics'] = {}

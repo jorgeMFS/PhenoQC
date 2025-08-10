@@ -44,3 +44,9 @@ quality_metrics:
 date_col: VisitDate
 max_lag_days: 5
 source_column: SampleID
+
+# Protected columns that should never be used for imputation or tuning
+# These columns are excluded from the feature matrix to prevent label leakage
+protected_columns:
+  - DiseaseCode  # Example: disease outcome column
+  - PrimaryPhenotype  # Example: phenotype label column
