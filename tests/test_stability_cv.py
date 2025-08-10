@@ -2,6 +2,12 @@ import numpy as np
 import pandas as pd
 from phenoqc.quality_metrics import imputation_stability_cv
 
+def test_stability_cv_non_numeric_only():
+    # DataFrame with only non-numeric columns
+    df = pd.DataFrame({'a': ['foo', 'bar', 'baz'], 'b': ['x', 'y', 'z']})
+    out = imputation_stability_cv(df, strategy='mean')
+    assert isinstance(out, pd.DataFrame)
+    assert out.empty
 
 def test_stability_cv_basic_and_columns():
     rng = np.random.RandomState(42)
