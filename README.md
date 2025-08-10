@@ -51,18 +51,45 @@
 - [Quick Start](#quick-start)
 - [CLI](#cli)
 - [GUI](#gui)
-- [Configuration](#configuration)
 - [Reports](#reports)
 - [Examples and Scripts](#examples-and-scripts)
+- [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
+
+---
+
+## Installation
+
+PhenoQC requires Python 3.9+.
+
+### From PyPI
+
+```bash
+pip install phenoqc
+```
+
+### From source
+
+```bash
+git clone https://github.com/jorgeMFS/PhenoQC.git
+cd PhenoQC
+pip install -e .
+```
+
+For local development without installation you can run:
+
+```bash
+python -m phenoqc.cli
+```
+
+Dependencies are listed in `requirements.txt`.
 
 ---
 
 ## Quick Start
 
 ```bash
-pip install phenoqc
 phenoqc --help
 
 # Minimal run
@@ -91,12 +118,38 @@ phenoqc \
 
 ## CLI
 
-Reports generated under `--output` include a PDF with:
+PhenoQC provides a flexible command-line interface suited for automation.
 
-- Summary & scores
-- Optional Class Distribution (when label column is set)
-- Additional Quality Dimensions (only when computed)
-- Missing data summary, mapping success, and visuals
+### Examples
+
+#### Process a single file
+
+```bash
+phenoqc \
+  --input examples/samples/sample_data.json \
+  --output ./reports/ \
+  --schema examples/schemas/pheno_schema.json \
+  --config config.yaml \
+  --custom_mappings examples/mapping/custom_mappings.json \
+  --impute mice \
+  --unique_identifiers SampleID \
+  --phenotype_columns '{"PrimaryPhenotype": ["HPO"], "DiseaseCode": ["DO"]}' \
+  --ontologies HPO DO
+```
+
+#### Batch process multiple files
+
+```bash
+phenoqc \
+  --input examples/samples/sample_data.csv examples/samples/sample_data.json examples/samples/sample_data.tsv \
+  --output ./reports/ \
+  --schema examples/schemas/pheno_schema.json \
+  --config config.yaml \
+  --impute none \
+  --unique_identifiers SampleID \
+  --ontologies HPO DO MPO \
+  --phenotype_columns '{"PrimaryPhenotype": ["HPO"], "DiseaseCode": ["DO"], "TertiaryPhenotype": ["MPO"]}'
+```
 
 ### Useful flags
 
@@ -109,22 +162,12 @@ Reports generated under `--output` include a PDF with:
 - Protected columns: `--protected-columns label outcome`
 - Redundancy: `--redundancy-threshold`, `--redundancy-method {pearson,spearman}`
 
-### Example: Enable Stability & Bias diagnostics
+Reports generated under `--output` include a PDF with:
 
-```bash
-phenoqc \
-  --input data.csv \
-  --schema schema.json \
-  --config config.yaml \
-  --unique_identifiers SampleID \
-  --quality-metrics imputation_bias redundancy \
-  --impute knn --impute-params '{"n_neighbors": 5}' --impute-tuning on \
-  --impute-diagnostics on --diag-repeats 5 --diag-mask-fraction 0.10 --diag-scoring MAE \
-  --bias-smd-threshold 0.10 --bias-var-low 0.5 --bias-var-high 2.0 --bias-ks-alpha 0.05 \
-  --redundancy-threshold 0.98 --redundancy-method pearson \
-  --protected-columns label outcome \
-  --output ./reports/
-```
+- Summary & scores
+- Optional Class Distribution (when label column is set)
+- Additional Quality Dimensions (only when computed)
+- Missing data summary, mapping success, and visuals
 
 ### CLI vs config precedence
 
@@ -157,19 +200,17 @@ imputation:
       n_neighbors: [3, 5, 7]
 ```
 
-Per-column overrides accept their own params. The quick tuner supports KNN, MICE (max_iter) and SVD (rank); you can pass a grid to explore.
-
 ---
 
 ## GUI
 
-Launch:
+Launch the Streamlit interface:
 
 ```bash
 python run_gui.py
 ```
 
-Highlights:
+Workflow:
 
 - Step 3: Optional label column and imbalance threshold
 - Step 4: Default strategy, per-column overrides, parameters, and tuning
@@ -193,6 +234,7 @@ Highlights:
 - `scripts/e2e_medium_cli_test.py` – mid-sized end-to-end pipeline run
 - `scripts/end_to_end_e2e_cli_test.py` – large end-to-end pipeline run
 - `scripts/imputation_params_cli_test.py` – imputation params and optional tuning
+<<<<<<< HEAD
 - `scripts/end_to_end_diagnostics_demo.sh` – end-to-end example enabling stability & bias diagnostics with CLI overrides
 
 ## Installation
@@ -298,6 +340,8 @@ python run_gui.py
 3. **Choose Unique Identifiers & Ontologies**: Select columns to map to ontologies (HPO, DO, etc.) and specify unique identifier columns (e.g., `SampleID`).
 4. **Set Missing Data Strategy**: Choose an imputation strategy (mean, median, mode, advanced).
 5. **Run QC**: Process data and review results. Download generated reports.
+=======
+>>>>>>> origin/main
 
 ---
 
@@ -394,4 +438,4 @@ For more details, see the [GitHub Wiki](https://github.com/jorgeMFS/PhenoQC/wiki
 
 ---
 
-*Last updated: January 13, 2025.*
+*Last updated: August 10, 2025.*
