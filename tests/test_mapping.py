@@ -24,6 +24,7 @@ ontology: Human Phenotype Ontology
 id: HP:0000822
 name: Hypertension
 synonym: "High blood pressure" EXACT []
+alt_id: HP:0999999
 
 [Term]
 id: HP:0001627
@@ -52,6 +53,7 @@ id: DOID:1612
 name: Diabetes Mellitus
 synonym: "Sugar diabetes" EXACT []
 synonym: "Diabetes" EXACT []
+xref: ICD10CM:E11
 
 [Term]
 id: DOID:9352

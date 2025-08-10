@@ -332,6 +332,10 @@ def imputation_bias_report(
             imp = imputed_df.loc[mask.fillna(False), col].astype(float)
             post_all = imputed_df[col].dropna().astype(float)
 
+            # Skip columns with no observed values or no imputed values
+            if len(obs) == 0 or len(imp) == 0:
+                continue
+
             if len(obs) < 3 or len(imp) < 3:
                 ks_stat = None
                 ks_p = None
