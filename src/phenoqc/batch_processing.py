@@ -38,7 +38,7 @@ def _build_imputation_summary(cfg: dict, engine: ImputationEngine):
         tuning_summary = (engine.tuning_summary if engine and engine.tuning_summary else {'enabled': False})
         # Merge select fields from config for transparency (random_state, mask_fraction, scoring, max_cells)
         merged_tuning = {
-            **({'enabled': False} if not tuning_summary else {}),
+            **({} if tuning_summary else {'enabled': False}),
             **(tuning_summary or {}),
         }
         if tuning_cfg:

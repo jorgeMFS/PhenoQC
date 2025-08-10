@@ -207,7 +207,6 @@ class ImputationEngine:
             for col in exclude_columns:
                 if col in per_column:
                     message = f"Protected column '{col}' is configured for imputation but will be excluded"
-                    logging.warning(message)
                     warnings.warn(message, UserWarning)
         
         self.chosen_params: dict = {}

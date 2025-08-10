@@ -441,7 +441,8 @@ def imputation_stability_cv(
 
     per_col_errors: Dict[str, list] = {c: [] for c in numeric_cols}
 
-    for r in range(int(repeats)):
+    repeats = int(repeats)
+    for _ in range(repeats):
         try:
             idxs = rng.choice(num_cells, size=sample_size, replace=False)
             mask_coords = coords_all[idxs]
