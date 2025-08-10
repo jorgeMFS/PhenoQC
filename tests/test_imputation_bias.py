@@ -29,6 +29,36 @@ def test_imputation_bias_mean_imputer_warns_on_variance():
     assert bool(bias_df.iloc[0]['warn']) in (True, False)
 
 
+def test_imputation_bias_all_missing_column():
+    # All values missing
+    df_missing = pd.DataFrame({'x': [np.nan] * 10})
+    engine = ImputationEngine({'strategy': 'mean'})
+    df_imputed = engine.fit_transform(df_missing)
+    imputation_mask = getattr(engine, 'imputation_mask', {})
+    bias_df = imputation_bias_report(
+        original_df=df_missing, imputed_df=df_imputed, imputation_mask=imputation_mask,
+        columns=['x'], smd_threshold=0.05
+    )
+    assert isinstance(bias_df, pd.DataFrame)
+    # Should be empty or have no rows for 'x'
+    assert bias_df.empty or not (bias_df['column'] == 'x').any()
+
+
+def test_imputation_bias_all_observed_column():
+    # All values observed, no missing
+    df_observed = pd.DataFrame({'x': np.arange(10)})
+    engine = ImputationEngine({'strategy': 'mean'})
+    df_imputed = engine.fit_transform(df_observed)
+    imputation_mask = getattr(engine, 'imputation_mask', {})
+    bias_df = imputation_bias_report(
+        original_df=df_observed, imputed_df=df_imputed, imputation_mask=imputation_mask,
+        columns=['x'], smd_threshold=0.05
+    )
+    assert isinstance(bias_df, pd.DataFrame)
+    # Should be empty or have no rows for 'x'
+    assert bias_df.empty or not (bias_df['column'] == 'x').any()
+
+
 def test_imputation_bias_knn_changes_with_k():
     rng = np.random.RandomState(1)
     n = 200
