@@ -835,6 +835,46 @@ def main():
             if 'imputation_bias' in st.session_state['config']:
                 st.session_state['config'].pop('imputation_bias', None)
 
+        # Imputation stability diagnostics (optional)
+        st.subheader("Imputation stability diagnostic (optional)")
+        stability_cfg = (st.session_state['config'].get('quality_metrics', {}).get('imputation_stability', {})
+                         if isinstance(st.session_state['config'].get('quality_metrics'), dict) else {})
+        stab_enable = st.checkbox("Enable imputation stability diagnostic", value=bool(stability_cfg.get('enable', False)))
+        repeats_val = st.number_input("Repeats", min_value=1, max_value=100, value=int(stability_cfg.get('repeats', 5)), step=1)
+        mask_frac_val = st.slider("Mask fraction", min_value=0.01, max_value=0.5, value=float(stability_cfg.get('mask_fraction', 0.10)), step=0.01)
+        scoring_val = st.selectbox("Scoring", options=['MAE','RMSE'], index=0 if str(stability_cfg.get('scoring','MAE')).upper()=='MAE' else 1)
+        if stab_enable:
+            qm_val = st.session_state['config'].get('quality_metrics')
+            if isinstance(qm_val, list):
+                if 'imputation_bias' not in qm_val:
+                    pass
+            # store under dict style for processing integration
+            if not isinstance(st.session_state['config'].get('quality_metrics'), dict):
+                st.session_state['config']['quality_metrics'] = {}
+            st.session_state['config']['quality_metrics']['imputation_stability'] = {
+                'enable': True,
+                'repeats': int(repeats_val),
+                'mask_fraction': float(mask_frac_val),
+                'scoring': scoring_val,
+            }
+        else:
+            if isinstance(st.session_state['config'].get('quality_metrics'), dict):
+                st.session_state['config']['quality_metrics'].pop('imputation_stability', None)
+
+        # Protected columns
+        st.subheader("Protected columns (excluded from imputation/tuning)")
+        protected_defaults = st.session_state['config'].get('protected_columns', []) or []
+        protected_selected = st.multiselect("Select protected columns", options=all_columns, default=protected_defaults,
+                                            help="These columns are excluded from the imputation feature matrix and tuning.")
+        st.session_state['config']['protected_columns'] = protected_selected
+
+        # Redundancy metric settings
+        st.subheader("Redundancy metric settings")
+        redundancy_cfg = st.session_state['config'].get('redundancy', {}) or {}
+        red_thr = st.number_input("Correlation threshold", min_value=0.0, max_value=1.0, value=float(redundancy_cfg.get('threshold', 0.98)), step=0.01)
+        red_method = st.selectbox("Correlation method", options=['pearson','spearman'], index=0 if redundancy_cfg.get('method','pearson')=='pearson' else 1)
+        st.session_state['config']['redundancy'] = {'threshold': float(red_thr), 'method': str(red_method)}
+
         # Retain older session fields (used by legacy flow)
         st.session_state['imputation_config'] = {
             'global_strategy': global_strategy,
@@ -1205,6 +1245,18 @@ def main():
                                     fig.update_xaxes(automargin=True)
                                     fig.update_yaxes(automargin=True)
                                     st.plotly_chart(fig, use_container_width=True, key=f"{file_name}_plot_{i}", theme=None)
+
+                        # Stability diagnostics (if available)
+                        stab_rows = (
+                            result_dict.get('quality_metrics', {})
+                                      .get('imputation_stability', {})
+                                      .get('rows', [])
+                        )
+                        df_stab_gui = pd.DataFrame(stab_rows) if stab_rows else pd.DataFrame()
+                        if not df_stab_gui.empty:
+                            st.write("### Imputation stability (repeatability)")
+                            show_cols_stab = [c for c in ['column','metric','repeats','mean_error','sd_error','cv_error'] if c in df_stab_gui.columns]
+                            st.dataframe(df_stab_gui[show_cols_stab].sort_values(by=['cv_error','mean_error'], ascending=[False, True]).head(50))
 
                         # ======================
                         # Imputation Summary + Quality Scores + Downloads
