@@ -1068,8 +1068,8 @@ def batch_process(
                 config['redundancy']['threshold'] = float(redundancy_threshold)
             if redundancy_method is not None:
                 config['redundancy']['method'] = str(redundancy_method)
-    except Exception:
-        pass
+    except Exception as e:
+        log_activity(f"[RedundancyOverride] Error merging redundancy metric overrides: {e}", level="error")
 
     # 3) Create OntologyMapper
     ontology_mapper = OntologyMapper(config)
