@@ -26,7 +26,7 @@ def test_imputation_bias_mean_imputer_warns_on_variance():
     assert isinstance(bias_df, pd.DataFrame)
     assert not bias_df.empty
     # With mean imputation, variance typically shrinks and warn flags can appear
-    assert bool(bias_df.iloc[0]['warn']) in (True, False)
+    assert bool(bias_df.iloc[0]['warn']) in {True, False}
 
 
 def test_imputation_bias_all_missing_column():
