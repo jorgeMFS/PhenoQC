@@ -55,9 +55,11 @@ class OntologyMapper:
 
         self.cache_expiry_days = self.config.get('cache_expiry_days', 30)
         self._id_regex = self._build_id_regex_from_config(self.config)
-        self.ontologies = self.load_ontologies()
         # Alt-to-primary remapping (per ontology) from OBO scan
+        # needs to exist before ontologies are loaded because the loader
+        # populates this structure while parsing the ontology files
         self._alt_to_primary: Dict[str, Dict[str, str]] = {}
+        self.ontologies = self.load_ontologies()
         self.default_ontologies = self.config.get('default_ontologies', [])
         if not self.default_ontologies:
             raise ValueError("No default ontologies specified in the configuration.")
