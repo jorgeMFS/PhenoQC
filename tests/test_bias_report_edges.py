@@ -27,7 +27,16 @@ def test_bias_report_warn_logic_and_columns():
     imp.loc[mask_positions, "a"] = imp.loc[mask_positions, "a"] + 1.0
     out = imputation_bias_report(original_df=orig, imputed_df=imp, imputation_mask={"a": mask_positions}, columns=["a"], smd_threshold=0.2)
     assert not out.empty
-    assert set(["column","n_obs","n_imp","smd","var_ratio","ks_stat","ks_p","warn"]).issubset(out.columns)
-    assert bool(out["warn"].iloc[0]) is True
+    assert {
+        "column",
+        "n_obs",
+        "n_imp",
+        "smd",
+        "var_ratio",
+        "ks_stat",
+        "ks_p",
+        "warn",
+    }.issubset(out.columns)
+    assert bool(out["warn"].iloc[0])
 
 
