@@ -351,17 +351,21 @@ def imputation_bias_report(
                 (ks_p is not None and ks_p < ks_alpha)
             )
 
-            rows.append(BiasRow(
-                column=col,
-                n_obs=int(len(obs)),
-                n_imp=int(len(imp)),
-                mean_diff=mean_diff,
-                smd=float(smd) if not np.isnan(smd) else np.nan,
-                var_ratio=float(var_ratio) if not np.isnan(var_ratio) else np.nan,
-                ks_stat=float(ks_stat) if ks_stat is not None else None,
-                ks_p=float(ks_p) if ks_p is not None else None,
-                warn=bool(warn),
-            ))
+            rows.append(
+                BiasRow(
+                    column=col,
+                    n_obs=len(obs),
+                    n_imp=len(imp),
+                    mean_diff=mean_diff,
+                    smd=float(smd) if not np.isnan(smd) else np.nan,
+                    var_ratio=(
+                        float(var_ratio) if not np.isnan(var_ratio) else np.nan
+                    ),
+                    ks_stat=float(ks_stat) if ks_stat is not None else None,
+                    ks_p=float(ks_p) if ks_p is not None else None,
+                    warn=warn,
+                )
+            )
         except Exception:
             continue
 
