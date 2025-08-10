@@ -786,7 +786,7 @@ def process_file(
                     except Exception:
                         original_df = sample_df
                     bias_df = imputation_bias_report(
-                        original_df=original_df if not original_df.empty else chunk,
+                        original_df=chunk if original_df.empty else original_df,
                         imputed_df=chunk,
                         imputation_mask=getattr(engine, 'imputation_mask', {}),
                         smd_threshold=float(bias_thresholds.get('smd_threshold', 0.10)),
