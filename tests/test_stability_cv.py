@@ -25,7 +25,14 @@ def test_stability_cv_basic_and_columns():
     out = imputation_stability_cv(df, strategy='mean', repeats=4, mask_fraction=0.1, scoring='MAE', random_state=123)
     assert isinstance(out, pd.DataFrame)
     assert not out.empty
-    assert set(['column','repeats','metric','mean_error','sd_error','cv_error']).issubset(out.columns)
+    assert {
+        'column',
+        'repeats',
+        'metric',
+        'mean_error',
+        'sd_error',
+        'cv_error',
+    }.issubset(out.columns)
 
 
 def test_stability_cv_columns_filtering():
