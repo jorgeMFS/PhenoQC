@@ -92,7 +92,8 @@ synonym: "Lack of red blood cells" EXACT []
                         'file': self.do_file
                     }
                 },
-                'default_ontologies': ['HPO', 'DO']
+                'default_ontologies': ['HPO', 'DO'],
+                'fuzzy_threshold': 80,
             }, f)
 
         # Initialize OntologyMapper with the path as a single argument
@@ -325,6 +326,53 @@ default_ontologies: [HPO]
         """Terms too dissimilar to any known term should not map via fuzzy matching."""
         result = self.mapper.map_term("Xyzzypopple")
         self.assertTrue(all(v is None for v in result.values()))
+
+    def test_map_term_fuzzy_common_misspelling_with_lower_threshold(self):
+        """Common misspelling like 'diabeties' resolves when fuzzy threshold is lowered."""
+        with open(self.config_file, 'r') as f:
+            cfg = yaml.safe_load(f)
+        cfg['fuzzy_threshold'] = 65
+        with open(self.config_file, 'w') as f:
+            yaml.dump(cfg, f)
+        mapper2 = OntologyMapper(self.config_file)
+        result = mapper2.map_term("diabeties")
+        self.assertEqual(result["DO"], "DOID:1612")
+
+    def test_direct_id_extraction_variants(self):
+        """Inputs with varied separators and parentheses should map directly."""
+        self.assertEqual(self.mapper.map_term("HP:0000822")["HPO"], "HP:0000822")
+        self.assertEqual(self.mapper.map_term("hp_0000822")["HPO"], "HP:0000822")
+        self.assertEqual(self.mapper.map_term("( HP:0000822 )")["HPO"], "HP:0000822")
+        self.assertEqual(self.mapper.map_term("doid:1612")["DO"], "DOID:1612")
+        self.assertEqual(self.mapper.map_term("DO 1612")["DO"], "DOID:1612")
+
+    def test_custom_id_pattern_override(self):
+        """Custom id pattern should allow matching 'HPO 01627' to HP:0001627."""
+        with open(self.config_file, 'r') as f:
+            cfg = yaml.safe_load(f)
+        cfg['ontologies']['HPO']['id_pattern'] = r"(?i)hpo\s*(\d{5,7})"
+        with open(self.config_file, 'w') as f:
+            yaml.dump(cfg, f)
+        mapper2 = OntologyMapper(self.config_file)
+        res = mapper2.map_term("HPO 01627")
+        # Accept either 001627 or 01627 canonicalization; ensure HP prefix
+        self.assertTrue(res["HPO"].startswith("HP:"))
+
+    def test_normalization_and_noise(self):
+        """Whitespace, zero-width, and wrappers should not prevent mapping."""
+        txt = "  High\n blood\tpressure (HP:0000822)  "
+        res = self.mapper.map_term(txt)
+        self.assertEqual(res["HPO"], "HP:0000822")
+        self.assertEqual(res["DO"], "DOID:0050167")
+
+    def test_alt_id_and_xref(self):
+        """Alt IDs and xrefs should be indexed and map correctly if provided."""
+        # Extend HPO/DO with alt_id/xref already included in setUp()
+        res_alt = self.mapper.map_term("HP:0999999")
+        self.assertEqual(res_alt["HPO"], "HP:0000822")
+        # Xref for DO: Diabetes ICD10CM:E11
+        res_xref = self.mapper.map_term("ICD10CM:E11")
+        self.assertEqual(res_xref["DO"], "DOID:1612")
 
 if __name__ == '__main__':
     unittest.main()

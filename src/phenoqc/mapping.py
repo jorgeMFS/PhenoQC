@@ -5,6 +5,8 @@ import yaml
 import pronto
 from rapidfuzz import fuzz, process
 import requests
+import re
+import unicodedata
 
 from .configuration import load_config
 from .logging_module import log_activity
@@ -12,6 +14,23 @@ from datetime import datetime, timedelta
 
 class OntologyMapper:
     CACHE_DIR = os.path.expanduser("~/.phenoqc/ontologies")
+
+    PREFIX_ALIASES = {
+        'hp': 'HPO', 'hpo': 'HPO',
+        'do': 'DO', 'doid': 'DO',
+        'mp': 'MPO', 'mpo': 'MPO',
+        'go': 'GO', 'mondo': 'MONDO', 'efo': 'EFO', 'mesh': 'MESH',
+    }
+
+    DEFAULT_ID_REGEX = {
+        'HPO': re.compile(r"(?i)\b(?:hp|hpo)[:_\s]?(\d{5,7})\b"),
+        'DO': re.compile(r"(?i)\b(?:doid|do)[:_\s]?(\d+)\b"),
+        'MPO': re.compile(r"(?i)\b(?:mp|mpo)[:_\s]?(\d+)\b"),
+        'GO': re.compile(r"(?i)\bgo[:_\s]?(\d{7})\b"),
+        'MONDO': re.compile(r"(?i)\bmondo[:_\s]?(\d+)\b"),
+        'EFO': re.compile(r"(?i)\befo[:_\s]?(\d+)\b"),
+        'MESH': re.compile(r"(?i)\bmesh[:_\s]?(\w+)\b"),
+    }
 
     def __init__(self, config_source):
         """
@@ -35,7 +54,10 @@ class OntologyMapper:
             )
 
         self.cache_expiry_days = self.config.get('cache_expiry_days', 30)
+        self._id_regex = self._build_id_regex_from_config(self.config)
         self.ontologies = self.load_ontologies()
+        # Alt-to-primary remapping (per ontology) from OBO scan
+        self._alt_to_primary: Dict[str, Dict[str, str]] = {}
         self.default_ontologies = self.config.get('default_ontologies', [])
         if not self.default_ontologies:
             raise ValueError("No default ontologies specified in the configuration.")
@@ -56,6 +78,32 @@ class OntologyMapper:
         with open(config_path, 'r') as file:
             return yaml.safe_load(file)
 
+    def _build_id_regex_from_config(self, cfg: dict) -> Dict[str, re.Pattern]:
+        patterns = dict(self.DEFAULT_ID_REGEX)
+        try:
+            for onto_id, onto_cfg in (cfg.get('ontologies', {}) or {}).items():
+                patt = onto_cfg.get('id_pattern')
+                if patt:
+                    try:
+                        patterns[onto_id] = re.compile(patt, re.IGNORECASE)
+                    except re.error:
+                        pass
+        except Exception:
+            pass
+        return patterns
+
+    @staticmethod
+    def _normalize_text(text: str) -> str:
+        if text is None:
+            return ""
+        t = unicodedata.normalize('NFKC', str(text)).lower().strip()
+        t = t.replace('\u200b', ' ')
+        t = re.sub(r"[\n\t]", " ", t)
+        t = re.sub(r"\s+", " ", t)
+        t = re.sub(r"[()\[\]{}]", " ", t)
+        t = re.sub(r"\s+", " ", t).strip()
+        return t
+
     def load_ontologies(self) -> Dict[str, Dict[str, str]]:
         """
         Loads all ontologies specified in the configuration file.
@@ -72,6 +120,8 @@ class OntologyMapper:
                 if ontology_file and os.path.exists(ontology_file):
                     print(f"Loading ontology '{ontology_id}' from local file '{ontology_file}'...")
                     ontologies[ontology_id] = self.parse_ontology(ontology_file, ontology_info.get('format'))
+                    # Build alt->primary index
+                    self._alt_to_primary[ontology_id] = self._scan_alt_map_obo(ontology_file)
                 else:
                     raise FileNotFoundError(f"Ontology file '{ontology_file}' for '{ontology_id}' not found.")
             elif source == 'url':
@@ -81,6 +131,7 @@ class OntologyMapper:
                     print(f"Loading ontology '{ontology_id}' from cache or URL...")
                     ontology_file_path = self.fetch_ontology_file_with_cache(ontology_id, url, file_format)
                     ontologies[ontology_id] = self.parse_ontology(ontology_file_path, file_format)
+                    self._alt_to_primary[ontology_id] = self._scan_alt_map_obo(ontology_file_path)
                 else:
                     raise ValueError(f"URL or format not specified for ontology '{ontology_id}' in configuration.")
             else:
@@ -145,11 +196,97 @@ class OntologyMapper:
             synonyms = [syn.description.lower().strip() for syn in term.synonyms]
             # Also index by the identifier itself (lowercased), so incoming IDs map directly
             id_key = (term_id or '').lower().strip()
-            terms_to_map = [term_name] + synonyms + [id_key]
+            # alt_id support (multiple sources depending on pronto version)
+            alt_ids = []
+            try:
+                if hasattr(term, 'other') and isinstance(term.other, dict):
+                    alt_ids.extend([str(x).lower().strip() for x in term.other.get('alt_id', [])])
+            except Exception:
+                pass
+            try:
+                alt_prop = getattr(term, 'alternate_ids', None)
+                if alt_prop:
+                    if isinstance(alt_prop, (list, set, tuple)):
+                        alt_ids.extend([str(x).lower().strip() for x in alt_prop])
+                    else:
+                        alt_ids.append(str(alt_prop).lower().strip())
+            except Exception:
+                pass
+            try:
+                alt_prop2 = getattr(term, 'alt_ids', None)
+                if alt_prop2:
+                    if isinstance(alt_prop2, (list, set, tuple)):
+                        alt_ids.extend([str(x).lower().strip() for x in alt_prop2])
+                    else:
+                        alt_ids.append(str(alt_prop2).lower().strip())
+            except Exception:
+                pass
+            # xrefs support (index raw xref string and last segment after colon)
+            xrefs = []
+            try:
+                raw_xrefs = [str(x).lower().strip() for x in getattr(term, 'xrefs', [])]
+                xrefs = list(raw_xrefs)
+                for rx in raw_xrefs:
+                    parts = rx.split(":", 1)
+                    if len(parts) == 2 and parts[1]:
+                        xrefs.append(parts[1])
+            except Exception:
+                xrefs = []
+            terms_to_map = [term_name] + synonyms + [id_key] + alt_ids + xrefs
             for t in terms_to_map:
                 if t:
                     mapping[t] = term_id
+        # Fallback: add alt_id relationships by scanning OBO if present
+        eff_fmt = (file_format or '').lower()
+        if not eff_fmt:
+            _, ext = os.path.splitext(ontology_file_path.lower())
+            if ext == '.obo':
+                eff_fmt = 'obo'
+        if eff_fmt == 'obo':
+            self._augment_alt_ids_from_obo(ontology_file_path, mapping)
         return mapping
+
+    def _augment_alt_ids_from_obo(self, ontology_file_path: str, mapping: Dict[str, str]) -> None:
+        """Best-effort fallback: scan OBO text for alt_id -> id relationships and add to mapping."""
+        try:
+            with open(ontology_file_path, 'r', encoding='utf-8') as f:
+                current_id = None
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if line == '[Term]':
+                        current_id = None
+                        continue
+                    if line.startswith('id:'):
+                        current_id = line.split(':', 1)[1].strip()
+                        continue
+                    if line.startswith('alt_id:') and current_id:
+                        alt = line.split(':', 1)[1].strip()
+                        mapping[self._normalize_text(alt)] = current_id
+        except Exception:
+            return
+
+    def _scan_alt_map_obo(self, ontology_file_path: str) -> Dict[str, str]:
+        """Return alt_id (uppercase) -> primary id mapping by scanning OBO text."""
+        result: Dict[str, str] = {}
+        try:
+            with open(ontology_file_path, 'r', encoding='utf-8') as f:
+                current_id = None
+                for line in f:
+                    line = line.strip()
+                    if line == '[Term]':
+                        current_id = None
+                        continue
+                    if line.startswith('id:'):
+                        current_id = line.split(':', 1)[1].strip()
+                        continue
+                    if line.startswith('alt_id:') and current_id:
+                        alt = line.split(':', 1)[1].strip()
+                        result[alt.upper()] = current_id
+        except Exception:
+            return {}
+        return result
 
     def map_term(self, term: str, target_ontologies: Optional[List[str]] = None, custom_mappings: Optional[Dict[str, str]] = None) -> Dict[str, Optional[str]]:
         """
@@ -167,62 +304,62 @@ class OntologyMapper:
         if target_ontologies is None:
             target_ontologies = self.default_ontologies
 
-        # Convert to string if it's not None or numeric
-        if term is None:
-            term_lower = ""
-        else:
-            term_lower = str(term).strip().lower()
-        
+        # Normalize text
+        term_norm = self._normalize_text(term)
         mappings = {}
 
-        # Check custom mappings first
-        if custom_mappings and term_lower in custom_mappings:
-            custom_id = custom_mappings[term_lower]
-            for ontology_id in target_ontologies:
-                mappings[ontology_id] = custom_id
-            return mappings
+        # Custom mappings first (normalized)
+        if custom_mappings:
+            cm = {self._normalize_text(k): v for k, v in custom_mappings.items()}
+            if term_norm in cm:
+                for ontology_id in target_ontologies:
+                    mappings[ontology_id] = cm[term_norm]
+                return mappings
 
-        # If the input already looks like an ontology ID, accept it directly for the matching ontology
-        # e.g., 'hp:0001250', 'doid:9352', 'mp:0000001', 'HP:0001250', 'DOID:9352', 'MP:0000001'
-        import re
-
-        direct = {}
-        hp_match = re.match(r'^(hp:|HP:)(\d+)$', term.strip())
-        doid_match = re.match(r'^(doid:|DOID:)(\d+)$', term.strip())
-        mp_match = re.match(r'^(mp:|MP:)(\d+)$', term.strip())
-
-        if hp_match:
-            direct = {'HPO': f'HP:{hp_match.group(2)}'}
-        elif doid_match:
-            direct = {'DO': f'DOID:{doid_match.group(2)}'}
-        elif mp_match:
-            direct = {'MPO': f'MP:{mp_match.group(2)}'}
-        else:
-            direct = {}
+        # Try direct ID extraction (regex + prefix aliases)
+        direct = None
+        try:
+            direct = self._extract_direct_id(term_norm)
+        except Exception:
+            direct = None
 
         for ontology_id in target_ontologies:
             ontology_mapping = self.ontologies.get(ontology_id, {})
-            # Direct ID pass-through if provided and relevant
-            if ontology_id in direct:
-                mapped_id = direct[ontology_id]
-            else:
-                mapped_id = ontology_mapping.get(term_lower, None)
-
+            if direct and ontology_id in direct:
+                # Prefer canonical mapping via ontology table (handles alt_id -> primary id)
+                direct_key = self._normalize_text(direct[ontology_id])
+                canonical = ontology_mapping.get(direct_key)
+                if not canonical:
+                    # Try alt->primary remap if present
+                    altmap = self._alt_to_primary.get(ontology_id, {})
+                    canonical = altmap.get(direct[ontology_id].upper())
+                mappings[ontology_id] = canonical if canonical else direct[ontology_id]
+                continue
+            # exact normalized
+            mapped_id = ontology_mapping.get(term_norm)
+            if not mapped_id and ontology_mapping:
+                extracted = process.extractOne(
+                    term_norm,
+                    ontology_mapping.keys(),
+                    scorer=fuzz.WRatio,
+                    score_cutoff=self.fuzzy_threshold,
+                    processor=None,
+                )
+                if extracted is not None:
+                    mapped_id = ontology_mapping.get(extracted[0])
+            # If 'DO 1612' like variant: try prefix + space
             if not mapped_id:
-                # Perform fuzzy matching
-                match = None
-                score = 0
-                if ontology_mapping:
-                    extracted = process.extractOne(
-                        term_lower, ontology_mapping.keys(), scorer=fuzz.token_sort_ratio
-                    )
-                    if extracted is not None:
-                        match, score, _ = extracted
-                if score >= self.fuzzy_threshold:
-                    mapped_id = ontology_mapping[match]
-                else:
-                    mapped_id = None  # No suitable match found
-
+                m = re.match(r"^([a-z]+)\s+(\w+)$", term_norm)
+                if m:
+                    pref, core = m.group(1), m.group(2)
+                    canon = self.PREFIX_ALIASES.get(pref)
+                    if canon == ontology_id:
+                        if ontology_id == 'HPO':
+                            mapped_id = f"HP:{int(core):07d}" if core.isdigit() else f"HP:{core}"
+                        elif ontology_id == 'DO':
+                            mapped_id = f"DOID:{core}"
+                        elif ontology_id == 'MPO':
+                            mapped_id = f"MP:{core}"
             mappings[ontology_id] = mapped_id
         return mappings
 
