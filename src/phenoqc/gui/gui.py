@@ -821,6 +821,10 @@ def main():
             if isinstance(qm_val, list):
                 if 'imputation_bias' not in qm_val:
                     qm_val.append('imputation_bias')
+            elif isinstance(qm_val, dict):
+                # Use dict-style enable flag for bias
+                st.session_state['config']['quality_metrics'].setdefault('imputation_bias', {})
+                st.session_state['config']['quality_metrics']['imputation_bias']['enable'] = True
             elif qm_val is None:
                 st.session_state['config']['quality_metrics'] = ['imputation_bias']
             # Store thresholds at top level for compatibility across code paths
@@ -987,6 +991,12 @@ def main():
                             st.write(f"Processing {file_name}...")
 
                             try:
+                                # Extract optional MI uncertainty flags from config
+                                mi_cfg_local = st.session_state.get('config', {}).get('mi_uncertainty', {}) or {}
+                                mi_enable_flag = bool(mi_cfg_local.get('enable', False))
+                                mi_repeats_val = int(mi_cfg_local.get('repeats', 3))
+                                mi_params_val = mi_cfg_local.get('params', {}) or {}
+
                                 result = process_file(
                                     file_path=file_path,
                                     schema=st.session_state['schema'],
@@ -999,6 +1009,9 @@ def main():
                                     target_ontologies=st.session_state.get('ontologies_selected_list', []),
                                     phenotype_columns=st.session_state.get('phenotype_columns'),
                                     cfg=st.session_state.get('config'),
+                                    mi_uncertainty_enable=mi_enable_flag,
+                                    mi_repeats=mi_repeats_val,
+                                    mi_params=mi_params_val,
                                 )
                                 # Store the result
                                 st.session_state['processing_results'].append((file_name, result, output_dir))
@@ -1282,6 +1295,18 @@ def main():
                             show_cols_stab = [c for c in ['column','metric','repeats','mean_error','sd_error','cv_error'] if c in df_stab_gui.columns]
                             st.dataframe(df_stab_gui[show_cols_stab].sort_values(by=['cv_error','mean_error'], ascending=[False, True]).head(50))
 
+                        # Multiple-imputation uncertainty (if available)
+                        mi_rows = (
+                            result_dict.get('quality_metrics', {})
+                                      .get('imputation_uncertainty', {})
+                                      .get('rows', [])
+                        )
+                        df_mi_gui = pd.DataFrame(mi_rows) if mi_rows else pd.DataFrame()
+                        if not df_mi_gui.empty:
+                            st.write("### Multiple imputation uncertainty (MICE repeats)")
+                            show_cols_mi = [c for c in ['column','mi_var','mi_std','n_imputed'] if c in df_mi_gui.columns]
+                            st.dataframe(df_mi_gui[show_cols_mi].sort_values(by=['mi_var'], ascending=False).head(50))
+
                         # ======================
                         # Imputation Summary + Quality Scores + Downloads
                         # ======================
@@ -1320,6 +1345,9 @@ def main():
                             imputation_summary=result_dict.get('imputation_summary'),
                             bias_diagnostics=(df_bias_gui if 'df_bias_gui' in locals() and not df_bias_gui.empty else None),
                             bias_thresholds=(bias_cfg_gui if isinstance(bias_cfg_gui, dict) else None),
+                            stability_diagnostics=(df_stab_gui if not df_stab_gui.empty else None),
+                            mi_uncertainty=(df_mi_gui if not df_mi_gui.empty else None),
+                            quality_metrics_enabled=st.session_state.get('config', {}).get('quality_metrics'),
                         )
                         report_buffer.seek(0)
                         st.download_button(
