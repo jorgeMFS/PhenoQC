@@ -5,6 +5,7 @@ import yaml
 import pronto
 from rapidfuzz import fuzz, process
 import requests
+import time
 import re
 import unicodedata
 
@@ -176,8 +177,6 @@ class OntologyMapper:
 
         # Download the ontology with simple retry/backoff and save to cache
         print(f"Downloading ontology '{ontology_id}' from '{url}'...")
-        import time
-        import requests
         retries = 3
         backoff = 2.0
         last_exc = None
