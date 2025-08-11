@@ -20,7 +20,10 @@
         "n_neighbors": 3
       },
       "score": 0.0,
-      "metric": "MAE"
+      "metric": "MAE",
+      "random_state": 42,
+      "mask_fraction": 0.1,
+      "max_cells": 20000
     }
   },
   "class_distribution": {
@@ -39,6 +42,9 @@
   },
   "quality_metrics": {
     "imputation_bias": {
+      "rows": []
+    },
+    "imputation_stability": {
       "rows": []
     }
   }

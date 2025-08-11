@@ -54,6 +54,7 @@ class OntologyMapper:
             )
 
         self.cache_expiry_days = self.config.get('cache_expiry_days', 30)
+        self.offline = bool(self.config.get('offline', False))
         self._id_regex = self._build_id_regex_from_config(self.config)
         # Alt-to-primary remapping (per ontology) from OBO scan
         # needs to exist before ontologies are loaded because the loader
@@ -167,16 +168,38 @@ class OntologyMapper:
             else:
                 print(f"Cached ontology file for '{ontology_id}' is expired. Downloading new version...")
 
-        # Download the ontology and save to cache
+        if self.offline:
+            # Offline: do not download, fail fast if cache missing/expired
+            raise FileNotFoundError(
+                f"Offline mode is enabled and cached ontology for '{ontology_id}' was not found or is expired at '{cached_file_path}'."
+            )
+
+        # Download the ontology with simple retry/backoff and save to cache
         print(f"Downloading ontology '{ontology_id}' from '{url}'...")
-        response = requests.get(url)
-        if response.status_code == 200:
-            with open(cached_file_path, 'wb') as f:
-                f.write(response.content)
-            print(f"Ontology '{ontology_id}' saved to cache at '{cached_file_path}'")
-            return cached_file_path
-        else:
-            raise Exception(f"Failed to download ontology '{ontology_id}' from '{url}'. Status code: {response.status_code}")
+        import time
+        import requests
+        retries = 3
+        backoff = 2.0
+        last_exc = None
+        for i in range(retries):
+            try:
+                response = requests.get(url, timeout=30)
+                if response.status_code == 200:
+                    with open(cached_file_path, 'wb') as f:
+                        f.write(response.content)
+                    print(f"Ontology '{ontology_id}' saved to cache at '{cached_file_path}'")
+                    return cached_file_path
+                else:
+                    last_exc = Exception(
+                        f"Failed to download ontology '{ontology_id}' from '{url}'. Status code: {response.status_code}"
+                    )
+            except Exception as e:
+                last_exc = e
+            # Backoff before next attempt
+            if i < retries - 1:
+                time.sleep(backoff ** i)
+        # After retries, raise the last exception
+        raise last_exc if last_exc else Exception(f"Failed to download ontology '{ontology_id}' from '{url}'.")
 
     def parse_ontology(self, ontology_file_path: str, file_format: str) -> Dict[str, str]:
         """

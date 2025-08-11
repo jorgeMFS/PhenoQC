@@ -20,7 +20,10 @@
         "n_neighbors": 7
       },
       "score": 16.847943554419825,
-      "metric": "MAE"
+      "metric": "MAE",
+      "random_state": 42,
+      "mask_fraction": 0.1,
+      "max_cells": 10000
     }
   },
   "class_distribution": {
@@ -49,7 +52,9 @@
           "var_ratio": 0.9608073769719354,
           "ks_stat": 0.2660175879396985,
           "ks_p": 7.529550004628928e-14,
-          "warn": true
+          "warn": true,
+          "wdist": 6.304325964846349,
+          "low_n": false
         },
         {
           "column": "BP_systolic",
@@ -60,7 +65,9 @@
           "var_ratio": 0.95669460185557,
           "ks_stat": 0.2587500128261695,
           "ks_p": 2.709431178573061e-14,
-          "warn": true
+          "warn": true,
+          "wdist": 7.915336504017622,
+          "low_n": false
         },
         {
           "column": "Cholesterol_mgdl",
@@ -71,7 +78,9 @@
           "var_ratio": 0.9019803960792157,
           "ks_stat": 0.551219512195122,
           "ks_p": 1.0780517874952773e-125,
-          "warn": true
+          "warn": true,
+          "wdist": 45.323264863439654,
+          "low_n": false
         },
         {
           "column": "Creatinine_mgdl",
@@ -82,7 +91,9 @@
           "var_ratio": 0.7967593518703742,
           "ks_stat": 0.5020080321285141,
           "ks_p": 3.529707643901842e-187,
-          "warn": true
+          "warn": true,
+          "wdist": 0.23893438601716313,
+          "low_n": false
         },
         {
           "column": "Glucose_mgdl",
@@ -93,7 +104,9 @@
           "var_ratio": 0.8948390887468082,
           "ks_stat": 0.23981777936428886,
           "ks_p": 2.724324838272602e-26,
-          "warn": true
+          "warn": true,
+          "wdist": 13.487103476870962,
+          "low_n": false
         },
         {
           "column": "Height_cm",
@@ -104,7 +117,9 @@
           "var_ratio": 0.9343135669978108,
           "ks_stat": 0.24624298018170981,
           "ks_p": 2.8764429541155443e-19,
-          "warn": true
+          "warn": true,
+          "wdist": 4.9843258413233364,
+          "low_n": false
         },
         {
           "column": "Weight_kg",
@@ -115,9 +130,14 @@
           "var_ratio": 0.8789862756798885,
           "ks_stat": 0.22458560193587418,
           "ks_p": 6.420597319468521e-28,
-          "warn": true
+          "warn": true,
+          "wdist": 5.732852543984018,
+          "low_n": false
         }
       ]
+    },
+    "imputation_stability": {
+      "rows": []
     }
   }
 }

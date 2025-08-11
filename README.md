@@ -161,6 +161,7 @@ phenoqc \
 - Imputation stability diagnostics: `--impute-diagnostics on|off`, `--diag-repeats`, `--diag-mask-fraction`, `--diag-scoring`
 - Protected columns: `--protected-columns label outcome`
 - Redundancy: `--redundancy-threshold`, `--redundancy-method {pearson,spearman}`
+- Offline/caching: `--offline` forces cached/local ontologies only; no downloads. In online mode, ontology downloads use retry/backoff and are cached under `~/.phenoqc/ontologies` respecting `cache_expiry_days` in config.
 
 Reports generated under `--output` include a PDF with:
 
@@ -376,6 +377,8 @@ default_ontologies:
 
 fuzzy_threshold: 80
 cache_expiry_days: 30
+# optional: offline (forces cache/local ontologies only for the run)
+# offline: true
 
 imputation:
   strategy: knn

@@ -1008,6 +1008,7 @@ def batch_process(
     diag_repeats: int = 5,
     diag_mask_fraction: float = 0.10,
     diag_scoring: str = 'MAE',
+    offline: bool = False,
 ):
     log_activity(f"[ParentProcess] Starting on: {files}", level="info")
 
@@ -1072,6 +1073,10 @@ def batch_process(
         log_activity(f"[RedundancyOverride] Error merging redundancy metric overrides: {e}", level="error")
 
     # 3) Create OntologyMapper
+    # Inject offline flag into config so OntologyMapper respects cached/local only
+    if offline:
+        config = dict(config or {})
+        config['offline'] = True
     ontology_mapper = OntologyMapper(config)
 
     # 4) Load custom mappings

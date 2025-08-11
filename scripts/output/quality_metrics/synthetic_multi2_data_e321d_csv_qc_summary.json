@@ -1,10 +1,10 @@
 {
-  "file": "e2e_medium_input.csv",
+  "file": "synthetic_multi2_data.csv",
   "quality_scores": {
     "Schema Validation Score": 0.0,
-    "Missing Data Score": 92.97999999999999,
-    "Mapping Success Score": 100.0,
-    "Overall Quality Score": 64.32666666666667
+    "Missing Data Score": 92.94028722600152,
+    "Mapping Success Score": 99.74811083123426,
+    "Overall Quality Score": 64.22946601907859
   },
   "imputation": {
     "global": {
@@ -19,27 +19,14 @@
       "best": {
         "n_neighbors": 7
       },
-      "score": 11.289606179777651,
+      "score": 198.64056297555354,
       "metric": "MAE",
       "random_state": 42,
       "mask_fraction": 0.1,
       "max_cells": 20000
     }
   },
-  "class_distribution": {
-    "counts": {
-      "majority": 841,
-      "minority": 159
-    },
-    "proportions": {
-      "majority": 0.841,
-      "minority": 0.159
-    },
-    "minority_class": "minority",
-    "minority_prop": 0.159,
-    "warn_threshold": 0.1,
-    "warning": false
-  },
+  "class_distribution": null,
   "quality_metrics": {
     "imputation_bias": {
       "rows": []

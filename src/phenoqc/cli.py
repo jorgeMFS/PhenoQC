@@ -73,6 +73,8 @@ def parse_arguments():
     # Redundancy metric configuration
     parser.add_argument('--redundancy-threshold', type=float, default=None, help='Correlation threshold for redundancy (overrides config if set)')
     parser.add_argument('--redundancy-method', choices=['pearson','spearman'], default=None, help='Correlation method for redundancy (overrides config if set)')
+    # Offline mode (cached/local ontologies only)
+    parser.add_argument('--offline', action='store_true', help='Use cached/local ontologies only; do not download')
     # Optional thresholds for imputation-bias diagnostic
     parser.add_argument('--bias-smd-threshold', type=float, default=0.10, help='SMD threshold for bias warning (default 0.10)')
     parser.add_argument('--bias-var-low', type=float, default=0.5, help='Variance ratio lower bound (default 0.5)')
@@ -240,6 +242,7 @@ def main():
         diag_scoring=args.diag_scoring,
         redundancy_threshold=args.redundancy_threshold,
         redundancy_method=args.redundancy_method,
+        offline=bool(args.offline),
     )
     
     for result in results:

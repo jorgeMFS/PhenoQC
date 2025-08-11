@@ -20,7 +20,10 @@
         "n_neighbors": 3
       },
       "score": 90.075,
-      "metric": "MAE"
+      "metric": "MAE",
+      "random_state": 42,
+      "mask_fraction": 0.1,
+      "max_cells": 20000
     }
   },
   "class_distribution": null,
@@ -36,9 +39,14 @@
           "var_ratio": NaN,
           "ks_stat": null,
           "ks_p": null,
-          "warn": false
+          "warn": false,
+          "wdist": 0.0,
+          "low_n": true
         }
       ]
+    },
+    "imputation_stability": {
+      "rows": []
     }
   }
 }

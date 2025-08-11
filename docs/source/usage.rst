@@ -54,6 +54,7 @@ Parameters
 - ``--bias-smd-threshold``, ``--bias-var-low``, ``--bias-var-high``, ``--bias-ks-alpha``: thresholds for bias diagnostics
 - ``--impute-diagnostics {on,off}``, ``--diag-repeats``, ``--diag-mask-fraction``, ``--diag-scoring``: stability diagnostics
 - ``--redundancy-threshold``, ``--redundancy-method {pearson,spearman}``
+- ``--offline``: Use cached/local ontologies only; do not download
 - ``--unique_identifiers``: Columns that uniquely identify each record
 - ``--phenotype_columns``: JSON mapping of columns to ontologies
 - ``--ontologies``: List of ontology IDs
@@ -103,6 +104,7 @@ PhenoQC uses a YAML configuration file to define settings. Example ``config.yaml
 
     fuzzy_threshold: 80
     cache_expiry_days: 30
+    # offline: true  # optional: force cached/local ontologies only for the run
 
     imputation:
       strategy: knn
