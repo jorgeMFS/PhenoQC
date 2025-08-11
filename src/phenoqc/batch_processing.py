@@ -115,6 +115,11 @@ def child_process_run(
     diag_mask_fraction: float = 0.10,
     diag_scoring: str = 'MAE',
     stability_cv_fail_threshold: float = None,
+    bias_psi_threshold: float = 0.10,
+    bias_cramer_threshold: float = 0.20,
+    mi_uncertainty_enable: bool = False,
+    mi_repeats: int = 3,
+    mi_params: dict = None,
 ):
     """
     This top-level function is what each child process calls.
@@ -144,6 +149,12 @@ def child_process_run(
         diag_repeats=diag_repeats,
         diag_mask_fraction=diag_mask_fraction,
         diag_scoring=diag_scoring,
+        stability_cv_fail_threshold=stability_cv_fail_threshold,
+        bias_psi_threshold=bias_psi_threshold,
+        bias_cramer_threshold=bias_cramer_threshold,
+        mi_uncertainty_enable=mi_uncertainty_enable,
+        mi_repeats=mi_repeats,
+        mi_params=mi_params,
     )
 
 
@@ -250,6 +261,11 @@ def process_file(
     bias_var_high: float = 2.0,
     bias_ks_alpha: float = 0.05,
     stability_cv_fail_threshold: float = None,
+    bias_psi_threshold: float = 0.10,
+    bias_cramer_threshold: float = 0.20,
+    mi_uncertainty_enable: bool = False,
+    mi_repeats: int = 3,
+    mi_params: dict = None,
 ):
     """
     Processes a single file, generating an output CSV and a PDF/MD report.
@@ -845,6 +861,8 @@ def process_file(
                     'var_ratio_low': float(bias_var_low),
                     'var_ratio_high': float(bias_var_high),
                     'ks_alpha': float(bias_ks_alpha),
+                    'psi_threshold': float(bias_psi_threshold),
+                    'cramer_threshold': float(bias_cramer_threshold),
                 }
                 if isinstance(metrics_cfg, dict):
                     merged_bias_thresholds.update(metrics_cfg.get('imputation_bias', {}) or {})
@@ -863,6 +881,8 @@ def process_file(
                         var_ratio_low=float(merged_bias_thresholds.get('var_ratio_low', 0.5)),
                         var_ratio_high=float(merged_bias_thresholds.get('var_ratio_high', 2.0)),
                         ks_alpha=float(merged_bias_thresholds.get('ks_alpha', 0.05)),
+                        psi_threshold=float(merged_bias_thresholds.get('psi_threshold', 0.10)),
+                        cramer_threshold=float(merged_bias_thresholds.get('cramer_threshold', 0.20)),
                     )
                 # Optional stability diagnostic
                 try:
@@ -901,6 +921,20 @@ def process_file(
             except Exception as _bias_ex:
                 log_activity(f"{file_path}: imputation-bias diagnostic failed: {_bias_ex}", level="warning")
 
+            # Optional multiple-imputation uncertainty (MICE repeats)
+            mi_uncertainty_df = None
+            try:
+                if mi_uncertainty_enable:
+                    mi_uncertainty_df = imputation_uncertainty_mice(
+                        df=chunk,
+                        repeats=int(mi_repeats),
+                        mice_params=(mi_params or {}),
+                        random_state=42,
+                        columns=None,
+                    )
+            except Exception as _mi_ex:
+                log_activity(f"{file_path}: MI uncertainty failed: {_mi_ex}", level="warning")
+
             generate_qc_report(
                 validation_results=validation_results,
                 missing_data=missing_counts,
@@ -921,8 +955,11 @@ def process_file(
                     'var_ratio_low': float(bias_var_low),
                     'var_ratio_high': float(bias_var_high),
                     'ks_alpha': float(bias_ks_alpha),
+                    'psi_threshold': float(bias_psi_threshold),
+                    'cramer_threshold': float(bias_cramer_threshold),
                 },
                 quality_metrics_enabled=(cfg.get('quality_metrics') if isinstance(cfg, dict) else None),
+                mi_uncertainty=mi_uncertainty_df,
             )
             log_activity(f"{file_path}: QC report generated at {report_path}.")
             pbar.update(5)
@@ -947,6 +984,9 @@ def process_file(
                         },
                         'imputation_stability': {
                             'rows': (stability_df.to_dict(orient='records') if isinstance(stability_df, pd.DataFrame) else [])
+                        },
+                        'imputation_uncertainty': {
+                            'rows': (mi_uncertainty_df.to_dict(orient='records') if isinstance(mi_uncertainty_df, pd.DataFrame) else [])
                         },
                     },
                 }

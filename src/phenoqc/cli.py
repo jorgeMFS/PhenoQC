@@ -81,6 +81,8 @@ def parse_arguments():
     parser.add_argument('--bias-var-low', type=float, default=0.5, help='Variance ratio lower bound (default 0.5)')
     parser.add_argument('--bias-var-high', type=float, default=2.0, help='Variance ratio upper bound (default 2.0)')
     parser.add_argument('--bias-ks-alpha', type=float, default=0.05, help='KS-test alpha (default 0.05)')
+    parser.add_argument('--bias-psi-threshold', type=float, default=0.10, help='PSI threshold for categorical bias warning (default 0.10)')
+    parser.add_argument('--bias-cramer-threshold', type=float, default=0.20, help="Cramér's V threshold for categorical bias warning (default 0.20)")
     parser.add_argument(
         '--label-column',
         help='Optional label column name for class distribution summary',
@@ -99,6 +101,10 @@ def parse_arguments():
         help='Columns to protect from imputation and tuning (accepts space or comma separated)',
         default=[]
     )
+    # Multiple-imputation uncertainty (MICE repeats)
+    parser.add_argument('--mi-uncertainty', choices=['on','off'], default='off', help='Enable multiple imputation uncertainty (MICE repeats)')
+    parser.add_argument('--mi-repeats', type=int, default=3, help='Number of MICE repeats for uncertainty')
+    parser.add_argument('--mi-params', type=json.loads, default=None, help='JSON of MICE params (e.g., {"max_iter": 5})')
     args = parser.parse_args()
     
     # Convert old phenotype_column to new format if specified
@@ -236,11 +242,16 @@ def main():
         bias_var_low=args.bias_var_low,
         bias_var_high=args.bias_var_high,
         bias_ks_alpha=args.bias_ks_alpha,
+        bias_psi_threshold=args.bias_psi_threshold,
+        bias_cramer_threshold=args.bias_cramer_threshold,
         protected_columns=args.protected_columns,
         impute_diag_enable=(args.impute_diagnostics == 'on'),
         diag_repeats=args.diag_repeats,
         diag_mask_fraction=args.diag_mask_fraction,
         diag_scoring=args.diag_scoring,
+        mi_uncertainty_enable=(args.mi_uncertainty == 'on'),
+        mi_repeats=args.mi_repeats,
+        mi_params=args.mi_params,
         stability_cv_fail_threshold=args.stability_cv_fail_threshold,
         redundancy_threshold=args.redundancy_threshold,
         redundancy_method=args.redundancy_method,

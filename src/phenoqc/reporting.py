@@ -54,6 +54,7 @@ def generate_qc_report(
     bias_diagnostics: Optional[pd.DataFrame] = None,
     bias_thresholds: Optional[Dict] = None,
     stability_diagnostics: Optional[pd.DataFrame] = None,
+    mi_uncertainty: Optional[pd.DataFrame] = None,
     quality_metrics_enabled: Optional[object] = None,
 ):
     """
@@ -515,6 +516,18 @@ def generate_qc_report(
                 logging.exception("Failed to render traffic-light status table for bias diagnostics.")
 
             story.append(Spacer(1, SPACING_L))
+            # MI uncertainty (if provided)
+            if isinstance(mi_uncertainty, pd.DataFrame) and not mi_uncertainty.empty:
+                try:
+                    story.append(Paragraph("Multiple Imputation Uncertainty (MICE repeats)", subsection_header_style))
+                    df_mi = mi_uncertainty.copy()
+                    for c in ('mi_var','mi_std'):
+                        if c in df_mi.columns:
+                            df_mi[c] = pd.to_numeric(df_mi[c], errors='coerce').round(6)
+                    block_mi = build_dataframe_table(df_mi, title="Per-column MI variance", max_rows=50)
+                    story.append(KeepTogether(block_mi))
+                except Exception:
+                    pass
 
         # Missing Data Summary (table)
         story.append(Paragraph("Missing Data Summary", section_header_style))
