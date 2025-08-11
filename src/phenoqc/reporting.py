@@ -462,6 +462,7 @@ def generate_qc_report(
             cols_desired = [
                 ("column", "Variable"), ("n_obs", "n_obs"), ("n_imp", "n_imp"),
                 ("smd", "SMD"), ("var_ratio", "Var-ratio"), ("ks_p", "KS p"),
+                ("psi", "PSI"), ("cramers_v", "Cramér's V"), ("chi2_p", "Chi2 p"),
                 ("triggers", "Triggers"), ("warn", "Warn")
             ]
             df_bias = bias_diagnostics.copy()

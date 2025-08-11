@@ -7,6 +7,7 @@ import numpy as np
 from scipy import stats
 from .missing_data import ImputationEngine
 import logging
+import pandas as pd
 
 # Central list of quality metric identifiers used across the application.
 QUALITY_METRIC_CHOICES = [
@@ -325,11 +326,18 @@ def imputation_bias_report(
     var_ratio_low: float = 0.5,
     var_ratio_high: float = 2.0,
     ks_alpha: float = 0.05,
+    psi_threshold: float = 0.10,
+    cramer_threshold: float = 0.20,
 ) -> pd.DataFrame:
-    cols = columns or imputed_df.select_dtypes(include=[np.number]).columns.tolist()
-    rows: List[BiasRow] = []
+    rows: List[dict] = []
+    # Numeric columns
+    num_cols = (columns if columns is not None else imputed_df.columns.tolist())
+    num_cols = [c for c in num_cols if c in imputed_df.columns and np.issubdtype(imputed_df[c].dropna().dtype, np.number)]
+    # Categorical/object columns
+    cat_cols = (columns if columns is not None else imputed_df.columns.tolist())
+    cat_cols = [c for c in cat_cols if c in imputed_df.columns and not np.issubdtype(imputed_df[c].dropna().dtype, np.number)]
 
-    for col in cols:
+    for col in num_cols:
         mask = imputation_mask.get(col)
         if mask is None or col not in original_df.columns or col not in imputed_df.columns:
             continue
@@ -384,6 +392,48 @@ def imputation_bias_report(
             row_dict['wdist'] = wdist
             row_dict['low_n'] = low_n
             rows.append(row_dict)
+        except Exception:
+            continue
+
+    # Categorical bias diagnostics: PSI and Cramér's V
+    for col in cat_cols:
+        mask = imputation_mask.get(col)
+        if mask is None or col not in original_df.columns or col not in imputed_df.columns:
+            continue
+        try:
+            obs = original_df.loc[~original_df[col].isna(), col].astype(str)
+            imp = imputed_df.loc[mask.fillna(False), col].astype(str)
+            if len(obs) == 0 or len(imp) == 0:
+                continue
+            # PSI
+            categories = sorted(set(obs.unique()).union(set(imp.unique())))
+            if not categories:
+                continue
+            eps = 1e-6
+            obs_counts = obs.value_counts().reindex(categories, fill_value=0).astype(float)
+            imp_counts = imp.value_counts().reindex(categories, fill_value=0).astype(float)
+            obs_probs = (obs_counts / obs_counts.sum()).clip(lower=eps)
+            imp_probs = (imp_counts / imp_counts.sum()).clip(lower=eps)
+            psi = float(np.sum((obs_probs - imp_probs) * np.log(obs_probs / imp_probs)))
+            # Cramér's V via chi-squared on 2xK contingency
+            contingency = np.vstack([obs_counts.values, imp_counts.values])
+            chi2, p, dof, exp = stats.chi2_contingency(contingency, correction=False)
+            n = contingency.sum()
+            k = min(contingency.shape)
+            cramers_v = float(np.sqrt(chi2 / (n * (k - 1)))) if n > 0 and k > 1 else np.nan
+            warn_cat = (
+                (not np.isnan(psi) and abs(psi) >= psi_threshold) or
+                (not np.isnan(cramers_v) and cramers_v >= cramer_threshold)
+            )
+            rows.append({
+                'column': col,
+                'n_obs': int(len(obs)),
+                'n_imp': int(len(imp)),
+                'psi': psi,
+                'cramers_v': cramers_v,
+                'chi2_p': float(p) if p is not None else None,
+                'warn': warn_cat,
+            })
         except Exception:
             continue
 
@@ -498,3 +548,69 @@ def imputation_stability_cv(
     if not df_out.empty:
         return df_out.sort_values(by=['cv_error', 'mean_error'], ascending=[False, True])
     return df_out
+
+
+def imputation_uncertainty_mice(
+    df: pd.DataFrame,
+    repeats: int = 5,
+    mice_params: Optional[Dict[str, Any]] = None,
+    random_state: Optional[int] = None,
+    columns: Optional[List[str]] = None,
+) -> pd.DataFrame:
+    """Estimate multiple-imputation uncertainty (MICE repeats).
+
+    Runs IterativeImputer multiple times on the given DataFrame and computes,
+    for each numeric column, the variance across imputations at positions that
+    were missing in the original data.
+
+    Returns a DataFrame with columns: column, mi_var, mi_std, n_imputed.
+    """
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+        return pd.DataFrame(columns=['column', 'mi_var', 'mi_std', 'n_imputed'])
+
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    if columns is not None:
+        numeric_cols = [c for c in numeric_cols if c in set(columns)]
+    if not numeric_cols:
+        return pd.DataFrame(columns=['column', 'mi_var', 'mi_std', 'n_imputed'])
+
+    base_missing_mask = df[numeric_cols].isna().to_numpy()
+    if not base_missing_mask.any():
+        return pd.DataFrame(columns=['column', 'mi_var', 'mi_std', 'n_imputed'])
+
+    imputations = []
+    rng = np.random.RandomState(random_state if random_state is not None else 0)
+    params = dict(mice_params or {})
+    for r in range(int(max(1, repeats))):
+        try:
+            # Vary random_state per repeat for diversity
+            params_r = dict(params)
+            params_r['random_state'] = int(rng.randint(0, 1_000_000))
+            engine = ImputationEngine({'strategy': 'mice', 'params': params_r})
+            imputed = engine.fit_transform(df[numeric_cols])
+            imputations.append(imputed[numeric_cols].to_numpy())
+        except Exception:
+            continue
+
+    if len(imputations) < 2:
+        return pd.DataFrame(columns=['column', 'mi_var', 'mi_std', 'n_imputed'])
+
+    arr = np.stack(imputations, axis=0)  # [repeats, rows, cols]
+    # Only consider originally-missing positions
+    variances = np.var(arr, axis=0, ddof=1)  # [rows, cols]
+
+    records = []
+    for j, col in enumerate(numeric_cols):
+        mask_col = base_missing_mask[:, j]
+        if not mask_col.any():
+            continue
+        vals = variances[:, j][mask_col]
+        if vals.size == 0:
+            continue
+        records.append({
+            'column': col,
+            'mi_var': float(np.nanmean(vals)),
+            'mi_std': float(np.nanstd(vals, ddof=1)) if vals.size > 1 else 0.0,
+            'n_imputed': int(mask_col.sum()),
+        })
+    return pd.DataFrame(records)

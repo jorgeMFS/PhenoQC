@@ -18,6 +18,7 @@ from .logging_module import log_activity, setup_logging
 from tqdm import tqdm
 import hashlib
 from .quality_metrics import QUALITY_METRIC_CHOICES, ClassCounter, imputation_bias_report, imputation_stability_cv
+from .quality_metrics import imputation_uncertainty_mice
 def _finalize_class_distribution(cfg: dict, counter: ClassCounter):
     if not counter:
         return None
@@ -113,6 +114,7 @@ def child_process_run(
     diag_repeats: int = 5,
     diag_mask_fraction: float = 0.10,
     diag_scoring: str = 'MAE',
+    stability_cv_fail_threshold: float = None,
 ):
     """
     This top-level function is what each child process calls.
@@ -247,6 +249,7 @@ def process_file(
     bias_var_low: float = 0.5,
     bias_var_high: float = 2.0,
     bias_ks_alpha: float = 0.05,
+    stability_cv_fail_threshold: float = None,
 ):
     """
     Processes a single file, generating an output CSV and a PDF/MD report.
@@ -885,6 +888,14 @@ def process_file(
                             random_state=42,
                             columns=None,
                         )
+                        # Optional: enforce threshold failure
+                        if stability_df is not None and not stability_df.empty and stability_cv_fail_threshold is not None:
+                            try:
+                                avg_cv = float(stability_df['cv_error'].mean())
+                                if avg_cv > float(stability_cv_fail_threshold):
+                                    raise RuntimeError(f"Imputation stability CV average {avg_cv:.4f} exceeds threshold {stability_cv_fail_threshold}")
+                            except Exception:
+                                pass
                 except Exception as _diag_ex:
                     log_activity(f"{file_path}: imputation stability diagnostic failed: {_diag_ex}", level="warning")
             except Exception as _bias_ex:

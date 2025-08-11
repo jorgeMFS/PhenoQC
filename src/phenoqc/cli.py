@@ -51,6 +51,7 @@ def parse_arguments():
     parser.add_argument('--diag-repeats', type=int, default=5, help='Repeats for stability diagnostic (default 5)')
     parser.add_argument('--diag-mask-fraction', type=float, default=0.10, help='Mask fraction for stability diagnostic (default 0.10)')
     parser.add_argument('--diag-scoring', choices=['MAE','RMSE'], default='MAE', help='Scoring metric for stability diagnostic (default MAE)')
+    parser.add_argument('--stability-cv-fail-threshold', type=float, default=None, help='If set, fail the run when average stability CV exceeds this threshold')
     parser.add_argument('--recursive', action='store_true', help='Enable recursive directory scanning for nested files')
     parser.add_argument('--unique_identifiers', nargs='+', required=True, help='List of column names that uniquely identify a record')
     parser.add_argument('--ontologies', nargs='+', help='List of ontologies to map to (e.g., HPO DO MPO)', default=None)
@@ -240,6 +241,7 @@ def main():
         diag_repeats=args.diag_repeats,
         diag_mask_fraction=args.diag_mask_fraction,
         diag_scoring=args.diag_scoring,
+        stability_cv_fail_threshold=args.stability_cv_fail_threshold,
         redundancy_threshold=args.redundancy_threshold,
         redundancy_method=args.redundancy_method,
         offline=bool(args.offline),
