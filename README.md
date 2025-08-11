@@ -158,7 +158,9 @@ phenoqc \
 - `--label-column class` and `--imbalance-threshold 0.10`
 - `--quality-metrics imputation_bias redundancy` (or `all`)
 - Imputation-bias thresholds: `--bias-smd-threshold`, `--bias-var-low`, `--bias-var-high`, `--bias-ks-alpha`
+- Categorical bias thresholds: `--bias-psi-threshold`, `--bias-cramer-threshold`
 - Imputation stability diagnostics: `--impute-diagnostics on|off`, `--diag-repeats`, `--diag-mask-fraction`, `--diag-scoring`
+- Stability fail threshold: `--stability-cv-fail-threshold` (fail run if average CV exceeds value)
 - Protected columns: `--protected-columns label outcome`
 - Redundancy: `--redundancy-threshold`, `--redundancy-method {pearson,spearman}`
 - Offline/caching: `--offline` forces cached/local ontologies only; no downloads. In online mode, ontology downloads use retry/backoff and are cached under `~/.phenoqc/ontologies` respecting `cache_expiry_days` in config.
@@ -217,6 +219,8 @@ Workflow:
 - Step 4: Default strategy, per-column overrides, parameters, and tuning
 - Step 4 includes: Bias thresholds, Stability diagnostics (enable, repeats, mask fraction, scoring), Protected columns, and Redundancy settings
 - Results: Class Distribution table/plot, Imputation Settings, Imputation Stability & Bias, Tuning Summary
+  - Bias includes numeric (SMD, variance ratio, KS) and categorical (PSI, Cramér’s V) metrics
+  - Optional Multiple Imputation Uncertainty (MICE repeats) table
 
 ---
 

@@ -1060,6 +1060,12 @@ def batch_process(
     diag_mask_fraction: float = 0.10,
     diag_scoring: str = 'MAE',
     offline: bool = False,
+    stability_cv_fail_threshold: float = None,
+    bias_psi_threshold: float = 0.10,
+    bias_cramer_threshold: float = 0.20,
+    mi_uncertainty_enable: bool = False,
+    mi_repeats: int = 3,
+    mi_params: dict = None,
 ):
     log_activity(f"[ParentProcess] Starting on: {files}", level="info")
 
@@ -1180,6 +1186,12 @@ def batch_process(
                 int(diag_repeats),
                 float(diag_mask_fraction),
                 str(diag_scoring),
+                stability_cv_fail_threshold=stability_cv_fail_threshold,
+                bias_psi_threshold=bias_psi_threshold,
+                bias_cramer_threshold=bias_cramer_threshold,
+                mi_uncertainty_enable=mi_uncertainty_enable,
+                mi_repeats=int(mi_repeats),
+                mi_params=(mi_params or {}),
             )
             futures.append(future)
 

@@ -811,6 +811,10 @@ def main():
         var_low = st.number_input("Variance ratio lower bound", min_value=0.01, max_value=1.0, value=float(existing_bias.get('var_ratio_low', 0.50)), step=0.01)
         var_high = st.number_input("Variance ratio upper bound", min_value=1.0, max_value=10.0, value=float(existing_bias.get('var_ratio_high', 2.0)), step=0.1)
         ks_alpha = st.number_input("KS alpha", min_value=0.001, max_value=0.5, value=float(existing_bias.get('ks_alpha', 0.05)), step=0.001, format="%0.3f")
+        # Categorical thresholds (PSI, Cramér's V)
+        psi_thr = st.number_input("PSI threshold (categorical)", min_value=0.0, max_value=5.0, value=float(existing_bias.get('psi_threshold', 0.10)), step=0.01)
+        cramer_thr = st.number_input("Cramér's V threshold (categorical)", min_value=0.0, max_value=1.0, value=float(existing_bias.get('cramer_threshold', 0.20)), step=0.01)
+
         if bias_enable:
             # Ensure list-style metrics include 'imputation_bias'
             qm_val = st.session_state['config'].get('quality_metrics')
@@ -826,6 +830,8 @@ def main():
                 'var_ratio_low': float(var_low),
                 'var_ratio_high': float(var_high),
                 'ks_alpha': float(ks_alpha),
+                'psi_threshold': float(psi_thr),
+                'cramer_threshold': float(cramer_thr),
             }
         else:
             qm = st.session_state['config'].get('quality_metrics')
@@ -856,6 +862,10 @@ def main():
                 'mask_fraction': float(mask_frac_val),
                 'scoring': scoring_val,
             }
+            # Optional: stability threshold to fail the run
+            cv_fail = st.number_input("Fail if average stability CV >", min_value=0.0, max_value=10.0, value=float(st.session_state['config'].get('stability_cv_fail_threshold', 0.0) or 0.0), step=0.01, help="0 means disabled")
+            if cv_fail > 0:
+                st.session_state['config']['stability_cv_fail_threshold'] = float(cv_fail)
         else:
             if isinstance(st.session_state['config'].get('quality_metrics'), dict):
                 st.session_state['config']['quality_metrics'].pop('imputation_stability', None)
@@ -873,6 +883,21 @@ def main():
         red_thr = st.number_input("Correlation threshold", min_value=0.0, max_value=1.0, value=float(redundancy_cfg.get('threshold', 0.98)), step=0.01)
         red_method = st.selectbox("Correlation method", options=['pearson','spearman'], index=0 if redundancy_cfg.get('method','pearson')=='pearson' else 1)
         st.session_state['config']['redundancy'] = {'threshold': float(red_thr), 'method': str(red_method)}
+
+        # Multiple-imputation uncertainty (MICE repeats)
+        st.subheader("Multiple-imputation uncertainty (MICE repeats)")
+        mi_cfg = st.session_state['config'].get('mi_uncertainty', {}) or {}
+        mi_enable = st.checkbox("Enable MI uncertainty (MICE repeats)", value=bool(mi_cfg.get('enable', False)))
+        mi_repeats = st.number_input("MICE repeats", min_value=2, max_value=50, value=int(mi_cfg.get('repeats', 3)), step=1)
+        mi_max_iter = st.number_input("MICE max_iter", min_value=1, max_value=100, value=int((mi_cfg.get('params', {}) or {}).get('max_iter', 10)), step=1)
+        if mi_enable:
+            st.session_state['config']['mi_uncertainty'] = {
+                'enable': True,
+                'repeats': int(mi_repeats),
+                'params': {'max_iter': int(mi_max_iter)},
+            }
+        else:
+            st.session_state['config'].pop('mi_uncertainty', None)
 
         # Retain older session fields (used by legacy flow)
         st.session_state['imputation_config'] = {
