@@ -14,6 +14,8 @@ Key Features
 * **Reporting and Visualization:** Generates detailed QC reports and visualizations with improved formatting.
 * **Class Distribution (Optional):** Provide a label column to get a class-imbalance summary and warning.
 * **Imputation Parameters & Quick Tuning:** Configure imputation parameters and optionally run a mask-and-score tuner.
+* **Imputation Stability & Bias:** Optional diagnostics quantify repeatability and distributional shift, with thresholds and triggers surfaced in the report.
+* **CLI vs Config Precedence:** CLI flags override YAML config for reproducibility and clarity.
 
 .. toctree::
    :maxdepth: 2

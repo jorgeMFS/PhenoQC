@@ -1,0 +1,38 @@
+{
+  "file": "synthetic_multi2_data.csv",
+  "quality_scores": {
+    "Schema Validation Score": 0.0,
+    "Missing Data Score": 92.94028722600152,
+    "Mapping Success Score": 99.74811083123426,
+    "Overall Quality Score": 64.22946601907859
+  },
+  "imputation": {
+    "global": {
+      "strategy": "knn",
+      "params": {
+        "n_neighbors": 5,
+        "weights": "uniform"
+      }
+    },
+    "tuning": {
+      "enabled": true,
+      "best": {
+        "n_neighbors": 7
+      },
+      "score": 198.64056297555354,
+      "metric": "MAE",
+      "random_state": 42,
+      "mask_fraction": 0.1,
+      "max_cells": 20000
+    }
+  },
+  "class_distribution": null,
+  "quality_metrics": {
+    "imputation_bias": {
+      "rows": []
+    },
+    "imputation_stability": {
+      "rows": []
+    }
+  }
+}

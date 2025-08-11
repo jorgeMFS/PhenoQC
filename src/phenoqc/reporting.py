@@ -53,6 +53,8 @@ def generate_qc_report(
     imputation_summary: Optional[Dict] = None,
     bias_diagnostics: Optional[pd.DataFrame] = None,
     bias_thresholds: Optional[Dict] = None,
+    stability_diagnostics: Optional[pd.DataFrame] = None,
+    mi_uncertainty: Optional[pd.DataFrame] = None,
     quality_metrics_enabled: Optional[object] = None,
 ):
     """
@@ -403,9 +405,29 @@ def generate_qc_report(
                 ))
             story.append(Spacer(1, SPACING_L))
 
-        # Imputation-bias diagnostics (optional)
-        if isinstance(bias_diagnostics, pd.DataFrame) and not bias_diagnostics.empty:
-            story.append(Paragraph("Imputation-bias diagnostics", section_header_style))
+        # Imputation Stability & Bias (optional)
+        if (
+            (isinstance(bias_diagnostics, pd.DataFrame) and not bias_diagnostics.empty)
+            or (isinstance(stability_diagnostics, pd.DataFrame) and not stability_diagnostics.empty)
+            or (isinstance(mi_uncertainty, pd.DataFrame) and not mi_uncertainty.empty)
+        ):
+            story.append(Paragraph("Imputation Stability & Bias", section_header_style))
+            # Stability summary (if provided)
+            if isinstance(stability_diagnostics, pd.DataFrame) and not stability_diagnostics.empty:
+                story.append(Spacer(1, 6))
+                story.append(Paragraph("Stability (repeatability)", subsection_header_style))
+                try:
+                    # Show top variables by worst (highest) cv_error
+                    df_stab = stability_diagnostics.copy()
+                    df_stab = df_stab.sort_values(by=['cv_error','mean_error'], ascending=[False, True]).head(20)
+                    # Round for display
+                    for c in ('mean_error','sd_error','cv_error'):
+                        if c in df_stab.columns:
+                            df_stab[c] = pd.to_numeric(df_stab[c], errors='coerce').round(4)
+                    block = build_dataframe_table(df_stab, title="Imputation Stability (top variables)", max_rows=50)
+                    story.append(KeepTogether(block))
+                except Exception:
+                    pass
             # Show thresholds if provided
             if isinstance(bias_thresholds, dict) and bias_thresholds:
                 thr_text = \
@@ -414,89 +436,103 @@ def generate_qc_report(
                     f"KS p<{bias_thresholds.get('ks_alpha', 0.05)}"
                 story.append(Paragraph(f"<b>Warning rules:</b> {thr_text}", styles['Normal']))
                 story.append(Spacer(1, 6))
-            # Compute rule triggers per variable for explainability
-            _smd_thr = float(bias_thresholds.get('smd_threshold', 0.10)) if isinstance(bias_thresholds, dict) else 0.10
-            _var_lo = float(bias_thresholds.get('var_ratio_low', 0.5)) if isinstance(bias_thresholds, dict) else 0.5
-            _var_hi = float(bias_thresholds.get('var_ratio_high', 2.0)) if isinstance(bias_thresholds, dict) else 2.0
-            _ks_alpha = float(bias_thresholds.get('ks_alpha', 0.05)) if isinstance(bias_thresholds, dict) else 0.05
+            # Only render bias tables if we have bias diagnostics
+            if isinstance(bias_diagnostics, pd.DataFrame) and not bias_diagnostics.empty:
+                # Compute rule triggers per variable for explainability
+                _smd_thr = float(bias_thresholds.get('smd_threshold', 0.10)) if isinstance(bias_thresholds, dict) else 0.10
+                _var_lo = float(bias_thresholds.get('var_ratio_low', 0.5)) if isinstance(bias_thresholds, dict) else 0.5
+                _var_hi = float(bias_thresholds.get('var_ratio_high', 2.0)) if isinstance(bias_thresholds, dict) else 2.0
+                _ks_alpha = float(bias_thresholds.get('ks_alpha', 0.05)) if isinstance(bias_thresholds, dict) else 0.05
 
-            def _trigger_text(row) -> str:
-                reasons = []
-                try:
-                    val = pd.to_numeric(row.get('smd'), errors='coerce')
-                    if pd.notnull(val) and abs(float(val)) >= _smd_thr:
-                        reasons.append(f"SMD≥{_smd_thr}")
-                except Exception:
-                    pass
-                try:
-                    vr = pd.to_numeric(row.get('var_ratio'), errors='coerce')
-                    if pd.notnull(vr) and (float(vr) < _var_lo or float(vr) > _var_hi):
-                        reasons.append(f"Var-ratio∉[{_var_lo},{_var_hi}]")
-                except Exception:
-                    pass
-                try:
-                    pval = pd.to_numeric(row.get('ks_p'), errors='coerce')
-                    if pd.notnull(pval) and float(pval) < _ks_alpha:
-                        reasons.append(f"KS p<{_ks_alpha}")
-                except Exception:
-                    pass
-                return "; ".join(reasons)
+                def _trigger_text(row) -> str:
+                    reasons = []
+                    try:
+                        val = pd.to_numeric(row.get('smd'), errors='coerce')
+                        if pd.notnull(val) and abs(float(val)) >= _smd_thr:
+                            reasons.append(f"SMD≥{_smd_thr}")
+                    except Exception:
+                        pass
+                    try:
+                        vr = pd.to_numeric(row.get('var_ratio'), errors='coerce')
+                        if pd.notnull(vr) and (float(vr) < _var_lo or float(vr) > _var_hi):
+                            reasons.append(f"Var-ratio∉[{_var_lo},{_var_hi}]")
+                    except Exception:
+                        pass
+                    try:
+                        pval = pd.to_numeric(row.get('ks_p'), errors='coerce')
+                        if pd.notnull(pval) and float(pval) < _ks_alpha:
+                            reasons.append(f"KS p<{_ks_alpha}")
+                    except Exception:
+                        pass
+                    return "; ".join(reasons)
 
-            cols_desired = [
-                ("column", "Variable"), ("n_obs", "n_obs"), ("n_imp", "n_imp"),
-                ("smd", "SMD"), ("var_ratio", "Var-ratio"), ("ks_p", "KS p"),
-                ("triggers", "Triggers"), ("warn", "Warn")
-            ]
-            df_bias = bias_diagnostics.copy()
-            present = [src for src, _ in cols_desired if src in df_bias.columns]
-            # Derive triggers before column selection to ensure availability
-            try:
-                df_bias['triggers'] = df_bias.apply(_trigger_text, axis=1)
-            except Exception:
-                df_bias['triggers'] = ""
-            df_bias = df_bias[[c for c in [src for src, _ in cols_desired] if c in df_bias.columns]]
-            # Rename headers for readability
-            rename_map = {src: label for src, label in cols_desired if src in df_bias.columns}
-            df_bias = df_bias.rename(columns=rename_map)
-            # Round numeric columns
-            for c in df_bias.columns:
-                if c in ("SMD", "Var-ratio", "KS p"):
-                    df_bias[c] = pd.to_numeric(df_bias[c], errors='coerce').round(3)
-            block = []
-            block.append(Paragraph(f"<b>Variables evaluated:</b> {len(df_bias)}", styles['Normal']))
-            block.extend(build_dataframe_table(df_bias, title="", max_rows=50))
-            story.append(KeepTogether(block))
+                cols_desired = [
+                    ("column", "Variable"), ("n_obs", "n_obs"), ("n_imp", "n_imp"),
+                    ("smd", "SMD"), ("var_ratio", "Var-ratio"), ("ks_p", "KS p"),
+                    ("psi", "PSI"), ("cramers_v", "Cramér's V"), ("chi2_p", "Chi2 p"),
+                    ("triggers", "Triggers"), ("warn", "Warn")
+                ]
+                df_bias = bias_diagnostics.copy()
+                # Derive triggers before column selection to ensure availability
+                try:
+                    df_bias['triggers'] = df_bias.apply(_trigger_text, axis=1)
+                except Exception:
+                    df_bias['triggers'] = ""
+                df_bias = df_bias[[c for c in [src for src, _ in cols_desired] if c in df_bias.columns]]
+                # Rename headers for readability
+                rename_map = {src: label for src, label in cols_desired if src in df_bias.columns}
+                df_bias = df_bias.rename(columns=rename_map)
+                # Round numeric columns
+                for c in df_bias.columns:
+                    if c in ("SMD", "Var-ratio", "KS p"):
+                        df_bias[c] = pd.to_numeric(df_bias[c], errors='coerce').round(3)
+                block = []
+                block.append(Paragraph(f"<b>Variables evaluated:</b> {len(df_bias)}", styles['Normal']))
+                block.extend(build_dataframe_table(df_bias, title="", max_rows=50))
+                story.append(KeepTogether(block))
 
-            # Traffic-light status bar for top variables (red=warn, green=ok)
-            try:
-                status_rows = []
-                header = [Paragraph("Variable", table_header_style), Paragraph("Status", table_header_style), Paragraph("Triggers", table_header_style)]
-                status_rows.append(header)
-                show_df = bias_diagnostics.sort_values(by=['warn', 'smd'], ascending=[False, False]).head(20)
-                for _, r in show_df.iterrows():
-                    var = str(r.get('column'))
-                    warn_flag = bool(r.get('warn', False))
-                    status_cell = Paragraph("WARN" if warn_flag else "OK", table_cell_style)
-                    trig = _trigger_text(r)
-                    status_rows.append([Paragraph(var, table_cell_style), status_cell, Paragraph(trig or "—", table_cell_style)])
-                status_tbl = Table(status_rows, colWidths=[available_width * 0.5, available_width * 0.15, available_width * 0.35])
-                status_tbl.setStyle([
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
-                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                    ('FONTSIZE', (0, 0), (-1, -1), 8),
-                    ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#B0B7BF')),
-                ])
-                # Color status cells
-                for i in range(1, len(status_rows)):
-                    warn_flag = bool(show_df.iloc[i-1].get('warn', False))
-                    color = colors.red if warn_flag else colors.green
-                    status_tbl.setStyle([('BACKGROUND', (1, i), (1, i), color), ('TEXTCOLOR', (1, i), (1, i), colors.white)])
-                story.append(Spacer(1, 6))
-                story.append(status_tbl)
-            except Exception:
-                logging.exception("Failed to render traffic-light status table for bias diagnostics.")
+                # Traffic-light status bar for top variables (red=warn, green=ok)
+                try:
+                    status_rows = []
+                    header = [Paragraph("Variable", table_header_style), Paragraph("Status", table_header_style), Paragraph("Triggers", table_header_style)]
+                    status_rows.append(header)
+                    show_df = bias_diagnostics.sort_values(by=['warn', 'smd'], ascending=[False, False]).head(20)
+                    for _, r in show_df.iterrows():
+                        var = str(r.get('column'))
+                        warn_flag = bool(r.get('warn', False))
+                        status_cell = Paragraph("WARN" if warn_flag else "OK", table_cell_style)
+                        trig = _trigger_text(r)
+                        status_rows.append([Paragraph(var, table_cell_style), status_cell, Paragraph(trig or "—", table_cell_style)])
+                    status_tbl = Table(status_rows, colWidths=[available_width * 0.5, available_width * 0.15, available_width * 0.35])
+                    status_tbl.setStyle([
+                        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                        ('FONTSIZE', (0, 0), (-1, -1), 8),
+                        ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#B0B7BF')),
+                    ])
+                    # Color status cells
+                    for i in range(1, len(status_rows)):
+                        warn_flag = bool(show_df.iloc[i-1].get('warn', False))
+                        color = colors.red if warn_flag else colors.green
+                        status_tbl.setStyle([('BACKGROUND', (1, i), (1, i), color), ('TEXTCOLOR', (1, i), (1, i), colors.white)])
+                    story.append(Spacer(1, 6))
+                    story.append(status_tbl)
+                except Exception:
+                    logging.exception("Failed to render traffic-light status table for bias diagnostics.")
 
             story.append(Spacer(1, SPACING_L))
+            # MI uncertainty (if provided)
+            if isinstance(mi_uncertainty, pd.DataFrame) and not mi_uncertainty.empty:
+                try:
+                    story.append(Paragraph("Multiple Imputation Uncertainty (MICE repeats)", subsection_header_style))
+                    df_mi = mi_uncertainty.copy()
+                    for c in ('mi_var','mi_std'):
+                        if c in df_mi.columns:
+                            df_mi[c] = pd.to_numeric(df_mi[c], errors='coerce').round(6)
+                    block_mi = build_dataframe_table(df_mi, title="Per-column MI variance", max_rows=50)
+                    story.append(KeepTogether(block_mi))
+                except Exception:
+                    pass
 
         # Missing Data Summary (table)
         story.append(Paragraph("Missing Data Summary", section_header_style))
@@ -662,9 +698,23 @@ def generate_qc_report(
                 pass
             md_lines.append("")
 
-        # Imputation-bias diagnostics (optional)
+        # Imputation Stability & Bias (optional)
         if isinstance(bias_diagnostics, pd.DataFrame) and not bias_diagnostics.empty:
-            md_lines.append("## Imputation-bias diagnostics")
+            md_lines.append("## Imputation Stability & Bias")
+            # Stability snippet (if provided)
+            if isinstance(stability_diagnostics, pd.DataFrame) and not stability_diagnostics.empty:
+                try:
+                    _df_st = stability_diagnostics.copy()
+                    _df_st = _df_st.sort_values(by=['cv_error','mean_error'], ascending=[False, True]).head(20)
+                    # Select columns if present
+                    cols = [c for c in ['column','metric','repeats','mean_error','sd_error','cv_error'] if c in _df_st.columns]
+                    _df_st = _df_st[cols]
+                    md_lines.append(_df_st.to_markdown(index=False))
+                except Exception:
+                    try:
+                        md_lines.append(stability_diagnostics.to_csv(index=False))
+                    except Exception:
+                        pass
             if isinstance(bias_thresholds, dict) and bias_thresholds:
                 md_lines.append(
                     f"- Thresholds: SMD≥{bias_thresholds.get('smd_threshold', 0.10)}, "

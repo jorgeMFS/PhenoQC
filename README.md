@@ -155,29 +155,53 @@ phenoqc \
 
 - `--impute-params '{"n_neighbors": 5}'` (JSON)
 - `--impute-tuning on|off`
-- `--label-column class` with `--imbalance-threshold 0.10`
+- `--label-column class` and `--imbalance-threshold 0.10`
+- `--quality-metrics imputation_bias redundancy` (or `all`)
+- Imputation-bias thresholds: `--bias-smd-threshold`, `--bias-var-low`, `--bias-var-high`, `--bias-ks-alpha`
+- Categorical bias thresholds: `--bias-psi-threshold`, `--bias-cramer-threshold`
+- Imputation stability diagnostics: `--impute-diagnostics on|off`, `--diag-repeats`, `--diag-mask-fraction`, `--diag-scoring`
+- Stability fail threshold: `--stability-cv-fail-threshold` (fail run if average CV exceeds value)
+- Protected columns: `--protected-columns label outcome`
+- Redundancy: `--redundancy-threshold`, `--redundancy-method {pearson,spearman}`
+- Offline/caching: `--offline` forces cached/local ontologies only; no downloads. In online mode, ontology downloads use retry/backoff and are cached under `~/.phenoqc/ontologies` respecting `cache_expiry_days` in config.
 
-Reports generated under `--output` include:
+Reports generated under `--output` include a PDF with:
 
 - Summary & scores
-- Optional Class Distribution when a label column is set
-- Additional Quality Dimensions when computed
+- Optional Class Distribution (when label column is set)
+- Additional Quality Dimensions (only when computed)
 - Missing data summary, mapping success, and visuals
 
-### Key parameters
+### CLI vs config precedence
 
-- `--input`: one or more data files or directories (`.csv`, `.tsv`, `.json`, `.zip`)
-- `--output`: directory for saved reports (default `./reports/`)
-- `--schema`: JSON schema for validation
-- `--config`: YAML configuration (default `config.yaml`)
-- `--custom_mappings`: custom term-mapping JSON (optional)
-- `--impute`: strategy for missing data (`mean`, `median`, `mode`, `knn`, `mice`, `svd`, `none`)
-- `--unique_identifiers`: columns that uniquely identify records
-- `--phenotype_columns`: JSON mapping of columns to ontologies
-- `--ontologies`: list of ontology IDs (e.g., `HPO DO MPO`)
-- `--recursive`: enable recursive directory scanning
+- CLI flags override values in the YAML config for the run.
+- If you set `--impute-params` or enable `--impute-tuning on`, these take precedence over `imputation.params`/`imputation.tuning` in `config.yaml`.
+- Same precedence applies to diagnostics thresholds and redundancy settings.
 
-Per-column overrides accept their own params. The quick tuner supports KNN, MICE (`max_iter`) and SVD (`rank`); you can pass a grid to explore.
+### Config (new `imputation:` block)
+
+```yaml
+imputation:
+  strategy: knn
+  params:
+    n_neighbors: 5
+    weights: uniform
+  per_column:
+    Creatinine_mgdl:
+      strategy: mice
+      params: {max_iter: 15}
+    Cholesterol_mgdl:
+      strategy: svd
+      params: {rank: 3}
+  tuning:
+    enable: true
+    mask_fraction: 0.1
+    scoring: MAE
+    max_cells: 20000
+    random_state: 42
+    grid:
+      n_neighbors: [3, 5, 7]
+```
 
 ---
 
@@ -191,13 +215,12 @@ python run_gui.py
 
 Workflow:
 
-1. Upload config & schema.
-2. Upload data files or a `.zip` archive.
-3. Choose unique identifiers & ontologies.
-4. Set missing data strategy and optional tuning.
-5. Review results and download reports.
-
-The GUI also surfaces class-distribution warnings and imputation summaries.
+- Step 3: Optional label column and imbalance threshold
+- Step 4: Default strategy, per-column overrides, parameters, and tuning
+- Step 4 includes: Bias thresholds, Stability diagnostics (enable, repeats, mask fraction, scoring), Protected columns, and Redundancy settings
+- Results: Class Distribution table/plot, Imputation Settings, Imputation Stability & Bias, Tuning Summary
+  - Bias includes numeric (SMD, variance ratio, KS) and categorical (PSI, Cramér’s V) metrics
+  - Optional Multiple Imputation Uncertainty (MICE repeats) table
 
 ---
 
@@ -205,6 +228,7 @@ The GUI also surfaces class-distribution warnings and imputation summaries.
 
 - Class Distribution: table and warning when minority proportion < threshold
 - Imputation Settings: global strategy/params and tuning summary
+- Imputation Stability & Bias: per-variable stability (repeatability) and bias diagnostics with thresholds and triggers
 - Additional Quality: only displayed if metrics are computed
 
 ---
@@ -215,6 +239,114 @@ The GUI also surfaces class-distribution warnings and imputation summaries.
 - `scripts/e2e_medium_cli_test.py` – mid-sized end-to-end pipeline run
 - `scripts/end_to_end_e2e_cli_test.py` – large end-to-end pipeline run
 - `scripts/imputation_params_cli_test.py` – imputation params and optional tuning
+<<<<<<< HEAD
+- `scripts/end_to_end_diagnostics_demo.sh` – end-to-end example enabling stability & bias diagnostics with CLI overrides
+
+## Installation
+
+PhenoQC requires Python 3.9+.
+
+### Fresh install
+
+Install from PyPI:
+
+```bash
+pip install phenoqc
+```
+
+### From source
+
+Clone the repository and install in editable mode:
+
+```bash
+git clone https://github.com/jorgeMFS/PhenoQC.git
+cd PhenoQC
+pip install -e .
+```
+
+Running the CLI directly from the uninstalled `src/` tree will fail. For local
+development without installation you can use:
+
+```bash
+python -m phenoqc.cli
+```
+
+**Dependencies** are listed in `requirements.txt` and include:
+
+- `pandas`, `jsonschema`, `requests`, `plotly`, `reportlab`, `streamlit`,  
+  `pyyaml`, `watchdog`, `kaleido`, `tqdm`, `Pillow`, `scikit-learn`,  
+  `fancyimpute`, `fastjsonschema`, `pronto`, `rapidfuzz`.
+
+---
+
+## Usage
+
+PhenoQC can be invoked via its **CLI** or through the **GUI**:
+
+### 1. Command-Line Interface (CLI)
+
+#### Example: Process a Single File
+
+```bash
+phenoqc \
+  --input examples/samples/sample_data.json \
+  --output ./reports/ \
+  --schema examples/schemas/pheno_schema.json \
+  --config config.yaml \
+  --custom_mappings examples/mapping/custom_mappings.json \
+  --impute mice \
+  --unique_identifiers SampleID \
+  --phenotype_columns '{"PrimaryPhenotype": ["HPO"], "DiseaseCode": ["DO"]}' \
+  --ontologies HPO DO
+```
+
+#### Example: Batch Process Multiple Files
+
+```bash
+phenoqc \
+  --input examples/samples/sample_data.csv examples/samples/sample_data.json examples/samples/sample_data.tsv \
+  --output ./reports/ \
+  --schema examples/schemas/pheno_schema.json \
+  --config config.yaml \
+  --impute none \
+  --unique_identifiers SampleID \
+  --ontologies HPO DO MPO \
+  --phenotype_columns '{"PrimaryPhenotype": ["HPO"], "DiseaseCode": ["DO"], "TertiaryPhenotype": ["MPO"]}'
+```
+
+**Key Parameters:**
+
+- `--input`: One or more data files or directories (`.csv`, `.tsv`, `.json`, `.zip`).
+- `--output`: Directory for saving processed data and reports (default: `./reports/`).
+- `--schema`: Path to the JSON schema for data validation.
+- `--config`: YAML config file defining ontologies and settings (default: `config.yaml`).
+- `--custom_mappings`: Path to a custom term-mapping JSON (optional).
+- `--impute`: Strategy for missing data (e.g., `mean`, `median`, `mode`, `knn`, `mice`, `svd`, or `none`).
+- `--unique_identifiers`: Columns that uniquely identify each record (e.g., `SampleID`).
+- `--phenotype_columns`: JSON mapping of columns to ontologies:  
+  e.g., `{"PrimaryPhenotype": ["HPO"], "DiseaseCode": ["DO"]}`
+- `--ontologies`: List of ontology IDs (e.g., `HPO DO MPO`).
+- `--recursive`: Enable recursive scanning of directories.
+
+---
+
+### 2. Graphical User Interface (GUI)
+
+Launch the Streamlit GUI for an interactive experience:
+
+```bash
+python run_gui.py
+```
+
+**Workflow in the GUI**:
+
+1. **Upload Config & Schema**: Provide a JSON schema and a YAML config to define validation and ontology settings.
+2. **Upload Data**: Either upload individual `.csv`/`.tsv`/`.json` files or a `.zip` archive containing multiple files.
+3. **Choose Unique Identifiers & Ontologies**: Select columns to map to ontologies (HPO, DO, etc.) and specify unique identifier columns (e.g., `SampleID`).
+4. **Set Missing Data Strategy**: Choose an imputation strategy (mean, median, mode, advanced).
+5. **Run QC**: Process data and review results. Download generated reports.
+=======
+>>>>>>> origin/main
 
 ---
 
@@ -249,6 +381,8 @@ default_ontologies:
 
 fuzzy_threshold: 80
 cache_expiry_days: 30
+# optional: offline (forces cache/local ontologies only for the run)
+# offline: true
 
 imputation:
   strategy: knn

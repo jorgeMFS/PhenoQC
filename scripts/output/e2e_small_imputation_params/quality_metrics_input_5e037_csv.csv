@@ -1,0 +1,5 @@
+SampleID,PrimaryPhenotype,Height_cm,Weight_kg,class,SchemaViolationFlag,MissingDataFlag,HPO_ID
+1,HP:0001250,170.0,70.0,majority,True,False,HP:0001250
+2,HP:0001166,175.0,80.0,majority,True,False,HP:0001166
+3,HP:0000001,180.0,75.0,minority,True,False,HP:0000001
+4,HP:0001250,175.0,75.0,majority,True,False,HP:0001250

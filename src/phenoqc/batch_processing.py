@@ -17,7 +17,8 @@ from .configuration import load_config
 from .logging_module import log_activity, setup_logging
 from tqdm import tqdm
 import hashlib
-from .quality_metrics import QUALITY_METRIC_CHOICES, ClassCounter, imputation_bias_report
+from .quality_metrics import QUALITY_METRIC_CHOICES, ClassCounter, imputation_bias_report, imputation_stability_cv
+from .quality_metrics import imputation_uncertainty_mice
 def _finalize_class_distribution(cfg: dict, counter: ClassCounter):
     if not counter:
         return None
@@ -32,12 +33,34 @@ def _finalize_class_distribution(cfg: dict, counter: ClassCounter):
 def _build_imputation_summary(cfg: dict, engine: ImputationEngine):
     try:
         imp_cfg = (cfg or {}).get('imputation') or {}
+        tuning_cfg = imp_cfg.get('tuning', {}) or {}
+
+        # Base tuning info from engine if available
+        tuning_summary = (engine.tuning_summary if engine and engine.tuning_summary else {'enabled': False})
+        # Merge select fields from config for transparency (random_state, mask_fraction, scoring, max_cells)
+        merged_tuning = {
+            **({} if tuning_summary else {'enabled': False}),
+            **(tuning_summary or {}),
+        }
+        if tuning_cfg:
+            if 'random_state' in tuning_cfg:
+                merged_tuning['random_state'] = tuning_cfg.get('random_state')
+            if 'mask_fraction' in tuning_cfg:
+                merged_tuning['mask_fraction'] = tuning_cfg.get('mask_fraction')
+            if 'scoring' in tuning_cfg and 'metric' not in merged_tuning:
+                merged_tuning['metric'] = tuning_cfg.get('scoring')
+            if 'max_cells' in tuning_cfg:
+                merged_tuning['max_cells'] = tuning_cfg.get('max_cells')
+        # Provide default random_state if tuning enabled but not specified
+        if merged_tuning and merged_tuning.get('enabled') and 'random_state' not in merged_tuning:
+            merged_tuning['random_state'] = 42
+
         return {
             'global': {
                 'strategy': imp_cfg.get('strategy'),
                 'params': imp_cfg.get('params'),
             },
-            'tuning': (engine.tuning_summary if engine and engine.tuning_summary else {'enabled': False}),
+            'tuning': merged_tuning,
         }
     except Exception:
         return None
@@ -82,6 +105,21 @@ def child_process_run(
     phenotype_columns,
     cfg,
     log_file_for_children,
+    protected_columns=None,
+    bias_smd_threshold: float = 0.10,
+    bias_var_low: float = 0.5,
+    bias_var_high: float = 2.0,
+    bias_ks_alpha: float = 0.05,
+    impute_diag_enable: bool = False,
+    diag_repeats: int = 5,
+    diag_mask_fraction: float = 0.10,
+    diag_scoring: str = 'MAE',
+    stability_cv_fail_threshold: float = None,
+    bias_psi_threshold: float = 0.10,
+    bias_cramer_threshold: float = 0.20,
+    mi_uncertainty_enable: bool = False,
+    mi_repeats: int = 3,
+    mi_params: dict = None,
 ):
     """
     This top-level function is what each child process calls.
@@ -102,6 +140,21 @@ def child_process_run(
         chunksize=chunksize,
         phenotype_columns=phenotype_columns,
         cfg=cfg,
+        protected_columns=protected_columns,
+        bias_smd_threshold=bias_smd_threshold,
+        bias_var_low=bias_var_low,
+        bias_var_high=bias_var_high,
+        bias_ks_alpha=bias_ks_alpha,
+        impute_diag_enable=impute_diag_enable,
+        diag_repeats=diag_repeats,
+        diag_mask_fraction=diag_mask_fraction,
+        diag_scoring=diag_scoring,
+        stability_cv_fail_threshold=stability_cv_fail_threshold,
+        bias_psi_threshold=bias_psi_threshold,
+        bias_cramer_threshold=bias_cramer_threshold,
+        mi_uncertainty_enable=mi_uncertainty_enable,
+        mi_repeats=mi_repeats,
+        mi_params=mi_params,
     )
 
 
@@ -198,6 +251,21 @@ def process_file(
     chunksize=10000,
     phenotype_columns=None,
     cfg=None,
+    protected_columns=None,
+    impute_diag_enable: bool = False,
+    diag_repeats: int = 5,
+    diag_mask_fraction: float = 0.10,
+    diag_scoring: str = 'MAE',
+    bias_smd_threshold: float = 0.10,
+    bias_var_low: float = 0.5,
+    bias_var_high: float = 2.0,
+    bias_ks_alpha: float = 0.05,
+    stability_cv_fail_threshold: float = None,
+    bias_psi_threshold: float = 0.10,
+    bias_cramer_threshold: float = 0.20,
+    mi_uncertainty_enable: bool = False,
+    mi_repeats: int = 3,
+    mi_params: dict = None,
 ):
     """
     Processes a single file, generating an output CSV and a PDF/MD report.
@@ -479,10 +547,20 @@ def process_file(
 
                 # Impute
                 try:
-                    # Build engine from cfg if provided; exclude label column from numeric space
+                    # Build engine from cfg if provided; exclude label column and protected columns from numeric space
                     exclude_cols = []
                     if class_dist_cfg and class_dist_cfg.get("label_column"):
                         exclude_cols.append(class_dist_cfg.get("label_column"))
+                    
+                    # Add protected columns to exclusion list
+                    if protected_columns:
+                        for col in protected_columns:
+                            if col in chunk.columns:
+                                exclude_cols.append(col)
+                                log_activity(f"Protected column '{col}' excluded from imputation", level="info")
+                            else:
+                                log_activity(f"Protected column '{col}' not found in data, skipping", level="warning")
+                    
                     impute_cfg = None
                     if cfg and isinstance(cfg, dict):
                         impute_cfg = cfg.get('imputation')
@@ -495,10 +573,12 @@ def process_file(
                         impute_cfg = {'strategy': impute_strategy}
 
                     engine = ImputationEngine(impute_cfg, exclude_columns=exclude_cols)
+                    if chunk is None or not isinstance(chunk, pd.DataFrame):
+                        raise TypeError("Chunk is not a valid DataFrame before imputation")
                     chunk = engine.fit_transform(chunk)
                 except Exception as ex_impute:
                     final_status = "ProcessedWithWarnings"
-                    msg3 = f"Error in imputation: {str(ex_impute)}"
+                    msg3 = f"Error in imputation: {type(ex_impute).__name__}: {str(ex_impute)}"
                     log_activity(f"{file_path}: {msg3}", level="warning")
                 chunk = flag_missing_data_records(chunk)
 
@@ -769,6 +849,7 @@ def process_file(
             imputation_summary = _build_imputation_summary(cfg, engine)
             # Optional imputation-bias diagnostic
             bias_df = None
+            stability_df = None
             try:
                 metrics_cfg = cfg.get('quality_metrics') if isinstance(cfg, dict) else None
                 enable_bias = (
@@ -776,9 +857,18 @@ def process_file(
                 ) or (
                     isinstance(metrics_cfg, dict) and metrics_cfg.get('imputation_bias', {}).get('enable')
                 )
-                bias_thresholds = {}
+                # Merge thresholds from CLI flags with config; CLI flags act as defaults
+                merged_bias_thresholds = {
+                    'smd_threshold': float(bias_smd_threshold),
+                    'var_ratio_low': float(bias_var_low),
+                    'var_ratio_high': float(bias_var_high),
+                    'ks_alpha': float(bias_ks_alpha),
+                    'psi_threshold': float(bias_psi_threshold),
+                    'cramer_threshold': float(bias_cramer_threshold),
+                }
                 if isinstance(metrics_cfg, dict):
-                    bias_thresholds = metrics_cfg.get('imputation_bias', {})
+                    merged_bias_thresholds.update(metrics_cfg.get('imputation_bias', {}) or {})
+
                 if enable_bias and hasattr(engine, 'imputation_mask'):
                     # Use concatenated data as original if available; else sample_df fallback
                     try:
@@ -789,13 +879,63 @@ def process_file(
                         original_df=chunk if original_df.empty else original_df,
                         imputed_df=chunk,
                         imputation_mask=getattr(engine, 'imputation_mask', {}),
-                        smd_threshold=float(bias_thresholds.get('smd_threshold', 0.10)),
-                        var_ratio_low=float(bias_thresholds.get('var_ratio_low', 0.5)),
-                        var_ratio_high=float(bias_thresholds.get('var_ratio_high', 2.0)),
-                        ks_alpha=float(bias_thresholds.get('ks_alpha', 0.05)),
+                        smd_threshold=float(merged_bias_thresholds.get('smd_threshold', 0.10)),
+                        var_ratio_low=float(merged_bias_thresholds.get('var_ratio_low', 0.5)),
+                        var_ratio_high=float(merged_bias_thresholds.get('var_ratio_high', 2.0)),
+                        ks_alpha=float(merged_bias_thresholds.get('ks_alpha', 0.05)),
+                        psi_threshold=float(merged_bias_thresholds.get('psi_threshold', 0.10)),
+                        cramer_threshold=float(merged_bias_thresholds.get('cramer_threshold', 0.20)),
                     )
+                # Optional stability diagnostic
+                try:
+                    diag_cfg = {}
+                    if isinstance(metrics_cfg, dict):
+                        diag_cfg = (metrics_cfg.get('imputation_stability', {}) or {})
+                    enable_diag = bool(impute_diag_enable or diag_cfg.get('enable'))
+                    repeats = int(diag_cfg.get('repeats', diag_repeats))
+                    mask_fr = float(diag_cfg.get('mask_fraction', diag_mask_fraction))
+                    scoring_metric = str(diag_cfg.get('scoring', diag_scoring))
+                    if enable_diag:
+                        # Use numeric params from engine for strategy params
+                        imp_cfg = (cfg or {}).get('imputation') or {}
+                        strategy = imp_cfg.get('strategy') or 'mean'
+                        params = imp_cfg.get('params') or {}
+                        stability_df = imputation_stability_cv(
+                            df=chunk,
+                            strategy=strategy,
+                            params=params,
+                            repeats=repeats,
+                            mask_fraction=mask_fr,
+                            scoring=scoring_metric,
+                            random_state=42,
+                            columns=None,
+                        )
+                        # Optional: enforce threshold failure
+                        if stability_df is not None and not stability_df.empty and stability_cv_fail_threshold is not None:
+                            try:
+                                avg_cv = float(stability_df['cv_error'].mean())
+                                if avg_cv > float(stability_cv_fail_threshold):
+                                    raise RuntimeError(f"Imputation stability CV average {avg_cv:.4f} exceeds threshold {stability_cv_fail_threshold}")
+                            except Exception:
+                                pass
+                except Exception as _diag_ex:
+                    log_activity(f"{file_path}: imputation stability diagnostic failed: {_diag_ex}", level="warning")
             except Exception as _bias_ex:
                 log_activity(f"{file_path}: imputation-bias diagnostic failed: {_bias_ex}", level="warning")
+
+            # Optional multiple-imputation uncertainty (MICE repeats)
+            mi_uncertainty_df = None
+            try:
+                if mi_uncertainty_enable:
+                    mi_uncertainty_df = imputation_uncertainty_mice(
+                        df=chunk,
+                        repeats=int(mi_repeats),
+                        mice_params=(mi_params or {}),
+                        random_state=42,
+                        columns=None,
+                    )
+            except Exception as _mi_ex:
+                log_activity(f"{file_path}: MI uncertainty failed: {_mi_ex}", level="warning")
 
             generate_qc_report(
                 validation_results=validation_results,
@@ -811,13 +951,17 @@ def process_file(
                 class_distribution=class_distribution_result,
                 imputation_summary=imputation_summary,
                 bias_diagnostics=bias_df,
-                bias_thresholds={
-                    'smd_threshold': float(metrics_cfg.get('imputation_bias', {}).get('smd_threshold', 0.10)) if isinstance(metrics_cfg, dict) else 0.10,
-                    'var_ratio_low': float(metrics_cfg.get('imputation_bias', {}).get('var_ratio_low', 0.5)) if isinstance(metrics_cfg, dict) else 0.5,
-                    'var_ratio_high': float(metrics_cfg.get('imputation_bias', {}).get('var_ratio_high', 2.0)) if isinstance(metrics_cfg, dict) else 2.0,
-                    'ks_alpha': float(metrics_cfg.get('imputation_bias', {}).get('ks_alpha', 0.05)) if isinstance(metrics_cfg, dict) else 0.05,
+                stability_diagnostics=stability_df,
+                bias_thresholds=merged_bias_thresholds if 'merged_bias_thresholds' in locals() else {
+                    'smd_threshold': float(bias_smd_threshold),
+                    'var_ratio_low': float(bias_var_low),
+                    'var_ratio_high': float(bias_var_high),
+                    'ks_alpha': float(bias_ks_alpha),
+                    'psi_threshold': float(bias_psi_threshold),
+                    'cramer_threshold': float(bias_cramer_threshold),
                 },
                 quality_metrics_enabled=(cfg.get('quality_metrics') if isinstance(cfg, dict) else None),
+                mi_uncertainty=mi_uncertainty_df,
             )
             log_activity(f"{file_path}: QC report generated at {report_path}.")
             pbar.update(5)
@@ -839,7 +983,13 @@ def process_file(
                     'quality_metrics': {
                         'imputation_bias': {
                             'rows': (bias_df.to_dict(orient='records') if isinstance(bias_df, pd.DataFrame) else [])
-                        }
+                        },
+                        'imputation_stability': {
+                            'rows': (stability_df.to_dict(orient='records') if isinstance(stability_df, pd.DataFrame) else [])
+                        },
+                        'imputation_uncertainty': {
+                            'rows': (mi_uncertainty_df.to_dict(orient='records') if isinstance(mi_uncertainty_df, pd.DataFrame) else [])
+                        },
                     },
                 }
                 with open(qc_json_path, 'w', encoding='utf-8') as _jf:
@@ -869,7 +1019,10 @@ def process_file(
                 "quality_metrics": {
                     "imputation_bias": {
                         "rows": (bias_df.to_dict(orient='records') if isinstance(bias_df, pd.DataFrame) else [])
-                    }
+                        },
+                        "imputation_stability": {
+                            "rows": (stability_df.to_dict(orient='records') if isinstance(stability_df, pd.DataFrame) else [])
+                        },
                 },
             }
 
@@ -901,6 +1054,20 @@ def batch_process(
     bias_var_low: float = 0.5,
     bias_var_high: float = 2.0,
     bias_ks_alpha: float = 0.05,
+    protected_columns=None,
+    redundancy_threshold: float = None,
+    redundancy_method: str = None,
+    impute_diag_enable: bool = False,
+    diag_repeats: int = 5,
+    diag_mask_fraction: float = 0.10,
+    diag_scoring: str = 'MAE',
+    offline: bool = False,
+    stability_cv_fail_threshold: float = None,
+    bias_psi_threshold: float = 0.10,
+    bias_cramer_threshold: float = 0.20,
+    mi_uncertainty_enable: bool = False,
+    mi_repeats: int = 3,
+    mi_params: dict = None,
 ):
     log_activity(f"[ParentProcess] Starting on: {files}", level="info")
 
@@ -945,7 +1112,30 @@ def batch_process(
             tun = cfg_imp.setdefault('tuning', {})
             tun['enable'] = True
 
+    # Merge redundancy metric overrides (CLI > YAML)
+    try:
+        if redundancy_threshold is not None or redundancy_method is not None:
+            qm = config.setdefault('quality_metrics', [])
+            # Ensure redundancy metric is enabled in config if CLI tweaks are given
+            if isinstance(qm, list):
+                if 'redundancy' not in qm:
+                    qm.append('redundancy')
+            elif isinstance(qm, dict):
+                qm.setdefault('redundancy', {})
+            # Attach parameters in dict style for validator lookup
+            config.setdefault('redundancy', {})
+            if redundancy_threshold is not None:
+                config['redundancy']['threshold'] = float(redundancy_threshold)
+            if redundancy_method is not None:
+                config['redundancy']['method'] = str(redundancy_method)
+    except Exception as e:
+        log_activity(f"[RedundancyOverride] Error merging redundancy metric overrides: {e}", level="error")
+
     # 3) Create OntologyMapper
+    # Inject offline flag into config so OntologyMapper respects cached/local only
+    if offline:
+        config = dict(config or {})
+        config['offline'] = True
     ontology_mapper = OntologyMapper(config)
 
     # 4) Load custom mappings
@@ -957,6 +1147,16 @@ def batch_process(
     # Convert old style to new style if needed
     if phenotype_column and not phenotype_columns:
         phenotype_columns = {phenotype_column: ["HPO"]}
+
+    # Merge protected columns from config file with CLI arguments (CLI > config)
+    config_protected = config.get('protected_columns', [])
+    if protected_columns is None:
+        protected_columns = config_protected
+    elif config_protected:
+        # Combine both, with CLI taking precedence
+        all_protected = list(set(config_protected + protected_columns))
+        protected_columns = all_protected
+        log_activity(f"Combined protected columns from config ({config_protected}) and CLI ({protected_columns})", level="info")
 
     # 5) In parallel, call child_process_run
     results = []
@@ -979,6 +1179,21 @@ def batch_process(
                 phenotype_columns,
                 config,
                 log_file_for_children,
+                protected_columns,
+                bias_smd_threshold,
+                bias_var_low,
+                bias_var_high,
+                bias_ks_alpha,
+                impute_diag_enable,
+                int(diag_repeats),
+                float(diag_mask_fraction),
+                str(diag_scoring),
+                stability_cv_fail_threshold=stability_cv_fail_threshold,
+                bias_psi_threshold=bias_psi_threshold,
+                bias_cramer_threshold=bias_cramer_threshold,
+                mi_uncertainty_enable=mi_uncertainty_enable,
+                mi_repeats=int(mi_repeats),
+                mi_params=(mi_params or {}),
             )
             futures.append(future)
 

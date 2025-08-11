@@ -50,6 +50,13 @@ Parameters
 - ``--impute``: Strategy for missing data (mean, median, mode, knn, mice, svd, none)
 - ``--impute-params``: JSON object of parameters for the imputation strategy (e.g. ``{"n_neighbors": 5}``)
 - ``--impute-tuning {on,off}``: Enable quick tuning (mask-and-score) for imputation
+- ``--quality-metrics``: Choose metrics (e.g., ``imputation_bias``); ``all`` enables all
+ - ``--bias-smd-threshold``, ``--bias-var-low``, ``--bias-var-high``, ``--bias-ks-alpha``: thresholds for numeric bias diagnostics
+ - ``--bias-psi-threshold``, ``--bias-cramer-threshold``: thresholds for categorical bias diagnostics (PSI, Cramér’s V)
+- ``--impute-diagnostics {on,off}``, ``--diag-repeats``, ``--diag-mask-fraction``, ``--diag-scoring``: stability diagnostics
+ - ``--stability-cv-fail-threshold``: fail the run when average stability CV exceeds this limit
+- ``--redundancy-threshold``, ``--redundancy-method {pearson,spearman}``
+- ``--offline``: Use cached/local ontologies only; do not download
 - ``--unique_identifiers``: Columns that uniquely identify each record
 - ``--phenotype_columns``: JSON mapping of columns to ontologies
 - ``--ontologies``: List of ontology IDs
@@ -99,6 +106,7 @@ PhenoQC uses a YAML configuration file to define settings. Example ``config.yaml
 
     fuzzy_threshold: 80
     cache_expiry_days: 30
+    # offline: true  # optional: force cached/local ontologies only for the run
 
     imputation:
       strategy: knn
@@ -130,7 +138,9 @@ PhenoQC generates:
 
 1. Validated and processed data files
 2. Quality control reports (PDF/Markdown)
-   - Imputation Settings (strategy/params; tuning summary)
+   - Imputation Settings (strategy/params; tuning summary, random_state)
+   - Imputation Stability & Bias (if enabled): per-variable stability (CV of MAE/RMSE), bias metrics and thresholds (numeric and categorical)
+   - Multiple Imputation Uncertainty (if enabled): per-column MI variance/STD from repeated MICE
    - Optional Class Distribution (when label column configured)
    - Additional Quality Dimensions (only when computed)
 3. Visual summaries of data quality

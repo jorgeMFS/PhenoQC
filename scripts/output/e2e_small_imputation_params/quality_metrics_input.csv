@@ -1,0 +1,5 @@
+SampleID,PrimaryPhenotype,Height_cm,Weight_kg,class
+1,HP:0001250,170.0,70.0,majority
+2,HP:0001166,,80.0,majority
+3,HP:0000001,180.0,,minority
+4,HP:0001250,175.0,75.0,majority

@@ -1,0 +1,24 @@
+{
+  "file": "kidney_disease.csv",
+  "quality_scores": {
+    "Schema Validation Score": 100.0,
+    "Missing Data Score": 90.96428571428572,
+    "Mapping Success Score": 0.0,
+    "Overall Quality Score": 63.654761904761905
+  },
+  "imputation": {
+    "global": {
+      "strategy": null,
+      "params": null
+    },
+    "tuning": {
+      "enabled": false
+    }
+  },
+  "class_distribution": null,
+  "quality_metrics": {
+    "imputation_bias": {
+      "rows": []
+    }
+  }
+}

@@ -394,7 +394,23 @@ class DataValidator:
             if "accuracy" in metrics:
                 results["Accuracy Issues"] = check_accuracy(self.df, self.schema)
             if "redundancy" in metrics:
-                results["Redundancy Issues"] = detect_redundancy(self.df)
+                # Allow YAML dictionary config for redundancy params
+                thr = 0.98
+                method = 'pearson'
+                try:
+                    # Prefer explicit top-level redundancy block if present
+                    if isinstance(cfg.get('redundancy'), dict):
+                        thr = float(cfg['redundancy'].get('threshold', thr))
+                        method = str(cfg['redundancy'].get('method', method))
+                    # Or nested under quality_metrics.redundancy
+                    elif isinstance(cfg.get('quality_metrics'), dict):
+                        rdict = cfg['quality_metrics'].get('redundancy', {}) or {}
+                        if isinstance(rdict, dict):
+                            thr = float(rdict.get('threshold', thr))
+                            method = str(rdict.get('method', method))
+                except Exception:
+                    pass
+                results["Redundancy Issues"] = detect_redundancy(self.df, threshold=thr, method=method)
             if "traceability" in metrics:
                 results["Traceability Issues"] = check_traceability(
                     self.df, self.unique_identifiers, cfg.get("source_column")

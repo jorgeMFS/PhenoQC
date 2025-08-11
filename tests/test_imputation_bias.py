@@ -1,3 +1,50 @@
+import unittest
+import numpy as np
+import pandas as pd
+
+from phenoqc.missing_data import ImputationEngine
+from phenoqc.quality_metrics import imputation_bias_report
+
+
+class TestImputationBias(unittest.TestCase):
+    def setUp(self):
+        rng = np.random.RandomState(0)
+        n = 400
+        self.df = pd.DataFrame({
+            'x': rng.normal(0, 1.0, n),
+            'y': rng.normal(5, 2.0, n),
+        })
+        # Inject missingness at random
+        miss_idx_x = rng.choice(n, size=int(0.25 * n), replace=False)
+        miss_idx_y = rng.choice(n, size=int(0.25 * n), replace=False)
+        self.df.loc[miss_idx_x, 'x'] = np.nan
+        self.df.loc[miss_idx_y, 'y'] = np.nan
+
+    def test_mean_imputation_triggers_bias_flag(self):
+        # Use mean imputation, which typically reduces variance
+        engine = ImputationEngine({'strategy': 'mean'})
+        imputed = engine.fit_transform(self.df)
+
+        mask = getattr(engine, 'imputation_mask', {})
+        report = imputation_bias_report(
+            original_df=self.df,
+            imputed_df=imputed,
+            imputation_mask=mask,
+            smd_threshold=0.10,
+            var_ratio_low=0.5,
+            var_ratio_high=2.0,
+            ks_alpha=0.05,
+        )
+
+        # At least one numeric column should trigger a warning
+        self.assertIsInstance(report, pd.DataFrame)
+        self.assertFalse(report.empty)
+        self.assertTrue(bool(report['warn'].any()))
+
+
+if __name__ == '__main__':
+    unittest.main()
+
 import numpy as np
 import pandas as pd
 
@@ -42,6 +89,19 @@ def test_imputation_bias_all_missing_column():
     assert isinstance(bias_df, pd.DataFrame)
     # Should be empty or have no rows for 'x'
     assert bias_df.empty or not (bias_df['column'] == 'x').any()
+
+
+def test_imputation_bias_low_n_sets_ks_none_and_has_low_n_flag():
+    # Small sample sizes cause KS to be None and low_n flag True
+    orig = pd.DataFrame({"x": [1.0, 2.0]})
+    imp = pd.DataFrame({"x": [1.5, 2.5]})
+    mask = {"x": pd.Series([True, False])}
+    out = imputation_bias_report(original_df=orig, imputed_df=imp, imputation_mask=mask, columns=["x"], smd_threshold=0.0)
+    assert isinstance(out, pd.DataFrame)
+    if not out.empty:
+        row = out.iloc[0].to_dict()
+        assert row.get("ks_p", None) in (None, np.nan)
+        assert row.get("low_n", False) in (True, False)
 
 
 def test_imputation_bias_all_observed_column():

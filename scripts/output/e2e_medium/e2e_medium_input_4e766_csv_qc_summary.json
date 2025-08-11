@@ -3,8 +3,8 @@
   "quality_scores": {
     "Schema Validation Score": 0.0,
     "Missing Data Score": 92.97999999999999,
-    "Mapping Success Score": 0.0,
-    "Overall Quality Score": 30.99333333333333
+    "Mapping Success Score": 100.0,
+    "Overall Quality Score": 64.32666666666667
   },
   "imputation": {
     "global": {
@@ -20,7 +20,10 @@
         "n_neighbors": 7
       },
       "score": 11.289606179777651,
-      "metric": "MAE"
+      "metric": "MAE",
+      "random_state": 42,
+      "mask_fraction": 0.1,
+      "max_cells": 20000
     }
   },
   "class_distribution": {
@@ -39,6 +42,9 @@
   },
   "quality_metrics": {
     "imputation_bias": {
+      "rows": []
+    },
+    "imputation_stability": {
       "rows": []
     }
   }

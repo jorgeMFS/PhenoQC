@@ -84,6 +84,35 @@ def load_ontology(ont_config):
         onto = pronto.Ontology(onto_path)
     elif source == 'url':
         url = ont_config['url']
+        # Try local fallbacks before downloading again
+        try:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = os.path.dirname(script_dir)
+            basename = os.path.basename(url) if url else None
+            candidates = []
+            if basename:
+                candidates.append(os.path.join(project_root, 'ontologies', basename))
+                # Also try uppercase variant (e.g., HPO.obo)
+                candidates.append(os.path.join(project_root, 'ontologies', basename.upper()))
+            # Common known local files
+            candidates.extend([
+                os.path.join(project_root, 'ontologies', 'hp.obo'),
+                os.path.join(project_root, 'ontologies', 'doid.obo'),
+                os.path.join(project_root, 'ontologies', 'mp.obo'),
+            ])
+            # User cache location used by the main app
+            home_cache_dir = os.path.join(os.path.expanduser('~'), '.phenoqc', 'ontologies')
+            if basename:
+                candidates.append(os.path.join(home_cache_dir, basename))
+                candidates.append(os.path.join(home_cache_dir, basename.upper() if basename else ''))
+            for cand in candidates:
+                if cand and os.path.exists(cand):
+                    print(f"[INFO] Using cached/local ontology: {cand}")
+                    return pronto.Ontology(cand)
+        except Exception:
+            # Silently continue to download
+            pass
+
         print(f"[INFO] Downloading ontology from URL: {url}")
         resp = requests.get(url)
         if resp.status_code != 200:
