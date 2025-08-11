@@ -138,6 +138,9 @@
     },
     "imputation_stability": {
       "rows": []
+    },
+    "imputation_uncertainty": {
+      "rows": []
     }
   }
 }

@@ -419,6 +419,10 @@ class ImputationEngine:
         - Applies per-column overrides when provided
         - Optionally tunes KNN parameters using mask-and-score
         """
+        if df is None or not isinstance(df, pd.DataFrame):
+            raise TypeError(
+                f"ImputationEngine.fit_transform expected a pandas DataFrame, got {type(df).__name__}"
+            )
         cfg = self.cfg or {}
         global_strategy = cfg.get('strategy') or 'none'
         global_params = cfg.get('params') or {}

@@ -214,7 +214,7 @@ PY
 ok "Bias diagnostics JSON structure verified"
 
 bold "Comparing stability repeats (expect avg sd_error to be non-increasing with more repeats)..."
-python3 - <<'PY'
+"$PYBIN" - <<'PY'
 import json,glob,os,numpy as np
 out=os.environ['OUTDIR']
 def stab_avg_sd(case):

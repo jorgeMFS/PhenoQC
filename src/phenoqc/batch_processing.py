@@ -573,10 +573,12 @@ def process_file(
                         impute_cfg = {'strategy': impute_strategy}
 
                     engine = ImputationEngine(impute_cfg, exclude_columns=exclude_cols)
+                    if chunk is None or not isinstance(chunk, pd.DataFrame):
+                        raise TypeError("Chunk is not a valid DataFrame before imputation")
                     chunk = engine.fit_transform(chunk)
                 except Exception as ex_impute:
                     final_status = "ProcessedWithWarnings"
-                    msg3 = f"Error in imputation: {str(ex_impute)}"
+                    msg3 = f"Error in imputation: {type(ex_impute).__name__}: {str(ex_impute)}"
                     log_activity(f"{file_path}: {msg3}", level="warning")
                 chunk = flag_missing_data_records(chunk)
 

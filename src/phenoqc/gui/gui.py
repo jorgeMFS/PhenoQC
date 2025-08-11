@@ -769,8 +769,8 @@ def main():
                                     help="Evaluate candidate parameters on masked observed cells and choose the best.")
         tuning_cfg = {}
         if enable_tuning:
-            mask_fraction = st.slider("Mask fraction", min_value=0.01, max_value=0.5, value=float(tuning_defaults.get('mask_fraction', 0.10)), step=0.01)
-            scoring = st.selectbox("Scoring metric", options=['MAE', 'RMSE'], index=0 if str(tuning_defaults.get('scoring', 'MAE')).upper() == 'MAE' else 1)
+            mask_fraction = st.slider("Mask fraction", min_value=0.01, max_value=0.5, value=float(tuning_defaults.get('mask_fraction', 0.10)), step=0.01, key="tuning_mask_fraction")
+            scoring = st.selectbox("Scoring metric", options=['MAE', 'RMSE'], index=0 if str(tuning_defaults.get('scoring', 'MAE')).upper() == 'MAE' else 1, key="tuning_scoring")
             max_cells = st.number_input("Max cells", min_value=1000, max_value=200000, value=int(tuning_defaults.get('max_cells', 50000)), step=1000)
             random_state = st.number_input("Random state", min_value=0, max_value=10**9, value=int(tuning_defaults.get('random_state', 42)), step=1)
             default_grid = tuning_defaults.get('grid', {}).get('n_neighbors', [3, 5, 7])
@@ -846,9 +846,9 @@ def main():
         stability_cfg = (st.session_state['config'].get('quality_metrics', {}).get('imputation_stability', {})
                          if isinstance(st.session_state['config'].get('quality_metrics'), dict) else {})
         stab_enable = st.checkbox("Enable imputation stability diagnostic", value=bool(stability_cfg.get('enable', False)))
-        repeats_val = st.number_input("Repeats", min_value=1, max_value=100, value=int(stability_cfg.get('repeats', 5)), step=1)
-        mask_frac_val = st.slider("Mask fraction", min_value=0.01, max_value=0.5, value=float(stability_cfg.get('mask_fraction', 0.10)), step=0.01)
-        scoring_val = st.selectbox("Scoring", options=['MAE','RMSE'], index=0 if str(stability_cfg.get('scoring','MAE')).upper()=='MAE' else 1)
+        repeats_val = st.number_input("Repeats", min_value=1, max_value=100, value=int(stability_cfg.get('repeats', 5)), step=1, key="stability_repeats")
+        mask_frac_val = st.slider("Mask fraction", min_value=0.01, max_value=0.5, value=float(stability_cfg.get('mask_fraction', 0.10)), step=0.01, key="stability_mask_fraction")
+        scoring_val = st.selectbox("Scoring", options=['MAE','RMSE'], index=0 if str(stability_cfg.get('scoring','MAE')).upper()=='MAE' else 1, key="stability_scoring")
         if stab_enable:
             qm_val = st.session_state['config'].get('quality_metrics')
             if isinstance(qm_val, list) and 'imputation_bias' not in qm_val:

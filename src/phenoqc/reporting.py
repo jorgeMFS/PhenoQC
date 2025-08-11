@@ -406,7 +406,11 @@ def generate_qc_report(
             story.append(Spacer(1, SPACING_L))
 
         # Imputation Stability & Bias (optional)
-        if isinstance(bias_diagnostics, pd.DataFrame) and not bias_diagnostics.empty:
+        if (
+            (isinstance(bias_diagnostics, pd.DataFrame) and not bias_diagnostics.empty)
+            or (isinstance(stability_diagnostics, pd.DataFrame) and not stability_diagnostics.empty)
+            or (isinstance(mi_uncertainty, pd.DataFrame) and not mi_uncertainty.empty)
+        ):
             story.append(Paragraph("Imputation Stability & Bias", section_header_style))
             # Stability summary (if provided)
             if isinstance(stability_diagnostics, pd.DataFrame) and not stability_diagnostics.empty:
