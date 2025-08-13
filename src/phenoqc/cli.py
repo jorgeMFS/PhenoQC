@@ -65,7 +65,7 @@ def parse_arguments():
         help='[Deprecated] Use --phenotype_columns instead'
     )
     parser.add_argument(
-        '--quality-metrics',
+        '--quality-metrics', '--metrics',
         nargs='+',
         choices=QUALITY_METRIC_CHOICES + ['all'],
         help='Additional quality metrics to evaluate',

@@ -304,10 +304,14 @@ def generate_qc_report(
         if isinstance(quality_metrics_enabled, list):
             enabled_ids = {str(m).lower() for m in quality_metrics_enabled}
         elif isinstance(quality_metrics_enabled, dict):
-            # dictionary style not typically used for these metrics; treat any truthy flag as enabled
+            # dictionary style: check nested enable flags when present
             for mid in ["accuracy", "redundancy", "traceability", "timeliness"]:
                 try:
-                    if quality_metrics_enabled.get(mid):
+                    block = quality_metrics_enabled.get(mid)
+                    if isinstance(block, dict):
+                        if block.get('enable', False):
+                            enabled_ids.add(mid)
+                    elif block:
                         enabled_ids.add(mid)
                 except Exception:
                     pass
