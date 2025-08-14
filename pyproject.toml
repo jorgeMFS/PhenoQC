@@ -4,10 +4,51 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "phenoqc"
-version = "1.2.0"
+version = "1.2.1"
 requires-python = ">=3.9"
 description = "Phenotypic Data Quality Control Toolkit for Genomic Data Infrastructure (GDI)"
-readme = "README.md"
+readme = { file = "README.md", content-type = "text/markdown" }
+license = { file = "LICENSE" }
+authors = [
+  { name = "Jorge Miguel Ferreira da Silva" }
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = [
+  "pandas",
+  "jsonschema",
+  "requests",
+  "plotly",
+  "reportlab",
+  "streamlit",
+  "pyyaml",
+  "kaleido>=0.1.0",
+  "tqdm",
+  "Pillow",
+  "scikit-learn",
+  "fancyimpute",
+  "fastjsonschema",
+  "pronto",
+  "psutil",
+  "rapidfuzz",
+  "streamlit-aggrid",
+  "ucimlrepo",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.urls]
+Homepage = "https://github.com/jorgeMFS/PhenoQC"
+Repository = "https://github.com/jorgeMFS/PhenoQC.git"
+Documentation = "https://phenoqc.readthedocs.io/en/latest/"
+Issues = "https://github.com/jorgeMFS/PhenoQC/issues"
 
 [project.scripts]
 phenoqc = "phenoqc.cli:main"

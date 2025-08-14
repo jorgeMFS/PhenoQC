@@ -1,4 +1,8 @@
+## [1.2.1] - 2025-08-14
+- Packaging: enrich pyproject metadata (authors, classifiers, dependencies, URLs) and set README content-type for PyPI
+
 ## [1.2.0] - 2025-08-14
+
 - GUI: strategy-agnostic imputation panel (config-driven; per-column overrides; generic tuning)
 - GUI: fix quality metrics picker defaults when config uses dict-style metrics
 - Reporting: include categorical PSI/Cramér's V in bias warning header and per-row triggers
@@ -6,12 +10,14 @@
 - Fix: Python 3.9 compatibility in GUI typing; minor tuning UI improvements
 
 ## [1.1.1] - 2025-01-13
+
 - feat: add class distribution bar chart to PDF and Markdown reports
 - feat: persist per-file *_qc_summary.json with quality_scores, imputation, class_distribution
 - fix: Python 3.9 typing compatibility in ImputationEngine (avoid PEP 604 unions)
 - chore: docs and scripts updated to assert and document new artifact
 
 ## [1.1.0] - 2025-01-13
+
 - feat: Optional class-distribution summary (label-aware)
   - CLI: `--label-column`, `--imbalance-threshold`
   - GUI: label column selector and threshold input
@@ -23,6 +29,7 @@
   - PDF/MD: Imputation Settings and Tuning Summary sections
 - fix: Redundancy metric deduplication (prefer identical over correlation)
 - test: Added unit tests for class distribution, imputation params, tuning skeleton, and config load
+
 # Changelog
 
 All notable changes to PhenoQC will be documented in this file.
