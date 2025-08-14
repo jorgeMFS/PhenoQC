@@ -19,6 +19,7 @@ from ..validation import DataValidator
 from ..utils.ontology_utils import suggest_ontologies
 import glob
 import numpy as np
+from typing import Optional
 
 def preserve_original_format_and_save(df_in_memory, original_filename, out_dir):
     base, ext = os.path.splitext(original_filename)
@@ -703,98 +704,162 @@ def main():
         # Fixed supported strategies for UI; avoid case mismatch
         supported_strategies = ['none', 'mean', 'median', 'mode', 'knn', 'mice', 'svd']
 
-        st.subheader("Configure Imputation Strategy")
-        # Determine default strategy from config['imputation'] if present
-        default_strategy_value = str(imputation_cfg.get('strategy') or 'none').lower()
-        try:
-            default_idx = supported_strategies.index(default_strategy_value)
-        except ValueError:
-            default_idx = 0
-        global_strategy = st.selectbox(
-            "Default Imputation Strategy",
-            options=supported_strategies,
-            index=default_idx,
-            help="Used for columns without specific overrides"
+        # --- Strategy-agnostic, config-driven Imputation panel ---
+        st.subheader("Imputation")
+
+        # Parameter specs per strategy
+        PARAM_SPECS = {
+            "none": {},
+            "mean": {},
+            "median": {},
+            "mode": {},
+            "knn": {
+                "n_neighbors": {"widget": "int", "default": 5, "min": 1, "max": 100},
+                "weights": {"widget": "select", "options": ["uniform", "distance"], "default": "uniform"},
+                "metric": {"widget": "select", "options": ["nan_euclidean"], "default": "nan_euclidean"},
+            },
+            "mice": {
+                "max_iter": {"widget": "int", "default": 10, "min": 1, "max": 200},
+                "sample_posterior": {"widget": "bool", "default": False},
+                "random_state": {"widget": "int", "default": 0, "min": 0, "max": 10000},
+            },
+            "svd": {
+                "rank": {"widget": "int", "default": 3, "min": 1, "max": 200},
+                "max_iters": {"widget": "int", "default": 50, "min": 1, "max": 10000},
+                "convergence_threshold": {"widget": "float", "default": 1e-4},
+            },
+        }
+
+        def _render_params(spec: dict, initial: Optional[dict] = None) -> dict:
+            initial = initial or {}
+            values: dict = {}
+            for name, meta in spec.items():
+                w = meta["widget"]
+                if w == "int":
+                    values[name] = st.number_input(
+                        name,
+                        value=int(initial.get(name, meta.get("default", 0))),
+                        min_value=int(meta.get("min", -10000)),
+                        max_value=int(meta.get("max", 10000)),
+                        step=1,
+                        key=f"int_{name}",
+                    )
+                elif w == "float":
+                    values[name] = st.number_input(
+                        name,
+                        value=float(initial.get(name, meta.get("default", 0.0))),
+                        key=f"float_{name}",
+                    )
+                elif w == "bool":
+                    values[name] = st.checkbox(
+                        name, value=bool(initial.get(name, meta.get("default", False))), key=f"bool_{name}"
+                    )
+                elif w == "select":
+                    options = meta["options"]
+                    default = initial.get(name, meta.get("default", options[0]))
+                    idx = options.index(default) if default in options else 0
+                    values[name] = st.selectbox(name, options, index=idx, key=f"sel_{name}")
+            return values
+
+        # Existing config scaffold (if any)
+        impute_cfg = config.get("imputation", {}) or {}
+        existing_strategy = impute_cfg.get("strategy", "knn")
+        existing_params = impute_cfg.get("params", {})
+        existing_overrides = impute_cfg.get("per_column", {})
+        existing_tuning = impute_cfg.get("tuning", {})
+
+        # 4A) Global strategy + params
+        strategy = st.selectbox(
+            "Global strategy",
+            list(PARAM_SPECS.keys()),
+            index=max(0, list(PARAM_SPECS.keys()).index(existing_strategy) if existing_strategy in PARAM_SPECS else 0),
+        )
+        params = _render_params(PARAM_SPECS[strategy], initial=existing_params)
+
+        # 4B) Per-column overrides
+        st.markdown("**Per-column overrides (optional)**")
+        if existing_overrides and isinstance(existing_overrides, dict):
+            rows = []
+            for col, ov in existing_overrides.items():
+                rows.append({
+                    "column": col,
+                    "strategy": ov.get("strategy", strategy),
+                    "params": json.dumps(ov.get("params", {})),
+                })
+            overrides_df = pd.DataFrame(rows)
+        else:
+            overrides_df = pd.DataFrame(columns=["column", "strategy", "params"])
+
+        overrides_df = st.data_editor(
+            overrides_df,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "column": st.column_config.TextColumn("column"),
+                "strategy": st.column_config.SelectboxColumn("strategy", options=list(PARAM_SPECS.keys())),
+                "params": st.column_config.TextColumn("params (JSON)", help='e.g. {"rank": 3}'),
+            },
+            key="per_column_editor",
         )
 
-        st.subheader("Column-Specific Overrides")
-        column_strategies = {}
-
-        per_col_cfg = imputation_cfg.get('per_column', {}) if imputation_cfg else {}
-
-        for col in all_columns:
-            with st.expander(f"Column: {col}", expanded=False):
-                # We'll guess from config or fallback to global
-                suggested = (
-                    (per_col_cfg.get(col, {}) or {}).get('strategy')
-                    or default_strategies.get(col)
-                    or global_strategy
-                )
-
-                strategy_options = ['Use Default'] + supported_strategies
-                default_index = 0
-                if suggested in strategy_options:
-                    default_index = strategy_options.index(suggested)
-
-                strategy = st.selectbox(
-                    f"Imputation strategy for {col}",
-                    options=strategy_options,
-                    index=default_index,
-                    key=f"impute_{col}"
-                )
-                if strategy != 'Use Default':
-                    column_strategies[col] = strategy
-
-        # Global parameter inputs (common params per strategy)
-        st.subheader("Imputation Parameters")
-        params: dict = {}
-        current_params = imputation_cfg.get('params', {}) if imputation_cfg else {}
-        if global_strategy == 'knn':
-            n_neighbors = st.number_input("KNN n_neighbors", min_value=1, max_value=100, value=int(current_params.get('n_neighbors', 5)), step=1)
-            weights = st.selectbox("KNN weights", options=['uniform', 'distance'], index=0 if current_params.get('weights', 'uniform') == 'uniform' else 1)
-            params.update({'n_neighbors': int(n_neighbors), 'weights': weights})
-        elif global_strategy == 'mice':
-            max_iter = st.number_input("MICE max_iter", min_value=1, max_value=100, value=int(current_params.get('max_iter', 10)), step=1)
-            params.update({'max_iter': int(max_iter)})
-        elif global_strategy == 'svd':
-            # Optional parameters for IterativeSVD
-            rank = st.number_input("SVD rank (optional, 0=auto)", min_value=0, max_value=500, value=int(current_params.get('rank', 0)), step=1)
-            if rank > 0:
-                params.update({'rank': int(rank)})
-
-        # Quick tuning controls (mask-and-score)
-        st.subheader("Quick Tuning (mask-and-score)")
-        tuning_defaults = imputation_cfg.get('tuning', {}) if imputation_cfg else {}
-        enable_tuning = st.checkbox("Enable tuning", value=bool(tuning_defaults.get('enable', False)),
-                                    help="Evaluate candidate parameters on masked observed cells and choose the best.")
-        tuning_cfg = {}
-        if enable_tuning:
-            mask_fraction = st.slider("Mask fraction", min_value=0.01, max_value=0.5, value=float(tuning_defaults.get('mask_fraction', 0.10)), step=0.01, key="tuning_mask_fraction")
-            scoring = st.selectbox("Scoring metric", options=['MAE', 'RMSE'], index=0 if str(tuning_defaults.get('scoring', 'MAE')).upper() == 'MAE' else 1, key="tuning_scoring")
-            max_cells = st.number_input("Max cells", min_value=1000, max_value=200000, value=int(tuning_defaults.get('max_cells', 50000)), step=1000)
-            random_state = st.number_input("Random state", min_value=0, max_value=10**9, value=int(tuning_defaults.get('random_state', 42)), step=1)
-            default_grid = tuning_defaults.get('grid', {}).get('n_neighbors', [3, 5, 7])
-            grid_n = st.text_input("Grid for n_neighbors (comma-separated)", value=",".join(map(str, default_grid)))
+        per_column: dict = {}
+        for _, row in overrides_df.iterrows():
+            col = str(row.get("column") or "").strip()
+            if not col:
+                continue
+            col_strategy = row.get("strategy") or strategy
             try:
-                grid_vals = [int(x.strip()) for x in grid_n.split(',') if x.strip()]
+                col_params = json.loads(row.get("params") or "{}")
+                if not isinstance(col_params, dict):
+                    raise ValueError("params must be a JSON object")
             except Exception:
-                grid_vals = [3, 5, 7]
-            tuning_cfg = {
-                'enable': True,
-                'mask_fraction': float(mask_fraction),
-                'scoring': scoring,
-                'max_cells': int(max_cells),
-                'random_state': int(random_state),
-                'grid': {'n_neighbors': grid_vals}
+                col_params = {}
+            per_column[col] = {"strategy": col_strategy, "params": col_params}
+
+        # 4C) Tuning (mask-and-score)
+        with st.expander("Tuning (mask-and-score)", expanded=False):
+            enable = st.checkbox("Enable tuning", value=bool(existing_tuning.get("enable", False)))
+            mask_fraction = st.slider("Mask fraction", 0.01, 0.50, float(existing_tuning.get("mask_fraction", 0.10)))
+            scoring = st.selectbox("Scoring", ["MAE", "RMSE"], index=0 if str(existing_tuning.get("scoring", "MAE")).upper()=="MAE" else 1)
+            max_cells = st.number_input("Max cells", min_value=1000, max_value=200000, value=int(existing_tuning.get("max_cells", 50000)), step=1000)
+            random_state = st.number_input("Random state", min_value=0, max_value=10**9, value=int(existing_tuning.get("random_state", 42)), step=1)
+            default_grid = {"knn": {"n_neighbors": [3, 5, 7]},
+                            "mice": {"max_iter": [5, 10, 15]},
+                            "svd": {"rank": [2, 3, 5]}}.get(strategy, {})
+            grid_text = st.text_area(
+                "Parameter grid (JSON)",
+                value=json.dumps(existing_tuning.get("grid", default_grid), indent=2),
+                help="You can provide any param grid here; keys must match the selected strategy.",
+            )
+            try:
+                grid = json.loads(grid_text) if grid_text.strip() else {}
+                if not isinstance(grid, dict):
+                    raise ValueError("grid must be a JSON object")
+            except Exception:
+                st.warning("Invalid grid JSON; ignoring and using an empty grid.")
+                grid = {}
+
+            tuning = {
+                "enable": enable,
+                "mask_fraction": mask_fraction,
+                "scoring": scoring,
+                "max_cells": int(max_cells),
+                "random_state": int(random_state),
+                "grid": grid,
             }
 
-        # Persist imputation block into config for ImputationEngine
-        st.session_state.setdefault('config', {})
-        st.session_state['config']['imputation'] = {
-            'strategy': None if global_strategy == 'Use Default' else str(global_strategy).lower(),
-            'params': params or {},
-            'per_column': {c: {'strategy': s} for c, s in column_strategies.items()},
-            'tuning': tuning_cfg or {'enable': False},
+        # Persist into the config dict the rest of the app uses
+        config["imputation"] = {
+            "strategy": strategy,
+            "params": params,
+            "per_column": per_column,
+            "tuning": tuning,
+        }
+
+        # Back-compat: also surface a simplified mirror used later in the run step
+        st.session_state['imputation_config'] = {
+            'global_strategy': strategy,
+            'column_strategies': {c: v.get('strategy') for c, v in per_column.items()},
         }
 
         # Imputation-bias diagnostics (optional)
@@ -903,11 +968,7 @@ def main():
         else:
             st.session_state['config'].pop('mi_uncertainty', None)
 
-        # Retain older session fields (used by legacy flow)
-        st.session_state['imputation_config'] = {
-            'global_strategy': global_strategy,
-            'column_strategies': column_strategies
-        }
+        # Retain older session fields (used by legacy flow) — already set above
 
         st.markdown("---")
         st.success("Imputation configuration complete!")
