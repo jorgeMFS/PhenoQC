@@ -40,8 +40,8 @@
 - **Class Distribution (Optional):**  
   Provide a label column to get a class-imbalance summary and warning if the minority proportion falls below a threshold.
 
-- **Imputation Parameters and Quick Tuning:**  
-  Configure imputation parameters (e.g., KNN `n_neighbors`) and optionally run a mask-and-score tuner to select good parameters on observed entries.
+- **Strategy‑agnostic Imputation & Tuning:**  
+  Configure global strategy and params (mean, median, mode, knn, mice, svd, none), per‑column overrides, and optional mask‑and‑score tuning.
 
 ---
 
@@ -178,14 +178,14 @@ Reports generated under `--output` include a PDF with:
 - If you set `--impute-params` or enable `--impute-tuning on`, these take precedence over `imputation.params`/`imputation.tuning` in `config.yaml`.
 - Same precedence applies to diagnostics thresholds and redundancy settings.
 
-### Config (new `imputation:` block)
+### Config (imputation block)
 
 ```yaml
 imputation:
   strategy: knn
   params:
     n_neighbors: 5
-    weights: uniform
+  weights: uniform
   per_column:
     Creatinine_mgdl:
       strategy: mice
@@ -216,10 +216,10 @@ python run_gui.py
 Workflow:
 
 - Step 3: Optional label column and imbalance threshold
-- Step 4: Default strategy, per-column overrides, parameters, and tuning
+- Step 4: Default strategy, per‑column overrides, parameters, and tuning (strategy‑agnostic)
 - Step 4 includes: Bias thresholds, Stability diagnostics (enable, repeats, mask fraction, scoring), Protected columns, and Redundancy settings
 - Results: Class Distribution table/plot, Imputation Settings, Imputation Stability & Bias, Tuning Summary
-  - Bias includes numeric (SMD, variance ratio, KS) and categorical (PSI, Cramér’s V) metrics
+  - Bias includes numeric (SMD, variance ratio, KS) and categorical (PSI, Cramér’s V) metrics; report shows which rules triggered per variable
   - Optional Multiple Imputation Uncertainty (MICE repeats) table
 
 ---
@@ -238,115 +238,9 @@ Workflow:
 - `scripts/e2e_small_quality_metrics_cli_test.py` – small demo focusing on quality metrics
 - `scripts/e2e_medium_cli_test.py` – mid-sized end-to-end pipeline run
 - `scripts/end_to_end_e2e_cli_test.py` – large end-to-end pipeline run
+- `scripts/clinical_all_features_e2e.py` – comprehensive clinical exam: full dataset/schema/config/custom mappings, online+offline, per‑column imputation coverage
 - `scripts/imputation_params_cli_test.py` – imputation params and optional tuning
-<<<<<<< HEAD
-- `scripts/end_to_end_diagnostics_demo.sh` – end-to-end example enabling stability & bias diagnostics with CLI overrides
-
-## Installation
-
-PhenoQC requires Python 3.9+.
-
-### Fresh install
-
-Install from PyPI:
-
-```bash
-pip install phenoqc
-```
-
-### From source
-
-Clone the repository and install in editable mode:
-
-```bash
-git clone https://github.com/jorgeMFS/PhenoQC.git
-cd PhenoQC
-pip install -e .
-```
-
-Running the CLI directly from the uninstalled `src/` tree will fail. For local
-development without installation you can use:
-
-```bash
-python -m phenoqc.cli
-```
-
-**Dependencies** are listed in `requirements.txt` and include:
-
-- `pandas`, `jsonschema`, `requests`, `plotly`, `reportlab`, `streamlit`,  
-  `pyyaml`, `watchdog`, `kaleido`, `tqdm`, `Pillow`, `scikit-learn`,  
-  `fancyimpute`, `fastjsonschema`, `pronto`, `rapidfuzz`.
-
----
-
-## Usage
-
-PhenoQC can be invoked via its **CLI** or through the **GUI**:
-
-### 1. Command-Line Interface (CLI)
-
-#### Example: Process a Single File
-
-```bash
-phenoqc \
-  --input examples/samples/sample_data.json \
-  --output ./reports/ \
-  --schema examples/schemas/pheno_schema.json \
-  --config config.yaml \
-  --custom_mappings examples/mapping/custom_mappings.json \
-  --impute mice \
-  --unique_identifiers SampleID \
-  --phenotype_columns '{"PrimaryPhenotype": ["HPO"], "DiseaseCode": ["DO"]}' \
-  --ontologies HPO DO
-```
-
-#### Example: Batch Process Multiple Files
-
-```bash
-phenoqc \
-  --input examples/samples/sample_data.csv examples/samples/sample_data.json examples/samples/sample_data.tsv \
-  --output ./reports/ \
-  --schema examples/schemas/pheno_schema.json \
-  --config config.yaml \
-  --impute none \
-  --unique_identifiers SampleID \
-  --ontologies HPO DO MPO \
-  --phenotype_columns '{"PrimaryPhenotype": ["HPO"], "DiseaseCode": ["DO"], "TertiaryPhenotype": ["MPO"]}'
-```
-
-**Key Parameters:**
-
-- `--input`: One or more data files or directories (`.csv`, `.tsv`, `.json`, `.zip`).
-- `--output`: Directory for saving processed data and reports (default: `./reports/`).
-- `--schema`: Path to the JSON schema for data validation.
-- `--config`: YAML config file defining ontologies and settings (default: `config.yaml`).
-- `--custom_mappings`: Path to a custom term-mapping JSON (optional).
-- `--impute`: Strategy for missing data (e.g., `mean`, `median`, `mode`, `knn`, `mice`, `svd`, or `none`).
-- `--unique_identifiers`: Columns that uniquely identify each record (e.g., `SampleID`).
-- `--phenotype_columns`: JSON mapping of columns to ontologies:  
-  e.g., `{"PrimaryPhenotype": ["HPO"], "DiseaseCode": ["DO"]}`
-- `--ontologies`: List of ontology IDs (e.g., `HPO DO MPO`).
-- `--recursive`: Enable recursive scanning of directories.
-
----
-
-### 2. Graphical User Interface (GUI)
-
-Launch the Streamlit GUI for an interactive experience:
-
-```bash
-python run_gui.py
-```
-
-**Workflow in the GUI**:
-
-1. **Upload Config & Schema**: Provide a JSON schema and a YAML config to define validation and ontology settings.
-2. **Upload Data**: Either upload individual `.csv`/`.tsv`/`.json` files or a `.zip` archive containing multiple files.
-3. **Choose Unique Identifiers & Ontologies**: Select columns to map to ontologies (HPO, DO, etc.) and specify unique identifier columns (e.g., `SampleID`).
-4. **Set Missing Data Strategy**: Choose an imputation strategy (mean, median, mode, advanced).
-5. **Run QC**: Process data and review results. Download generated reports.
-=======
->>>>>>> origin/main
+ - `scripts/end_to_end_diagnostics_demo.sh` – end-to-end example enabling stability & bias diagnostics with CLI overrides
 
 ---
 

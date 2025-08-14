@@ -81,6 +81,16 @@ The GUI provides an interactive interface for:
 4. Choosing missing data strategies
 5. Running QC and viewing results
 
+Imputation (GUI Step 4)
+~~~~~~~~~~~~~~~~~~~~~~~
+
+- Select a global strategy and parameters (mean, median, mode, knn, mice, svd, none)
+- Define per‑column overrides with optional parameters
+- Optional quick tuning (mask‑and‑score) with strategy‑appropriate grids
+- Configure bias thresholds (numeric: SMD/var‑ratio/KS; categorical: PSI/Cramér’s V)
+- Enable stability diagnostics (repeats, mask fraction, scoring)
+- Set protected columns and redundancy settings
+
 Configuration
 ------------
 
@@ -154,8 +164,8 @@ PhenoQC generates:
 
 1. Validated and processed data files
 2. Quality control reports (PDF/Markdown)
-   - Imputation Settings (strategy/params; tuning summary, random_state)
-   - Imputation Stability & Bias (if enabled): per-variable stability (CV of MAE/RMSE), bias metrics and thresholds (numeric and categorical)
+    - Imputation Settings (strategy/params; tuning summary, random_state)
+    - Imputation Stability & Bias (if enabled): per-variable stability (CV of MAE/RMSE), bias metrics (numeric and categorical) with thresholds and per-row triggers
    - Multiple Imputation Uncertainty (if enabled): per-column MI variance/STD from repeated MICE
    - Optional Class Distribution (when label column configured)
    - Additional Quality Dimensions (only when computed)

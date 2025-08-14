@@ -1,3 +1,10 @@
+## [1.2.0] - 2025-08-14
+- GUI: strategy-agnostic imputation panel (config-driven; per-column overrides; generic tuning)
+- GUI: fix quality metrics picker defaults when config uses dict-style metrics
+- Reporting: include categorical PSI/Cramér's V in bias warning header and per-row triggers
+- Scripts: add clinical_all_features_e2e.py (full dataset/schema/config/custom mappings; online+offline runs)
+- Fix: Python 3.9 compatibility in GUI typing; minor tuning UI improvements
+
 ## [1.1.1] - 2025-01-13
 - feat: add class distribution bar chart to PDF and Markdown reports
 - feat: persist per-file *_qc_summary.json with quality_scores, imputation, class_distribution
