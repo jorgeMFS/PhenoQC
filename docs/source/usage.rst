@@ -50,7 +50,7 @@ Parameters
 - ``--impute``: Strategy for missing data (mean, median, mode, knn, mice, svd, none)
 - ``--impute-params``: JSON object of parameters for the imputation strategy (e.g. ``{"n_neighbors": 5}``)
 - ``--impute-tuning {on,off}``: Enable quick tuning (mask-and-score) for imputation
-- ``--quality-metrics``: Choose metrics (e.g., ``imputation_bias``); ``all`` enables all
+- ``--quality-metrics`` (alias: ``--metrics``): Choose metrics (e.g., ``imputation_bias``); ``all`` enables all
  - ``--bias-smd-threshold``, ``--bias-var-low``, ``--bias-var-high``, ``--bias-ks-alpha``: thresholds for numeric bias diagnostics
  - ``--bias-psi-threshold``, ``--bias-cramer-threshold``: thresholds for categorical bias diagnostics (PSI, Cramér’s V)
 - ``--impute-diagnostics {on,off}``, ``--diag-repeats``, ``--diag-mask-fraction``, ``--diag-scoring``: stability diagnostics
@@ -107,6 +107,22 @@ PhenoQC uses a YAML configuration file to define settings. Example ``config.yaml
     fuzzy_threshold: 80
     cache_expiry_days: 30
     # offline: true  # optional: force cached/local ontologies only for the run
+
+    quality_metrics:
+      redundancy: { enable: true }
+      imputation_bias: { enable: true }
+      imputation_stability: { enable: true, repeats: 5, mask_fraction: 0.10, scoring: MAE }
+    class_distribution:
+      label_column: class
+      warn_threshold: 0.10
+
+    imputation_bias:
+      smd_threshold: 0.10
+      var_ratio_low: 0.5
+      var_ratio_high: 2.0
+      ks_alpha: 0.05
+      psi_threshold: 0.10
+      cramer_threshold: 0.20
 
     imputation:
       strategy: knn

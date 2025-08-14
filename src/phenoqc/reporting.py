@@ -304,10 +304,14 @@ def generate_qc_report(
         if isinstance(quality_metrics_enabled, list):
             enabled_ids = {str(m).lower() for m in quality_metrics_enabled}
         elif isinstance(quality_metrics_enabled, dict):
-            # dictionary style not typically used for these metrics; treat any truthy flag as enabled
+            # dictionary style: check nested enable flags when present
             for mid in ["accuracy", "redundancy", "traceability", "timeliness"]:
                 try:
-                    if quality_metrics_enabled.get(mid):
+                    block = quality_metrics_enabled.get(mid)
+                    if isinstance(block, dict):
+                        if block.get('enable', False):
+                            enabled_ids.add(mid)
+                    elif block:
                         enabled_ids.add(mid)
                 except Exception:
                     pass
@@ -430,10 +434,13 @@ def generate_qc_report(
                     pass
             # Show thresholds if provided
             if isinstance(bias_thresholds, dict) and bias_thresholds:
-                thr_text = \
-                    f"SMD≥{bias_thresholds.get('smd_threshold', 0.10)} | " \
-                    f"Var-ratio∉[{bias_thresholds.get('var_ratio_low', 0.5)},{bias_thresholds.get('var_ratio_high', 2.0)}] | " \
-                    f"KS p<{bias_thresholds.get('ks_alpha', 0.05)}"
+                thr_text = (
+                    f"SMD≥{bias_thresholds.get('smd_threshold', 0.10)} | "
+                    f"Var-ratio∉[{bias_thresholds.get('var_ratio_low', 0.5)},{bias_thresholds.get('var_ratio_high', 2.0)}] | "
+                    f"KS p<{bias_thresholds.get('ks_alpha', 0.05)} | "
+                    f"PSI≥{bias_thresholds.get('psi_threshold', 0.10)} | "
+                    f"CramérV≥{bias_thresholds.get('cramer_threshold', 0.20)}"
+                )
                 story.append(Paragraph(f"<b>Warning rules:</b> {thr_text}", styles['Normal']))
                 story.append(Spacer(1, 6))
             # Only render bias tables if we have bias diagnostics
@@ -462,6 +469,19 @@ def generate_qc_report(
                         pval = pd.to_numeric(row.get('ks_p'), errors='coerce')
                         if pd.notnull(pval) and float(pval) < _ks_alpha:
                             reasons.append(f"KS p<{_ks_alpha}")
+                    except Exception:
+                        pass
+                    # Categorical triggers
+                    try:
+                        psi_val = pd.to_numeric(row.get('psi'), errors='coerce')
+                        if pd.notnull(psi_val) and float(psi_val) >= float(bias_thresholds.get('psi_threshold', 0.10)):
+                            reasons.append(f"PSI≥{bias_thresholds.get('psi_threshold', 0.10)}")
+                    except Exception:
+                        pass
+                    try:
+                        cv_val = pd.to_numeric(row.get("cramers_v"), errors='coerce')
+                        if pd.notnull(cv_val) and float(cv_val) >= float(bias_thresholds.get('cramer_threshold', 0.20)):
+                            reasons.append(f"CramérV≥{bias_thresholds.get('cramer_threshold', 0.20)}")
                     except Exception:
                         pass
                     return "; ".join(reasons)

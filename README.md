@@ -156,7 +156,7 @@ phenoqc \
 - `--impute-params '{"n_neighbors": 5}'` (JSON)
 - `--impute-tuning on|off`
 - `--label-column class` and `--imbalance-threshold 0.10`
-- `--quality-metrics imputation_bias redundancy` (or `all`)
+- `--quality-metrics imputation_bias redundancy` (or `all`) (alias: `--metrics`)
 - Imputation-bias thresholds: `--bias-smd-threshold`, `--bias-var-low`, `--bias-var-high`, `--bias-ks-alpha`
 - Categorical bias thresholds: `--bias-psi-threshold`, `--bias-cramer-threshold`
 - Imputation stability diagnostics: `--impute-diagnostics on|off`, `--diag-repeats`, `--diag-mask-fraction`, `--diag-scoring`
@@ -383,6 +383,22 @@ fuzzy_threshold: 80
 cache_expiry_days: 30
 # optional: offline (forces cache/local ontologies only for the run)
 # offline: true
+
+quality_metrics:
+  redundancy: { enable: true }
+  imputation_bias: { enable: true }
+  imputation_stability: { enable: true, repeats: 5, mask_fraction: 0.10, scoring: MAE }
+class_distribution:
+  label_column: class
+  warn_threshold: 0.10
+
+imputation_bias:
+  smd_threshold: 0.10
+  var_ratio_low: 0.5
+  var_ratio_high: 2.0
+  ks_alpha: 0.05
+  psi_threshold: 0.10
+  cramer_threshold: 0.20
 
 imputation:
   strategy: knn
