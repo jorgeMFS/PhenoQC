@@ -1,0 +1,118 @@
+
+ontologies:
+  HPO:
+    name: Human Phenotype Ontology
+    source: local
+    file: /Users/jorgemiguelsilva/Documents/PhenoQC-1/ontologies/hp.obo
+    format: obo
+  DO:
+    name: Disease Ontology
+    source: local
+    file: /Users/jorgemiguelsilva/Documents/PhenoQC-1/ontologies/doid.obo
+    format: obo
+  MPO:
+    name: Mammalian Phenotype Ontology
+    source: local
+    file: /Users/jorgemiguelsilva/Documents/PhenoQC-1/ontologies/mp.obo
+    format: obo
+
+default_ontologies:
+  - HPO
+  - DO
+  - MPO
+
+fuzzy_threshold: 82
+cache_expiry_days: 1
+
+imputation:
+  strategy: knn
+  params:
+    n_neighbors: 5
+    weights: uniform
+    metric: nan_euclidean
+  per_column:
+    Age:
+      strategy: mean
+    Height_cm:
+      strategy: median
+    Weight_kg:
+      strategy: knn
+      params:
+        n_neighbors: 7
+        weights: distance
+        metric: nan_euclidean
+    BMI:
+      strategy: mean
+    BP_systolic:
+      strategy: mice
+      params:
+        max_iter: 10
+        random_state: 11
+    BP_diastolic:
+      strategy: mice
+      params:
+        max_iter: 10
+        random_state: 11
+    Glucose_mgdl:
+      strategy: knn
+      params:
+        n_neighbors: 5
+        weights: uniform
+        metric: nan_euclidean
+    Creatinine_mgdl:
+      strategy: mice
+      params:
+        max_iter: 8
+        random_state: 7
+    Cholesterol_mgdl:
+      strategy: svd
+      params:
+        rank: 3
+        max_iters: 50
+    Sex:
+      strategy: mode
+    Smoker:
+      strategy: mode
+    Pregnant:
+      strategy: mode
+  tuning:
+    enable: true
+    mask_fraction: 0.1
+    scoring: MAE
+    max_cells: 20000
+    random_state: 42
+    grid:
+      n_neighbors: [3, 5, 7, 9]
+
+protected_columns:
+  - PatientID
+  - VisitID
+  - VisitDate
+  - MedicationCode
+
+redundancy:
+  threshold: 0.98
+  method: pearson
+
+quality_metrics:
+  imputation_bias:
+    enable: true
+    smd_threshold: 0.10
+    var_ratio_low: 0.5
+    var_ratio_high: 2.0
+    ks_alpha: 0.05
+  imputation_stability:
+    enable: true
+    repeats: 5
+    mask_fraction: 0.1
+    scoring: MAE
+
+class_distribution:
+  label_column: class
+  warn_threshold: 0.10
+
+mi_uncertainty:
+  enable: true
+  repeats: 3
+  params:
+    max_iter: 6

@@ -1,0 +1,155 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Clinical All Features Schema",
+  "type": "object",
+  "properties": {
+    "PatientID": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "VisitID": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "Age": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 120
+    },
+    "Sex": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "M",
+        "F",
+        "Other",
+        null
+      ]
+    },
+    "Height_cm": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 30,
+      "maximum": 250
+    },
+    "Weight_kg": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 1,
+      "maximum": 400
+    },
+    "BMI": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 5,
+      "maximum": 100
+    },
+    "BP_systolic": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 50,
+      "maximum": 250
+    },
+    "BP_diastolic": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 30,
+      "maximum": 200
+    },
+    "Cholesterol_mgdl": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 50,
+      "maximum": 600
+    },
+    "Glucose_mgdl": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 20,
+      "maximum": 1000
+    },
+    "Creatinine_mgdl": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0.1,
+      "maximum": 20
+    },
+    "PrimaryPhenotype": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "SecondaryPhenotype": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "DiseaseCode": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "MedicationCode": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "Smoker": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "Pregnant": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "VisitDate": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "class": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "PatientID",
+    "VisitID"
+  ]
+}
