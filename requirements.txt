@@ -17,3 +17,4 @@ psutil
 rapidfuzz
 streamlit-aggrid
 ucimlrepo
+watchdog

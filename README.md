@@ -210,7 +210,11 @@ imputation:
 Launch the Streamlit interface:
 
 ```bash
+# Local
 python run_gui.py
+
+# Streamlit Community Cloud
+# In the deploy UI, set the entrypoint to `streamlit_app.py`
 ```
 
 Workflow:

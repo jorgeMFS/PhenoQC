@@ -942,8 +942,15 @@ def main():
         # Protected columns
         st.subheader("Protected columns (excluded from imputation/tuning)")
         protected_defaults = st.session_state['config'].get('protected_columns', []) or []
-        protected_selected = st.multiselect("Select protected columns", options=all_columns, default=protected_defaults,
-                                            help="These columns are excluded from the imputation feature matrix and tuning.")
+        # Streamlit requires defaults to be a subset of options; sanitize to avoid errors when
+        # config contains columns not present in the current dataset (e.g., on first load).
+        safe_protected_defaults = [c for c in protected_defaults if c in (all_columns or [])]
+        protected_selected = st.multiselect(
+            "Select protected columns",
+            options=all_columns,
+            default=safe_protected_defaults,
+            help="These columns are excluded from the imputation feature matrix and tuning.",
+        )
         st.session_state['config']['protected_columns'] = protected_selected
 
         # Redundancy metric settings
